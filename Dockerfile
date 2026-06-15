@@ -8,11 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY backend/requirements.txt ./requirements.txt
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # רק קוד האפליקציה — בלי בדיקות, סקריפטים או .env (מוגן גם ב-.dockerignore)
-COPY backend/app ./app
+COPY app ./app
 
 EXPOSE 8000
 
