@@ -1,0 +1,132 @@
+{
+  "enabledPlugins": {
+    "marketing-skills@marketingskills": true,
+    "ui-ux-pro-max@ui-ux-pro-max": true,
+    "reflexion@context-engineering-kit": true,
+    "review@context-engineering-kit": true,
+    "git@context-engineering-kit": true,
+    "tdd@context-engineering-kit": true,
+    "sadd@context-engineering-kit": true,
+    "ddd@context-engineering-kit": true,
+    "sdd@context-engineering-kit": true,
+    "kaizen@context-engineering-kit": true,
+    "customaize-agent@context-engineering-kit": true,
+    "docs@context-engineering-kit": true,
+    "tech-stack@context-engineering-kit": true,
+    "mcp@context-engineering-kit": true,
+    "fpf@context-engineering-kit": true,
+    "superpowers@superpowers": true,
+    "ask-questions-if-underspecified@trailofbits": true,
+    "audit-context-building@trailofbits": true,
+    "building-secure-contracts@trailofbits": true,
+    "burpsuite-project-parser@trailofbits": true,
+    "claude-in-chrome-troubleshooting@trailofbits": true,
+    "constant-time-analysis@trailofbits": true,
+    "culture-index@trailofbits": true,
+    "debug-buttercup@trailofbits": true,
+    "devcontainer-setup@trailofbits": true,
+    "differential-review@trailofbits": true,
+    "firebase-apk-scanner@trailofbits": true,
+    "gh-cli@trailofbits": true,
+    "dwarf-expert@trailofbits": true,
+    "entry-point-analyzer@trailofbits": true,
+    "mutation-testing@trailofbits": true,
+    "property-based-testing@trailofbits": true,
+    "semgrep-rule-creator@trailofbits": true,
+    "semgrep-rule-variant-creator@trailofbits": true,
+    "sharp-edges@trailofbits": true,
+    "static-analysis@trailofbits": true,
+    "spec-to-code-compliance@trailofbits": true,
+    "testing-handbook-skills@trailofbits": true,
+    "trailmark@trailofbits": true,
+    "variant-analysis@trailofbits": true,
+    "c-review@trailofbits": true,
+    "modern-python@trailofbits": true,
+    "insecure-defaults@trailofbits": true,
+    "second-opinion@trailofbits": true,
+    "yara-authoring@trailofbits": true,
+    "git-cleanup@trailofbits": true,
+    "workflow-skill-design@trailofbits": true,
+    "seatbelt-sandboxer@trailofbits": true,
+    "supply-chain-risk-auditor@trailofbits": true,
+    "zeroize-audit@trailofbits": true,
+    "let-fate-decide@trailofbits": true,
+    "agentic-actions-auditor@trailofbits": true,
+    "skill-improver@trailofbits": true,
+    "fp-check@trailofbits": true,
+    "dimensional-analysis@trailofbits": true,
+    "caveman@caveman": true,
+    "ios-simulator-skill@ios-simulator": true,
+    "frontend-slides@frontend-slides": true,
+    "document-skills@anthropic-skills": true,
+    "example-skills@anthropic-skills": true,
+    "claude-api@anthropic-skills": true,
+    "react-native-best-practices@callstack": true,
+    "github@callstack": true,
+    "github-actions@callstack": true,
+    "upgrading-react-native@callstack": true,
+    "react-native-brownfield-migration@callstack": true
+  },
+  "extraKnownMarketplaces": {
+    "marketingskills": {
+      "source": {
+        "source": "github",
+        "repo": "coreyhaines31/marketingskills"
+      }
+    },
+    "ui-ux-pro-max": {
+      "source": {
+        "source": "github",
+        "repo": "nextlevelbuilder/ui-ux-pro-max-skill"
+      }
+    },
+    "context-engineering-kit": {
+      "source": {
+        "source": "github",
+        "repo": "NeoLabHQ/context-engineering-kit"
+      }
+    },
+    "superpowers": {
+      "source": {
+        "source": "github",
+        "repo": "obra/superpowers"
+      }
+    },
+    "trailofbits": {
+      "source": {
+        "source": "github",
+        "repo": "trailofbits/skills"
+      }
+    },
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "juliusbrussee/caveman"
+      }
+    },
+    "ios-simulator": {
+      "source": {
+        "source": "github",
+        "repo": "conorluddy/ios-simulator-skill"
+      }
+    },
+    "frontend-slides": {
+      "source": {
+        "source": "github",
+        "repo": "zarazhangrui/frontend-slides"
+      }
+    },
+    "anthropic-skills": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/skills"
+      }
+    },
+    "callstack": {
+      "source": {
+        "source": "github",
+        "repo": "callstackincubator/agent-skills"
+      }
+    }
+  }
+}

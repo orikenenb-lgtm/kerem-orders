@@ -1,8 +1,40 @@
 # מדריך התקנה — סקילים וחיבורים ל-Claude Code
 
-> מדריך עזר לשימוש אישי. **שים לב:** הסקילים והחיבורים מותקנים *בתוך* Claude Code
-> (הדבקת פרומפט / פקודת `claude mcp add`), ולא כקבצים בריפו הזה. הקובץ הזה הוא רק
-> רשימת התקנה נוחה להעתקה.
+> מדריך עזר לשימוש אישי + תיעוד של מה שכבר הוגדר בריפו הזה.
+
+---
+
+## ✅ מה כבר מותקן ומוגדר בריפו (פעיל אוטומטית)
+
+הכל הוגדר כך שיעבוד אוטומטית כשפותחים את הריפו ב-Claude Code (כולל Claude Code on the web),
+בלי להעמיס מאות מגה־בייט של קוד צד-שלישי:
+
+| רכיב | איפה | איך זה עובד |
+|---|---|---|
+| **11 marketplaces** (כל הסקילים שהם plugins) | `.claude/settings.json` → `extraKnownMarketplaces` + `enabledPlugins` (67 plugins) | בכניסה ראשונה ל-Claude Code יופיע פרומפט "Install marketplaces & plugins?" — מאשרים פעם אחת והם נטענים בכל סשן. |
+| **74 סקילים רגילים** (8 אוספים שאינם plugins) | `.claude/skills/` (וונדרו ישירות לריפו) | זמינים מיד, ללא צורך באישור. |
+| **3 חיבורי MCP** (Canva, Meta Ads, Higgsfield) | `.mcp.json` | מאושרים בכניסה; ההתחברות (OAuth) מתבצעת בשימוש הראשון דרך `/mcp`. |
+
+**מה צריך לעשות ידנית (לא ניתן להגדיר מראש):**
+- **Picsart GenAI CLI** — כלי CLI, מתקינים מ-https://picsart.com/gen-ai-cli/
+- **Booking.com + Gmail** — חיבורים שעובדים רק דרך האפליקציה: Settings ← Connectors ← Connect.
+- **התחברות לחיבורים** — להריץ `/mcp` ב-Claude Code ולהתחבר ל-Canva / Meta Ads / Higgsfield.
+
+> ⚠️ **הערת ביצועים:** הופעלו 67 plugins (כולל 39 של Trail of Bits ו-13 של Context Engineering Kit).
+> כל plugin פעיל מוסיף עומס קונטקסט (טוקנים) בכל סשן. כדי לכבות קבוצה — מוחקים את השורות
+> הרלוונטיות מ-`enabledPlugins` ב-`.claude/settings.json`, או מריצים `claude plugin disable <name>`.
+
+---
+
+## 🔧 פקודות התקנה ידניות (חלופה / למכונה אחרת)
+
+אם רוצים להתקין את אותם דברים בסביבה אחרת ידנית במקום דרך הריפו:
+
+```bash
+# Marketplaces + plugins (דוגמה)
+claude plugin marketplace add obra/superpowers
+claude plugin install superpowers@superpowers
+```
 
 ---
 
