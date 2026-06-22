@@ -11,8 +11,10 @@ const RAINBOW =
   "linear-gradient(90deg, #FF2E93, #FF8A00, #FFC400, #25C77E, #2E7DFF, #8A3FFC)";
 
 function framePath(i: number) {
-  // 1-based, 4-digit zero-padded
-  return `/frames/frame_${String(i + 1).padStart(4, "0")}.jpg`;
+  // 1-based, 4-digit zero-padded. Prefix with basePath so it works when the
+  // site is served from a subpath (e.g. GitHub Pages /kerem-orders/).
+  const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
+  return `${base}/frames/frame_${String(i + 1).padStart(4, "0")}.jpg`;
 }
 
 export default function ScrollHero() {
