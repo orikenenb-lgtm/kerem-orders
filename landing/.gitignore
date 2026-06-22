@@ -1,0 +1,10 @@
+/node_modules
+/.next
+/out
+next-env.d.ts
+*.tsbuildinfo
+.DS_Store
+
+# Regenerable extraction intermediates — the app serves the copies in public/
+/frames
+/hero.mp4
