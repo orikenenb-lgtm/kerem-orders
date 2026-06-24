@@ -608,4 +608,12 @@ go(0);
 with open(OUT, "w", encoding="utf-8") as f:
     f.write(HTML)
 
+# Also publish a copy under repo-root /docs so GitHub Pages can serve ONLY the
+# presentation (folder = /docs), without exposing the rest of the repo source.
+DOCS = os.path.join(os.path.dirname(__file__), os.pardir, "docs", "index.html")
+os.makedirs(os.path.dirname(DOCS), exist_ok=True)
+with open(DOCS, "w", encoding="utf-8") as f:
+    f.write(HTML)
+
 print(f"Wrote {OUT} ({os.path.getsize(OUT)/1024/1024:.2f} MB), {n} slides")
+print(f"Wrote {os.path.abspath(DOCS)} (Pages copy)")
