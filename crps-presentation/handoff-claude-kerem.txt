@@ -1,0 +1,30 @@
+שלום! יש לי משימה קטנה ומוגדרת. כל העבודה הכבדה כבר נעשתה — נשאר רק להפעיל GitHub Pages.
+
+הקשר:
+- ריפו: orikenenb-lgtm/kerem-orders  (ריפו ציבורי)
+- ענף: claude/crps-presentation-l4s6xm
+- בענף הזה כבר קיים קובץ מצגת מוכן ב: docs/index.html  (מצגת CRPS עצמאית, כולל .nojekyll)
+- מטרה: לפרסם את המצגת ב-GitHub Pages כך שיתקבל קישור ציבורי.
+
+מה לעשות:
+1. הפעל GitHub Pages במצב "Deploy from a branch":
+   - Branch: claude/crps-presentation-l4s6xm
+   - Folder: /docs   (חשוב: davka /docs, כדי לפרסם רק את המצגת ולא את שאר קוד הריפו)
+
+   אם יש לך גישת API, הפקודה היא:
+   POST https://api.github.com/repos/orikenenb-lgtm/kerem-orders/pages
+   body: {"source":{"branch":"claude/crps-presentation-l4s6xm","path":"/docs"}}
+   (אם Pages כבר מופעל ומחזיר 409, השתמש ב-PUT לאותו endpoint עם אותו body כדי לעדכן את ה-source.)
+
+   אם אין גישת API להגדרות — בצע זאת דרך ההגדרות:
+   Settings → Pages → Source: Deploy from a branch → Branch: claude/crps-presentation-l4s6xm, Folder: /docs → Save.
+
+2. חכה 1–2 דקות שהפרסום יסתיים (אפשר לבדוק את ה-workflow "pages build and deployment" ב-Actions).
+
+3. ודא שהקישור עובד ומחזיר 200:
+   https://orikenenb-lgtm.github.io/kerem-orders/
+   (אפשר: curl -sS -o /dev/null -w "%{http_code}" https://orikenenb-lgtm.github.io/kerem-orders/ )
+
+4. דווח לי בחזרה את הקישור הסופי, ואשר שהוא נטען (זו מצגת RTL בעברית שנפתחת בשקף פתיחה עם הכותרת "CRPS").
+
+הערה: התמונות במצגת אישיות/רפואיות והבעלים אישר במפורש פרסום ציבורי למטרת מודעות ל-CRPS — אז זה בסדר לפרסם.
