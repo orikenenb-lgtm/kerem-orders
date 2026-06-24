@@ -1,16 +1,30 @@
 #!/usr/bin/env python3
 """Build a single self-contained, cinematic HTML presentation about CRPS with embedded images."""
 import base64
+import io
 import os
+
+from PIL import Image, ImageOps
 
 UPLOADS = "/root/.claude/uploads/d95bbaf8-f767-53d5-9b8b-0f6c3551b17b"
 OUT = os.path.join(os.path.dirname(__file__), "index.html")
 
+# Optimisation: phones don't need full-res photos. Down-scaling + recompressing
+# keeps the deck sharp on a phone screen while shrinking the file ~3x so it
+# opens instantly everywhere instead of choking on a heavy preview.
+MAX_DIM = 1080
+QUALITY = 68
+
 
 def b64(name):
     path = os.path.join(UPLOADS, name)
-    with open(path, "rb") as f:
-        return "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+    img = Image.open(path)
+    img = ImageOps.exif_transpose(img)  # honour camera rotation, then drop EXIF
+    img = img.convert("RGB")
+    img.thumbnail((MAX_DIM, MAX_DIM), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=QUALITY, optimize=True, progressive=True)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
 # Categorized images
@@ -259,7 +273,7 @@ slides.append(f"""
       מודעות ל‑CRPS חשובה. ככל שיותר אנשים יכירו את המחלה,
       כך החולים יקבלו יותר הבנה, תמיכה וטיפול.
     </p>
-    <div class="closing-tag">#CRPS_Awareness</div>
+    <div class="closing-tag" dir="ltr">#CRPS_Awareness</div>
   </div>
 </section>
 """)
