@@ -7,24 +7,35 @@ import os
 from PIL import Image, ImageOps
 
 UPLOADS = "/root/.claude/uploads/d95bbaf8-f767-53d5-9b8b-0f6c3551b17b"
+# Photos extracted from the two PDF albums (one photo per page).
+PDFIMG = "/tmp/claude-0/-home-user-kerem-orders/d95bbaf8-f767-53d5-9b8b-0f6c3551b17b/scratchpad/pdfimg"
 OUT = os.path.join(os.path.dirname(__file__), "index.html")
 
 # Optimisation: phones don't need full-res photos. Down-scaling + recompressing
-# keeps the deck sharp on a phone screen while shrinking the file ~3x so it
-# opens instantly everywhere instead of choking on a heavy preview.
-MAX_DIM = 1080
-QUALITY = 68
+# keeps the deck sharp on a phone screen while shrinking the file a lot so it
+# opens instantly everywhere instead of choking on a heavy preview. With ~116
+# photos we lean harder on gallery thumbnails and keep only feature shots large.
+GALLERY_DIM, GALLERY_Q = 760, 62      # the small fixed galleries
+MOSAIC_DIM, MOSAIC_Q = 560, 55        # the dense PDF mosaics (shown tiny)
+FEATURE_DIM, FEATURE_Q = 1100, 72     # cover / hope / quote backdrops
 
 
-def b64(name):
-    path = os.path.join(UPLOADS, name)
+def encode(path, max_dim=GALLERY_DIM, quality=GALLERY_Q):
     img = Image.open(path)
     img = ImageOps.exif_transpose(img)  # honour camera rotation, then drop EXIF
     img = img.convert("RGB")
-    img.thumbnail((MAX_DIM, MAX_DIM), Image.LANCZOS)
+    img.thumbnail((max_dim, max_dim), Image.LANCZOS)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=QUALITY, optimize=True, progressive=True)
+    img.save(buf, format="JPEG", quality=quality, optimize=True, progressive=True)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def b64(name, **kw):
+    return encode(os.path.join(UPLOADS, name), **kw)
+
+
+def b64p(idx, max_dim=MOSAIC_DIM, quality=MOSAIC_Q, **kw):
+    return encode(os.path.join(PDFIMG, idx + ".jpeg"), max_dim=max_dim, quality=quality, **kw)
 
 
 # Categorized images
@@ -64,8 +75,23 @@ CATS = {
 }
 
 DATA = {k: [b64(n) for n in v] for k, v in CATS.items()}
-# A strong portrait used as the cinematic cover / divider backdrop.
-HERO = DATA["hope"][0]
+# A strong portrait used as the cinematic cover / divider backdrop (feature res).
+HERO = b64("f5dc4285-IMG20250722WA0121.jpg", max_dim=FEATURE_DIM, quality=FEATURE_Q)
+DATA["hope"] = [HERO]
+
+# ---- Photos from the two PDF albums -------------------------------------
+# Album A = the hard days (pain, hospital, exhaustion).
+# Album B = life that goes on: family/friends (B01–B16) and a CRPS awareness
+# campaign where people hold the awareness booklet (B17–B51).
+PDF_HARD = [f"A{i:02d}" for i in range(1, 45)]          # 44 photos
+PDF_LIVING = [f"B{i:02d}" for i in range(1, 17)]        # 16 photos
+PDF_AWARE = [f"B{i:02d}" for i in range(17, 52)]        # 35 photos
+
+PDATA = {
+    "hard": [b64p(i) for i in PDF_HARD],
+    "living": [b64p(i) for i in PDF_LIVING],
+    "aware": [b64p(i) for i in PDF_AWARE],
+}
 
 
 def grid(images, extra=""):
@@ -76,6 +102,25 @@ def grid(images, extra=""):
         for src in images
     )
     return f'<div class="grid {extra}">{cells}</div>'
+
+
+def gallery_section(num, title, desc, images, per=12):
+    """Emit one or more responsive mosaic slides for a list of images."""
+    out = []
+    chunks = [images[i:i + per] for i in range(0, len(images), per)]
+    for ci, chunk in enumerate(chunks):
+        head = title if ci == 0 else f"{title} <span class='cont'>· המשך</span>"
+        out.append(f"""
+<section class="slide gallery-slide">
+  <div class="gallery-inner">
+    <div class="cat-head"><span class="sec-num">{num}</span>
+      <div><h2 class="slide-title">{head}</h2>
+      <p class="cat-desc">{desc}</p></div>
+    </div>
+    {grid(chunk, 'gflex')}
+  </div>
+</section>""")
+    return out
 
 
 slides = []
@@ -190,6 +235,13 @@ slides.append(f"""
 </section>
 """)
 
+# 5b. The hard days (Album A) ------------------------------------------------
+slides += gallery_section(
+    "03", "הימים הקשים",
+    "כאב, עייפות וימי אשפוז ארוכים — הקרב היומיומי מאחורי הקלעים",
+    PDATA["hard"], per=12,
+)
+
 # 6. Quote -------------------------------------------------------------------
 slides.append(f"""
 <section class="slide quote-slide" style="--cover:url('{DATA['pain_a'][0]}')">
@@ -207,7 +259,7 @@ slides.append(f"""
 slides.append(f"""
 <section class="slide gallery-slide">
   <div class="gallery-inner">
-    <div class="cat-head"><span class="sec-num">03</span>
+    <div class="cat-head"><span class="sec-num">04</span>
       <div><h2 class="slide-title">כשהכאב משתלט</h2>
       <p class="cat-desc">רגעים של עייפות וכאב — בבית וברכב</p></div>
     </div>
@@ -220,7 +272,7 @@ slides.append(f"""
 slides.append(f"""
 <section class="slide gallery-slide">
   <div class="gallery-inner">
-    <div class="cat-head"><span class="sec-num">04</span>
+    <div class="cat-head"><span class="sec-num">05</span>
       <div><h2 class="slide-title">לנוח, להתאושש</h2>
       <p class="cat-desc">הגוף דורש מנוחה אחרי ימים ארוכים</p></div>
     </div>
@@ -229,11 +281,25 @@ slides.append(f"""
 </section>
 """)
 
+# 8b. Life goes on (Album B — family & friends) ------------------------------
+slides += gallery_section(
+    "06", "ממשיכים לחיות",
+    "משפחה, חברים ורגעים יפים — החיים לא נעצרים",
+    PDATA["living"], per=12,
+)
+
+# 8c. Spreading awareness together (Album B — campaign) ----------------------
+slides += gallery_section(
+    "07", "מפיצים מודעות יחד",
+    "אנשים שנרתמו להעלאת המודעות ל‑CRPS — כי ביחד אנחנו חזקים יותר",
+    PDATA["aware"], per=12,
+)
+
 # 9. Family ------------------------------------------------------------------
 slides.append(f"""
 <section class="slide gallery-slide">
   <div class="gallery-inner">
-    <div class="cat-head"><span class="sec-num">05</span>
+    <div class="cat-head"><span class="sec-num">08</span>
       <div><h2 class="slide-title">המשפחה תמיד לצידי</h2>
       <p class="cat-desc">החיוך והתמיכה שנותנים כוח להמשיך</p></div>
     </div>
@@ -389,6 +455,13 @@ body{{
 .grid.g5{{grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr)}}
 .grid.g5 .card:first-child{{grid-row:span 2}}
 @media(min-width:900px){{ .grid.g4{{grid-template-columns:repeat(4,1fr);grid-template-rows:1fr}} }}
+/* dense responsive mosaic for the big PDF albums */
+.grid.gflex{{grid-template-columns:repeat(3,1fr);align-content:center;
+  grid-auto-rows:min-content;gap:clamp(7px,1.1vw,13px)}}
+.grid.gflex .card{{aspect-ratio:1;border-radius:14px;animation-delay:0s !important}}
+@media(min-width:700px){{ .grid.gflex{{grid-template-columns:repeat(4,1fr)}} }}
+@media(min-width:1100px){{ .grid.gflex{{grid-template-columns:repeat(6,1fr)}} }}
+.cont{{font-family:var(--sans);font-weight:400;font-size:.5em;color:var(--muted);opacity:.75}}
 .card{{position:relative;overflow:hidden;border-radius:18px;cursor:pointer;
   border:1px solid var(--line);background:#0008;
   box-shadow:0 18px 44px #0008;transition:transform .4s ease,box-shadow .4s,border-color .4s;
