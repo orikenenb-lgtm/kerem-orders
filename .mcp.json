@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "Canva": {
+      "type": "http",
+      "url": "https://mcp.canva.com/mcp"
+    },
+    "meta-ads-mcp": {
+      "type": "http",
+      "url": "https://meta-ads.mcp.pipeboard.co/"
+    },
+    "Higgsfield": {
+      "type": "http",
+      "url": "https://mcp.higgsfield.ai/mcp"
+    }
+  }
+}
