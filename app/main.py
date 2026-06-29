@@ -59,6 +59,12 @@ app.include_router(admin_sync.router)
 app.include_router(products.router)
 app.include_router(orders.router)
 
+# CRM — מודול אדיטיבי, נטען רק כשהדגל דלוק. כבוי (ברירת מחדל) → אין נתיבי /crm כלל.
+if settings.crm_enabled:
+    from app.routers import crm
+
+    app.include_router(crm.router)
+
 
 @app.get("/health")
 def health_check() -> dict:

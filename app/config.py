@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     sync_enabled: bool = False
     sync_interval_hours: int = 4
 
+    # CRM — מודול אדיטיבי (leads). כבוי כברירת מחדל:
+    # כבוי = ה-app מתנהג בדיוק כמו קודם (אין נתיבי /crm, אין שאילתות CRM).
+    # מדליקים עם CRM_ENABLED=true ב-.env.
+    crm_enabled: bool = False
+
     # התראות — יתמלא ב-Phase 5
     resend_api_key: str = ""
     email_from: str = "Kerem Orders <onboarding@resend.dev>"
