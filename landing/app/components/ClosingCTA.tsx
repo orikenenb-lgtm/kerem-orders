@@ -6,6 +6,8 @@ import { useRef, useState } from "react";
 const ACCENT = "#8A3FFC";
 const RAINBOW =
   "linear-gradient(90deg, #FF2E93, #FF8A00, #FFC400, #25C77E, #2E7DFF, #8A3FFC)";
+// המערכת החיה (Kerem Orders) — דף הנחיתה מוביל אליה.
+const APP_URL = "https://kerem-orders-production-142c.up.railway.app";
 
 export default function ClosingCTA() {
   const ref = useRef(null);
@@ -117,7 +119,7 @@ export default function ClosingCTA() {
 
         <motion.a
           variants={item}
-          href="#"
+          href={`${APP_URL}/signup`}
           onMouseEnter={() => setHover(true)}
           onMouseLeave={() => setHover(false)}
           whileHover={{ scale: 1.04 }}
@@ -145,6 +147,24 @@ export default function ClosingCTA() {
         >
           פתחו חשבון סיטונאי
         </motion.a>
+
+        <motion.span
+          variants={item}
+          style={{
+            marginTop: "1.25rem",
+            fontFamily: "var(--font-assistant)",
+            fontSize: "0.95rem",
+            color: "#4B4860",
+          }}
+        >
+          כבר יש לכם חשבון?{" "}
+          <a
+            href={`${APP_URL}/login`}
+            style={{ color: ACCENT, fontWeight: 600, textDecoration: "none" }}
+          >
+            כניסת לקוחות לקטלוג ←
+          </a>
+        </motion.span>
       </motion.div>
     </section>
   );
