@@ -6,7 +6,7 @@ import SiteHeader from "../components/SiteHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
-import { PRODUCTS, CATEGORIES, assetUrl } from "../../lib/catalog";
+import { rivhitImg } from "../../lib/images";
 import { tokens, ils } from "../../lib/ui";
 
 type OrderItem = { id: string; product_name: string; product_sku: string; unit_price: number; quantity: number };
@@ -199,65 +199,116 @@ function OrdersTab() {
   );
 }
 
-/* ---------------- Catalog (read-only) ---------------- */
+/* ---------------- Catalog (Rivhit-synced) ---------------- */
+type SyncRun = { id: string; status: string; summary: any; error: string | null; created_at: string };
+
+function CatalogImg({ link, name }: { link: string; name: string }) {
+  const img = rivhitImg(link);
+  if (!img) return <span>🧸</span>;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={img} alt={name} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "contain" }} />;
+}
+
 function ProductsTab() {
   const [query, setQuery] = useState("");
-  const [cat, setCat] = useState("all");
+  const [items, setItems] = useState<any[]>([]);
+  const [count, setCount] = useState(0);
+  const [busy, setBusy] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [runs, setRuns] = useState<SyncRun[]>([]);
+  const [msg, setMsg] = useState("");
 
-  const shown = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return PRODUCTS.filter(
-      (p) =>
-        (cat === "all" || p.category === cat) &&
-        (!needle || p.name.toLowerCase().includes(needle) || p.sku.includes(needle))
-    );
-  }, [query, cat]);
+  const loadRuns = useCallback(async () => {
+    const { data } = await supabase.from("rivhit_sync_runs").select("*").order("created_at", { ascending: false }).limit(5);
+    setRuns((data as SyncRun[]) ?? []);
+  }, []);
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    const s = query.trim().replace(/[,()%]/g, " ").trim();
+    let q = supabase.from("products").select("id,name,price,sku,picture_link,stock_quantity", { count: "exact" }).eq("is_active", true);
+    if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
+    const { data, count } = await q.order("name").range(0, 49);
+    setItems(data ?? []); setCount(count ?? 0); setBusy(false);
+  }, [query]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadRuns(); }, [loadRuns]);
+
+  const runSync = async () => {
+    setSyncing(true); setMsg("");
+    try {
+      const { data, error } = await supabase.functions.invoke("rivhit-sync", { body: { mode: "sync", what: "both" } });
+      if (error) throw error;
+      const runId = (data as any)?.run_id;
+      for (let i = 0; i < 40 && runId; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const { data: row } = await supabase.from("rivhit_sync_runs").select("status,summary,error").eq("id", runId).maybeSingle();
+        if (row && row.status !== "running") {
+          setMsg(row.status === "done"
+            ? `הסנכרון הושלם: ${row.summary?.products?.synced ?? 0} מוצרים, ${row.summary?.customers?.synced ?? 0} לקוחות.`
+            : `שגיאה: ${row.error}`);
+          break;
+        }
+      }
+      await load(); await loadRuns();
+    } catch (e: any) {
+      setMsg("הסנכרון נכשל: " + (e?.message ?? e));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <>
-      <div style={{ background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 14, padding: "1rem 1.2rem", marginBottom: "1.5rem" }}>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, fontSize: "0.9rem", lineHeight: 1.6 }}>
-          הקטלוג ({PRODUCTS.length} מוצרים) נטען מקובץ האקסל שלכם. בשלב הבא נחבר אותו
-          ישירות ל<b>רווחית</b> כדי שהמלאי, הקודים והמחירים יתעדכנו אוטומטית.
-        </p>
+      <div style={{ background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 14, padding: "1.1rem 1.2rem", marginBottom: "1.25rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{count.toLocaleString("he-IL")} מוצרים פעילים</div>
+          <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>מסונכרן מרווחית (קריאה בלבד) — לא משנה דבר ברווחית.</div>
+        </div>
+        <button onClick={runSync} disabled={syncing} style={solidBtnA(syncing)}>{syncing ? "מסנכרן…" : "סנכרן מרווחית ↻"}</button>
       </div>
+      {msg && <p style={{ fontFamily: tokens.assistant, color: tokens.body, fontSize: "0.9rem", marginBottom: "1rem" }}>{msg}</p>}
 
-      <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", marginBottom: "1.2rem" }}>
-        <input
-          placeholder="🔍 חיפוש מוצר / קוד…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          style={{ flex: "1 1 240px", fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.6rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text }}
-        />
-        <select value={cat} onChange={(e) => setCat(e.target.value)} style={selStyle}>
-          <option value="all">כל הקטגוריות</option>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
+      {runs.length > 0 && (
+        <div style={{ marginBottom: "1.25rem" }}>
+          <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", color: tokens.dim, marginBottom: "0.4rem" }}>ריצות סנכרון אחרונות</div>
+          {runs.map((r) => (
+            <div key={r.id} style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.body, display: "flex", gap: "0.6rem", padding: "0.15rem 0", flexWrap: "wrap" }}>
+              <span>{new Date(r.created_at).toLocaleString("he-IL")}</span>
+              <span style={{ fontWeight: 700, color: r.status === "done" ? "#25C77E" : r.status === "error" ? "#C0143C" : tokens.dim }}>{r.status}</span>
+              {r.summary?.products && <span>· {r.summary.products.synced} מוצרים</span>}
+              {r.summary?.customers && <span>· {r.summary.customers.synced} לקוחות</span>}
+            </div>
           ))}
-        </select>
-      </div>
+        </div>
+      )}
 
-      <p style={{ fontFamily: tokens.assistant, color: tokens.dim, fontSize: "0.85rem", marginBottom: "0.8rem" }}>{shown.length} מוצרים</p>
+      <input placeholder="🔍 חיפוש מוצר / קוד…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.6rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, marginBottom: "1rem" }} />
 
-      <div style={{ display: "grid", gap: "0.4rem" }}>
-        {shown.slice(0, 400).map((p) => (
-          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.8rem", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.6rem 0.9rem", background: "#fff" }}>
-            <span style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>
-              {p.image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={assetUrl(p.image)} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-              ) : (
-                p.emoji
-              )}
-            </span>
-            <span style={{ flex: 1, fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.text }}>{p.name}</span>
-            <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim }} dir="ltr">{p.sku}</span>
-            <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", color: tokens.text, minWidth: 70, textAlign: "left" }}>{ils(p.price)}</span>
-          </div>
-        ))}
-      </div>
+      {busy ? (
+        <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>טוען…</p>
+      ) : (
+        <div style={{ display: "grid", gap: "0.4rem" }}>
+          {items.map((p) => (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.8rem", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.5rem 0.9rem", background: "#fff" }}>
+              <span style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem" }}>
+                <CatalogImg link={p.picture_link} name={p.name} />
+              </span>
+              <span style={{ flex: 1, fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.text }}>{p.name}</span>
+              <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim }} dir="ltr">{p.sku}</span>
+              <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", color: tokens.text, minWidth: 64, textAlign: "left" }}>{ils(p.price)}</span>
+            </div>
+          ))}
+          {count > items.length && <p style={{ fontFamily: tokens.assistant, color: tokens.dim, fontSize: "0.82rem", textAlign: "center", marginTop: "0.5rem" }}>מציג 50 ראשונים · השתמשו בחיפוש למציאת מוצר</p>}
+        </div>
+      )}
     </>
   );
+}
+
+function solidBtnA(busy: boolean): React.CSSProperties {
+  return { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.7rem 1.4rem", borderRadius: 999, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1 };
 }
 
 const ghostBtn: React.CSSProperties = {
