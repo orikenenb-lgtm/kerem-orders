@@ -6,7 +6,7 @@ import SiteHeader from "../components/SiteHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
-import { PRODUCTS, CATEGORIES } from "../../lib/catalog";
+import { PRODUCTS, CATEGORIES, assetUrl } from "../../lib/catalog";
 import { tokens, ils } from "../../lib/ui";
 
 type OrderItem = { id: string; product_name: string; product_sku: string; unit_price: number; quantity: number };
@@ -242,7 +242,14 @@ function ProductsTab() {
       <div style={{ display: "grid", gap: "0.4rem" }}>
         {shown.slice(0, 400).map((p) => (
           <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.8rem", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.6rem 0.9rem", background: "#fff" }}>
-            <span style={{ fontSize: "1.4rem" }}>{p.emoji}</span>
+            <span style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>
+              {p.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={assetUrl(p.image)} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              ) : (
+                p.emoji
+              )}
+            </span>
             <span style={{ flex: 1, fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.text }}>{p.name}</span>
             <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim }} dir="ltr">{p.sku}</span>
             <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", color: tokens.text, minWidth: 70, textAlign: "left" }}>{ils(p.price)}</span>
