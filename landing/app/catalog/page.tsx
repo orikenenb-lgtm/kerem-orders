@@ -33,6 +33,8 @@ export default function CatalogPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
+  const [activeCat, setActiveCat] = useState("all");
 
   const [cart, setCart] = useState<Cart>({});
   const [note, setNote] = useState("");
@@ -65,11 +67,22 @@ export default function CatalogPage() {
     }
   }, [profile]);
 
+  // load category list once
+  useEffect(() => {
+    if (!session) return;
+    supabase.rpc("catalog_categories").then(({ data }) => {
+      setCategories((data as { category: string; n: number }[]) ?? []);
+    });
+  }, [session]);
+
   // debounce search -> query, reset to page 0
   useEffect(() => {
     const t = setTimeout(() => { setQuery(input); setPage(0); }, 350);
     return () => clearTimeout(t);
   }, [input]);
+
+  // reset to first page when switching category
+  useEffect(() => { setPage(0); }, [activeCat]);
 
   const loadProducts = useCallback(async () => {
     if (!session) return;
@@ -79,6 +92,7 @@ export default function CatalogPage() {
       .from("products")
       .select("id,name,price,sku,barcode,picture_link,stock_quantity", { count: "exact" })
       .eq("is_active", true);
+    if (activeCat !== "all") q = q.eq("category", activeCat);
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
     const { data, count } = await q
       .order("name", { ascending: true })
@@ -86,7 +100,7 @@ export default function CatalogPage() {
     setProducts((data as Product[]) ?? []);
     setTotal(count ?? 0);
     setLoadingProducts(false);
-  }, [session, query, page]);
+  }, [session, query, page, activeCat]);
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
@@ -194,6 +208,28 @@ export default function CatalogPage() {
             onChange={(e) => setInput(e.target.value)}
             style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
           />
+          {categories.length > 0 && (
+            <div style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+              {[{ category: "all", n: 0 }, ...categories].map((c, i) => {
+                const active = activeCat === c.category;
+                const accent = c.category === "all" ? tokens.accent : tokens.rainbowColors[i % tokens.rainbowColors.length];
+                return (
+                  <button
+                    key={c.category}
+                    onClick={() => setActiveCat(c.category)}
+                    style={{
+                      whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem",
+                      padding: "0.45rem 1rem", borderRadius: 999, cursor: "pointer",
+                      border: `1px solid ${active ? "transparent" : tokens.border}`,
+                      background: active ? accent : "#fff", color: active ? "#fff" : tokens.body,
+                    }}
+                  >
+                    {c.category === "all" ? "הכל" : `${c.category} (${c.n})`}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {loadingProducts ? (
