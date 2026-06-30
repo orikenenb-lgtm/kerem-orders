@@ -120,6 +120,17 @@ export default function CatalogPage() {
   const itemCount = useMemo(() => lines.reduce((s, l) => s + l.qty, 0), [lines]);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // keep all "חדש/חדשים" categories grouped together (adjacent) in the chip bar
+  const orderedCats = useMemo(() => {
+    const isNew = (name: string) => /חדש/.test(name);
+    const newMax = categories.filter((c) => isNew(c.category)).reduce((m, c) => Math.max(m, c.n), 0);
+    return [...categories].sort((a, b) => {
+      const ra = isNew(a.category) ? newMax + 1 : a.n;
+      const rb = isNew(b.category) ? newMax + 1 : b.n;
+      return ra !== rb ? rb - ra : b.n - a.n;
+    });
+  }, [categories]);
+
   const placeOrder = async () => {
     if (!session || lines.length === 0) return;
     setSubmitting(true);
@@ -210,7 +221,7 @@ export default function CatalogPage() {
           />
           {categories.length > 0 && (
             <div style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
-              {[{ category: "all", n: 0 }, ...categories].map((c, i) => {
+              {[{ category: "all", n: 0 }, ...orderedCats].map((c, i) => {
                 const active = activeCat === c.category;
                 const accent = c.category === "all" ? tokens.accent : tokens.rainbowColors[i % tokens.rainbowColors.length];
                 return (
