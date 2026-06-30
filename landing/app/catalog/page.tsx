@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
-import { PRODUCTS, CATEGORIES, type CatalogProduct } from "../../lib/catalog";
+import { PRODUCTS, CATEGORIES, assetUrl, type CatalogProduct } from "../../lib/catalog";
 import { tokens, ils } from "../../lib/ui";
 
 type Cart = Record<string, number>;
@@ -232,8 +232,13 @@ export default function CatalogPage() {
             const qty = cart[p.id] ?? 0;
             return (
               <div key={p.id} style={{ border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: 16, padding: "0.9rem", background: "#fff", boxShadow: "0 8px 24px rgba(26,23,48,0.05)", display: "flex", flexDirection: "column", gap: "0.45rem" }}>
-                <div style={{ height: 80, borderRadius: 12, background: `${accent}12`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>
-                  {p.emoji}
+                <div style={{ height: 130, borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem", overflow: "hidden" }}>
+                  {p.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={assetUrl(p.image)} alt={p.name} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                  ) : (
+                    <span>{p.emoji}</span>
+                  )}
                 </div>
                 <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.4em" }}>
                   {p.name}
@@ -281,7 +286,14 @@ export default function CatalogPage() {
                 <div style={{ display: "grid", gap: "0.8rem", marginBottom: "1rem" }}>
                   {lines.map((l) => (
                     <div key={l.id} style={{ display: "flex", gap: "0.6rem", alignItems: "center", borderBottom: `1px solid ${tokens.border}`, paddingBottom: "0.6rem" }}>
-                      <div style={{ fontSize: "1.8rem" }}>{l.emoji}</div>
+                      <div style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.6rem" }}>
+                        {l.image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={assetUrl(l.image)} alt={l.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                        ) : (
+                          <span>{l.emoji}</span>
+                        )}
+                      </div>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.9rem", color: tokens.text }}>{l.name}</div>
                         <div style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>{ils(l.price)} ליח׳</div>
