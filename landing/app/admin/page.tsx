@@ -105,8 +105,15 @@ function OrdersTab() {
   }, [load]);
 
   const updateStatus = async (id: string, status: string) => {
+    const prev = orders.find((o) => o.id === id)?.status;
+    setErr("");
     setOrders((os) => os.map((o) => (o.id === id ? { ...o, status } : o)));
-    await supabase.from("orders").update({ status }).eq("id", id);
+    const { error } = await supabase.from("orders").update({ status }).eq("id", id);
+    if (error) {
+      // roll the optimistic change back and tell the manager
+      setOrders((os) => os.map((o) => (o.id === id ? { ...o, status: prev ?? o.status } : o)));
+      setErr("עדכון הסטטוס נכשל, נסו שוב.");
+    }
   };
 
   const shown = useMemo(

@@ -31,15 +31,22 @@ const AuthContext = createContext<AuthValue>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  // `sessionResolved` flips true only once the INITIAL session has actually been
+  // read. `loading` must stay true until then, otherwise route guards see
+  // (!loading && !session) and bounce a logged-in user to /login on refresh.
+  const [sessionResolved, setSessionResolved] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     supabase.auth.getSession().then(({ data }) => {
-      if (active) setSession(data.session);
+      if (!active) return;
+      setSession(data.session);
+      setSessionResolved(true);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
+      setSessionResolved(true);
     });
     return () => {
       active = false;
@@ -60,7 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile((data as Profile) ?? null);
   };
 
+  // Wait for the initial session to resolve before touching `loading`, and keep
+  // it true until the profile (and thus the role) is settled too.
   useEffect(() => {
+    if (!sessionResolved) return;
     let active = true;
     (async () => {
       setLoading(true);
@@ -70,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [session?.user?.id]);
+  }, [sessionResolved, session?.user?.id]);
 
   const value: AuthValue = {
     session,
