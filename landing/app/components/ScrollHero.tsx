@@ -112,6 +112,8 @@ export default function ScrollHero() {
     };
   }, []);
 
+  const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
   // staggered fade-in for overlay content
   const fade = {
     hidden: { opacity: 0, y: 24 },
@@ -216,7 +218,7 @@ export default function ScrollHero() {
             variants={fade}
             initial="hidden"
             animate="show"
-            href="#cta"
+            href={`${base}/catalog`}
             style={{
               fontFamily: "var(--font-rubik)",
               fontWeight: 600,

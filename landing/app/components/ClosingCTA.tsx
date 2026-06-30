@@ -11,6 +11,7 @@ export default function ClosingCTA() {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-80px" });
   const [hover, setHover] = useState(false);
+  const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
   const container = {
     hidden: {},
@@ -117,7 +118,7 @@ export default function ClosingCTA() {
 
         <motion.a
           variants={item}
-          href="#"
+          href={`${base}/register`}
           onMouseEnter={() => setHover(true)}
           onMouseLeave={() => setHover(false)}
           whileHover={{ scale: 1.04 }}
