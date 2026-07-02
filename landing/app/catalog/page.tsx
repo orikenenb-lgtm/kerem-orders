@@ -164,6 +164,12 @@ export default function CatalogPage() {
       }));
       const { error: iErr } = await supabase.from("order_items").insert(items);
       if (iErr) throw iErr;
+      // Auto-push the order into Rivhit as an "הזמנה" document (only if this
+      // account is linked to a Rivhit customer). Fire-and-forget: the order is
+      // safely stored either way, and the manager can push it manually later.
+      supabase.functions
+        .invoke("rivhit-push", { body: { action: "push_order", order_id: order.id } })
+        .catch(() => {});
       setPlaced(order.id);
       setCart({});
       setNote("");
