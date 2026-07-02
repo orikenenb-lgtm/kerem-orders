@@ -18,6 +18,7 @@ type Order = {
   created_at: string;
   contact_name: string;
   contact_phone: string;
+  contact_email: string;
   business_name: string;
   order_items: OrderItem[];
 };
@@ -28,7 +29,7 @@ const STATUS_HE: Record<string, string> = { new: "התקבלה", processing: "ב
 export default function AdminPage() {
   const router = useRouter();
   const { session, isManager, loading } = useAuth();
-  const [tab, setTab] = useState<"orders" | "products">("orders");
+  const [tab, setTab] = useState<"orders" | "products" | "customers">("orders");
 
   useEffect(() => {
     if (loading) return;
@@ -55,12 +56,13 @@ export default function AdminPage() {
           ניהול
         </h1>
 
-        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "2rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "2rem", flexWrap: "wrap" }}>
           <TabBtn active={tab === "orders"} onClick={() => setTab("orders")}>הזמנות</TabBtn>
           <TabBtn active={tab === "products"} onClick={() => setTab("products")}>קטלוג</TabBtn>
+          <TabBtn active={tab === "customers"} onClick={() => setTab("customers")}>לקוחות</TabBtn>
         </div>
 
-        {tab === "orders" ? <OrdersTab /> : <ProductsTab />}
+        {tab === "orders" ? <OrdersTab /> : tab === "products" ? <ProductsTab /> : <CustomersTab />}
       </main>
     </>
   );
@@ -158,6 +160,11 @@ function OrdersTab() {
                     {o.contact_phone && (
                       <a href={`tel:${o.contact_phone}`} style={{ color: tokens.accent }} dir="ltr">
                         {o.contact_phone}
+                      </a>
+                    )}{" "}
+                    {o.contact_email && (
+                      <a href={`mailto:${o.contact_email}`} style={{ color: tokens.accent }} dir="ltr">
+                        {o.contact_email}
                       </a>
                     )}
                   </div>
@@ -309,6 +316,142 @@ function ProductsTab() {
 
 function solidBtnA(busy: boolean): React.CSSProperties {
   return { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.7rem 1.4rem", borderRadius: 999, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1 };
+}
+
+/* ---------------- Customers (site accounts ↔ Rivhit) ---------------- */
+type SiteProfile = {
+  id: string;
+  email: string;
+  full_name: string;
+  business_name: string;
+  phone: string;
+  role: string;
+  rivhit_customer_id: number | null;
+};
+type RivhitCustomer = { rivhit_id: number; name: string; city: string; phone: string; email: string };
+
+const digits = (s: string) => (s || "").replace(/\D/g, "");
+
+function CustomersTab() {
+  const [profiles, setProfiles] = useState<SiteProfile[]>([]);
+  const [rivhit, setRivhit] = useState<RivhitCustomer[]>([]);
+  const [busy, setBusy] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    const [{ data: ps }, { data: cs }] = await Promise.all([
+      supabase.from("profiles").select("id,email,full_name,business_name,phone,role,rivhit_customer_id").order("created_at", { ascending: false }),
+      supabase.from("customers").select("rivhit_id,name,city,phone,email").eq("is_active", true).order("name"),
+    ]);
+    setProfiles((ps as SiteProfile[]) ?? []);
+    setRivhit((cs as RivhitCustomer[]) ?? []);
+    setBusy(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const suggestion = useCallback((p: SiteProfile): RivhitCustomer | undefined => {
+    const ph = digits(p.phone);
+    if (ph.length >= 9) {
+      const hit = rivhit.find((c) => digits(c.phone).endsWith(ph.slice(-9)));
+      if (hit) return hit;
+    }
+    if (p.email) {
+      const hit = rivhit.find((c) => (c.email || "").toLowerCase() === p.email.toLowerCase());
+      if (hit) return hit;
+    }
+    return undefined;
+  }, [rivhit]);
+
+  const link = async (p: SiteProfile, rivhitId: number | null) => {
+    setSavingId(p.id);
+    setMsg("");
+    const { error } = await supabase.from("profiles").update({ rivhit_customer_id: rivhitId }).eq("id", p.id);
+    if (error) setMsg("שמירת הקישור נכשלה: " + error.message);
+    else setProfiles((ps) => ps.map((x) => (x.id === p.id ? { ...x, rivhit_customer_id: rivhitId } : x)));
+    setSavingId(null);
+  };
+
+  if (busy) return <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>טוען לקוחות…</p>;
+
+  return (
+    <>
+      <div style={{ background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 14, padding: "1rem 1.2rem", marginBottom: "1.25rem" }}>
+        <p style={{ fontFamily: tokens.assistant, color: tokens.body, fontSize: "0.9rem", lineHeight: 1.6 }}>
+          {profiles.length} חשבונות באתר · {rivhit.length} לקוחות ברווחית. קשרו כל חשבון לכרטיס
+          הלקוח שלו ברווחית — כך נזהה אוטומטית כל הזמנה, ובעתיד גם מחירון אישי. (קריאה בלבד — לא משנה כלום ברווחית.)
+        </p>
+      </div>
+      {msg && <p style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.9rem", marginBottom: "1rem" }}>{msg}</p>}
+
+      <div style={{ display: "grid", gap: "0.8rem" }}>
+        {profiles.map((p) => {
+          const linked = rivhit.find((c) => c.rivhit_id === p.rivhit_customer_id);
+          const sug = !p.rivhit_customer_id ? suggestion(p) : undefined;
+          return (
+            <div key={p.id} style={{ border: `1px solid ${tokens.border}`, borderRadius: 14, padding: "1rem 1.2rem", background: "#fff" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.8rem", flexWrap: "wrap", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: tokens.text }}>
+                    {p.business_name || p.full_name || p.email}
+                    {p.role === "manager" && <span style={{ marginInlineStart: 8, fontFamily: tokens.rubik, fontSize: "0.68rem", color: tokens.accent, background: `${tokens.accent}14`, padding: "0.15rem 0.6rem", borderRadius: 999 }}>מנהל</span>}
+                  </div>
+                  <div style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.body }}>
+                    {p.full_name} · <span dir="ltr">{p.email}</span> {p.phone && <span dir="ltr">· {p.phone}</span>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                  {linked ? (
+                    <>
+                      <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: "#25C77E", fontWeight: 700 }}>
+                        ✓ מקושר: {linked.name} <span dir="ltr">#{linked.rivhit_id}</span>
+                      </span>
+                      <button onClick={() => link(p, null)} disabled={savingId === p.id} style={{ ...ghostBtn, padding: "0.4rem 0.9rem", fontSize: "0.78rem" }}>ניתוק</button>
+                    </>
+                  ) : (
+                    <LinkPicker rivhit={rivhit} suggestion={sug} saving={savingId === p.id} onPick={(id) => link(p, id)} />
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function LinkPicker({ rivhit, suggestion, saving, onPick }: {
+  rivhit: RivhitCustomer[];
+  suggestion?: RivhitCustomer;
+  saving: boolean;
+  onPick: (rivhitId: number) => void;
+}) {
+  const [q, setQ] = useState("");
+  const needle = q.trim().toLowerCase();
+  const matches = needle
+    ? rivhit.filter((c) => c.name.toLowerCase().includes(needle) || digits(c.phone).includes(digits(needle))).slice(0, 6)
+    : [];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", minWidth: 240 }}>
+      {suggestion && (
+        <button onClick={() => onPick(suggestion.rivhit_id)} disabled={saving}
+          style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#1A1730", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 10, padding: "0.45rem 0.7rem", cursor: "pointer", textAlign: "right" }}>
+          💡 הצעה: {suggestion.name} ({suggestion.city || "—"}) — לחצו לקישור
+        </button>
+      )}
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 חיפוש לקוח רווחית לפי שם/טלפון…"
+        style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", padding: "0.45rem 0.7rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text }} />
+      {matches.map((c) => (
+        <button key={c.rivhit_id} onClick={() => onPick(c.rivhit_id)} disabled={saving}
+          style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.text, background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.45rem 0.7rem", cursor: "pointer", textAlign: "right" }}>
+          {c.name} {c.city && `· ${c.city}`} {c.phone && <span dir="ltr">· {c.phone}</span>}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 const ghostBtn: React.CSSProperties = {

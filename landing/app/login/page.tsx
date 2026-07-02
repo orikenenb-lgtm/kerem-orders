@@ -20,20 +20,42 @@ export default function LoginPage() {
     if (session) router.replace("/catalog");
   }, [session, router]);
 
+  // Email handed off from the register page (account already existed etc.)
+  useEffect(() => {
+    try {
+      const last = localStorage.getItem("kt_last_email");
+      if (last) {
+        setEmail(last);
+        localStorage.removeItem("kt_last_email");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setBusy(true);
-    const { error: err } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
-    if (err) {
-      setError("אימייל או סיסמה שגויים. נסו שוב.");
+    try {
+      const { error: err } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+      if (err) {
+        setError(
+          /invalid/i.test(err.message)
+            ? "אימייל או סיסמה שגויים. נסו שוב."
+            : "ההתחברות נכשלה: " + err.message
+        );
+        setBusy(false);
+        return;
+      }
+      router.replace("/catalog");
+    } catch {
+      setError("שגיאת רשת. בדקו את החיבור ונסו שוב.");
       setBusy(false);
-      return;
     }
-    router.replace("/catalog");
   };
 
   return (
