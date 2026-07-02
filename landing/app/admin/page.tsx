@@ -20,6 +20,8 @@ type Order = {
   contact_phone: string;
   contact_email: string;
   business_name: string;
+  rivhit_doc_id: number | null;
+  rivhit_error: string | null;
   order_items: OrderItem[];
 };
 
@@ -118,6 +120,36 @@ function OrdersTab() {
     }
   };
 
+  const [pushingId, setPushingId] = useState<string | null>(null);
+  const pushToRivhit = async (id: string) => {
+    setPushingId(id);
+    setErr("");
+    try {
+      const { data, error } = await supabase.functions.invoke("rivhit-push", {
+        body: { action: "push_order", order_id: id },
+      });
+      if (error) {
+        let msg = "השליחה לרווחית נכשלה.";
+        try {
+          const ctx = (error as { context?: Response }).context;
+          if (ctx && typeof ctx.json === "function") {
+            const b = await ctx.json();
+            if (b?.not_linked) msg = "הלקוח לא מקושר לרווחית — קשרו אותו בלשונית לקוחות.";
+            else if (b?.error) msg = b.error;
+          }
+        } catch { /* ignore */ }
+        setErr(msg);
+        return;
+      }
+      const docId = (data as { doc_id?: number })?.doc_id ?? null;
+      setOrders((os) => os.map((o) => (o.id === id ? { ...o, rivhit_doc_id: docId } : o)));
+    } catch {
+      setErr("השליחה לרווחית נכשלה — בעיית רשת.");
+    } finally {
+      setPushingId(null);
+    }
+  };
+
   const shown = useMemo(
     () => (filter === "all" ? orders : orders.filter((o) => o.status === filter)),
     [orders, filter]
@@ -179,6 +211,16 @@ function OrdersTab() {
                       <option key={s} value={s}>{STATUS_HE[s]}</option>
                     ))}
                   </select>
+                  {o.rivhit_doc_id ? (
+                    <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: "#25C77E", fontWeight: 700 }}>
+                      ✓ ברווחית — מסמך <span dir="ltr">#{o.rivhit_doc_id}</span>
+                    </span>
+                  ) : (
+                    <button onClick={() => pushToRivhit(o.id)} disabled={pushingId === o.id}
+                      style={{ ...ghostBtn, padding: "0.4rem 0.9rem", fontSize: "0.78rem", opacity: pushingId === o.id ? 0.6 : 1 }}>
+                      {pushingId === o.id ? "שולח…" : "שלח לרווחית ↗"}
+                    </button>
+                  )}
                 </div>
               </div>
 
