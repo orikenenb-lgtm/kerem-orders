@@ -64,7 +64,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select("*")
       .eq("id", uid)
       .maybeSingle();
-    setProfile((data as Profile) ?? null);
+    if (data) {
+      setProfile(data as Profile);
+      return;
+    }
+    // Self-heal: the user exists but has no profile row (e.g. an old account or
+    // a hiccup during signup). Create it from the auth user's metadata so the
+    // customer is always identified on orders.
+    const { data: u } = await supabase.auth.getUser();
+    const meta = (u?.user?.user_metadata ?? {}) as Record<string, string>;
+    const fresh = {
+      id: uid,
+      email: u?.user?.email ?? "",
+      full_name: meta.full_name ?? "",
+      business_name: meta.business_name ?? "",
+      phone: meta.phone ?? "",
+      role: "customer" as const,
+    };
+    const { data: inserted } = await supabase
+      .from("profiles")
+      .insert(fresh)
+      .select("*")
+      .maybeSingle();
+    setProfile((inserted as Profile) ?? (fresh as Profile));
   };
 
   // Wait for the initial session to resolve before touching `loading`, and keep

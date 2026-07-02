@@ -29,43 +29,61 @@ export default function RegisterPage() {
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // Call the signup function; if the SDK path fails for any reason, fall back
+  // to a plain fetch so a client-side SDK hiccup can never block registration.
+  const callSignup = async (): Promise<{ ok?: boolean; error?: string }> => {
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke("signup", {
+        body: form,
+      });
+      if (!fnErr) return (data as { ok?: boolean; error?: string }) ?? {};
+      const ctx = (fnErr as { context?: Response }).context;
+      if (ctx && typeof ctx.json === "function") {
+        try {
+          return await ctx.json();
+        } catch {
+          /* fall through to direct fetch */
+        }
+      }
+    } catch {
+      /* fall through to direct fetch */
+    }
+    const base =
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      "https://mcdchalyzeqjkkgfeznd.supabase.co";
+    const res = await fetch(`${base}/functions/v1/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    return await res.json();
+  };
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setBusy(true);
     try {
-      const { data, error: fnErr } = await supabase.functions.invoke("signup", {
-        body: form,
-      });
-      if (fnErr) {
-        // Edge function returns a JSON error body on 400 — surface it.
-        let msg = "ההרשמה נכשלה, נסו שוב.";
-        try {
-          const ctx = (fnErr as { context?: Response }).context;
-          if (ctx && typeof ctx.json === "function") {
-            const body = await ctx.json();
-            if (body?.error) msg = body.error;
-          }
-        } catch {
-          /* ignore */
-        }
-        setError(msg);
-        setBusy(false);
-        return;
-      }
-      if (data?.error) {
-        setError(data.error);
+      const result = await callSignup();
+      if (result?.error) {
+        setError(result.error);
         setBusy(false);
         return;
       }
       // Instant login (user is pre-confirmed by the signup function).
+      const email = form.email.trim().toLowerCase();
       const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email: form.email.trim().toLowerCase(),
+        email,
         password: form.password,
       });
       if (signInErr) {
-        setError("נרשמת! אבל ההתחברות נכשלה — נסו להתחבר ידנית.");
-        setBusy(false);
+        // Account exists — hand off to the login page with the email prefilled.
+        try {
+          localStorage.setItem("kt_last_email", email);
+        } catch {
+          /* ignore */
+        }
+        router.replace("/login");
         return;
       }
       router.replace("/catalog");

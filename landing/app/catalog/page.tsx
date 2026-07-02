@@ -136,15 +136,19 @@ export default function CatalogPage() {
     setSubmitting(true);
     setError("");
     try {
+      // Identity is guaranteed: email always comes from the session, and
+      // name/business fall back to the signup metadata if the profile is empty.
+      const meta = (session.user.user_metadata ?? {}) as Record<string, string>;
       const { data: order, error: oErr } = await supabase
         .from("orders")
         .insert({
           user_id: session.user.id,
           total: cartTotal,
           note,
-          contact_name: contactName,
-          contact_phone: contactPhone,
-          business_name: profile?.business_name ?? "",
+          contact_name: contactName || profile?.full_name || meta.full_name || "",
+          contact_phone: contactPhone || profile?.phone || meta.phone || "",
+          contact_email: session.user.email ?? "",
+          business_name: profile?.business_name || meta.business_name || "",
           status: "new",
         })
         .select("id")
