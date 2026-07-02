@@ -21,6 +21,7 @@ type Order = {
   contact_email: string;
   business_name: string;
   rivhit_doc_id: number | null;
+  rivhit_doc_link: string | null;
   rivhit_error: string | null;
   order_items: OrderItem[];
 };
@@ -212,8 +213,16 @@ function OrdersTab() {
                     ))}
                   </select>
                   {o.rivhit_doc_id ? (
-                    <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: "#25C77E", fontWeight: 700 }}>
-                      ✓ ברווחית — מסמך <span dir="ltr">#{o.rivhit_doc_id}</span>
+                    <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" }}>
+                      <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: "#25C77E", fontWeight: 700 }}>
+                        ✓ ברווחית — מסמך <span dir="ltr">#{o.rivhit_doc_id}</span>
+                      </span>
+                      {o.rivhit_doc_link && (
+                        <a href={o.rivhit_doc_link} target="_blank" rel="noreferrer"
+                          style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.78rem", color: "#fff", background: tokens.rainbow, padding: "0.4rem 1rem", borderRadius: 999, textDecoration: "none" }}>
+                          📄 צפה במסמך
+                        </a>
+                      )}
                     </span>
                   ) : (
                     <button onClick={() => pushToRivhit(o.id)} disabled={pushingId === o.id}
