@@ -142,6 +142,9 @@ export default function RegisterPage() {
             <Field label="שם העסק / החנות" value={form.business_name} onChange={set("business_name")} required />
             <Field label="שם איש קשר" value={form.full_name} onChange={set("full_name")} required />
             <Field label="טלפון" value={form.phone} onChange={set("phone")} type="tel" inputMode="tel" />
+            <p style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, marginTop: "-0.4rem" }}>
+              💡 כבר לקוחות של כרם טויס? הזינו את הטלפון המעודכן אצלנו — והמערכת תזהה אתכם אוטומטית.
+            </p>
             <Field label="אימייל" value={form.email} onChange={set("email")} type="email" required />
             <Field label="סיסמה (לפחות 6 תווים)" value={form.password} onChange={set("password")} type="password" required />
 
