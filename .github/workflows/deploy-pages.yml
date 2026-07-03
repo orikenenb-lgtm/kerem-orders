@@ -38,7 +38,7 @@ jobs:
       - name: Add CRPS presentation at /crps
         run: |
           mkdir -p out/crps
-          cp ../docs/index.html out/crps/index.html
+          cp -r ../docs/. out/crps/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: landing/out
