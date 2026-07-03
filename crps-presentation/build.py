@@ -288,10 +288,10 @@ slides += gallery_section(
     PDATA["living"], per=12,
 )
 
-# 8c. Spreading awareness together (Album B — campaign) ----------------------
+# 8c. Giving project — Nova & captivity survivors (Album B) ------------------
 slides += gallery_section(
-    "07", "מפיצים מודעות יחד",
-    "אנשים שנרתמו להעלאת המודעות ל‑CRPS — כי ביחד אנחנו חזקים יותר",
+    "07", "נותנים כוח לשורדי הנובה והשבי",
+    "נעלי ״עם ישראל חי״ וערכות We Will Dance Again בעבודת יד — מתנה אישית לשורדי המסיבה ולשבים מהשבי. כאב מזהה כאב, ונתינה מרפאת את שניהם",
     PDATA["aware"], per=12,
 )
 
