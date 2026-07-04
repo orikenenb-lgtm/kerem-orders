@@ -79,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       full_name: meta.full_name ?? "",
       business_name: meta.business_name ?? "",
       phone: meta.phone ?? "",
+      vat_number: meta.vat_number ?? "",
       role: "customer" as const,
     };
     const { data: inserted } = await supabase
