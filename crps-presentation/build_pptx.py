@@ -274,6 +274,19 @@ LADDER = [
     ("קטיעת אצבע ללא הרדמה", 40, False),
     ("CRPS — הכאב שאני חיה איתו", 42, True),
 ]
+def make3d(shape, depth):
+    """Give a shape a real Office 3D extrusion (oblique top-left camera)."""
+    from lxml import etree
+    A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    spPr = shape._element.spPr
+    sc = etree.SubElement(spPr, A + "scene3d")
+    cam = etree.SubElement(sc, A + "camera"); cam.set("prst", "obliqueTopLeft")
+    lr = etree.SubElement(sc, A + "lightRig"); lr.set("rig", "threePt"); lr.set("dir", "t")
+    sp = etree.SubElement(spPr, A + "sp3d")
+    sp.set("extrusionH", str(depth)); sp.set("prstMaterial", "matte")
+    bv = etree.SubElement(sp, A + "bevelT"); bv.set("w", "38100"); bv.set("h", "19050")
+
+
 bar_right = Inches(9.3)          # bars grow right-to-left from here
 bar_full = Inches(7.4)
 for i, (lab, val, is_crps) in enumerate(LADDER):
@@ -294,6 +307,7 @@ for i, (lab, val, is_crps) in enumerate(LADDER):
     f.adjustments[0] = 0.5
     f.fill.solid(); f.fill.fore_color.rgb = GOLD if is_crps else RGBColor(0x5D, 0x6A, 0x85)
     f.line.fill.background(); f.shadow.inherit = False
+    make3d(f, 340000 if is_crps else 200000)
     # value at the left end
     txt(s, Inches(0.55), y - (Inches(0.02) if not is_crps else Inches(0.06)), Inches(1.0), Inches(0.8),
         [[(str(val), {"size": 22 if not is_crps else 30, "bold": True,

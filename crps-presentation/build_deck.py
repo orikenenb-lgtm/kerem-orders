@@ -205,7 +205,8 @@ LADDER = [
 ladder_rows = "".join(
     f'''<div class="lrow {cls}">
       <div class="llab">{lab}</div>
-      <div class="lbar"><div class="fill" style="width:{val/50*100:.0f}%"></div></div>
+      <div class="lbar"><div class="track"></div>
+        <div class="fill" style="width:{val/50*100:.0f}%"></div></div>
       <div class="lnum">{val}</div>
     </div>''' for lab, val, cls in LADDER)
 page(f"""
@@ -612,20 +613,29 @@ html,body{{background:#e8e4dc;font-family:var(--sans)}}
 .stat .num .of{{font-size:44px;font-weight:700}}
 .stat p{{color:var(--dmuted);font-size:15px;line-height:1.55;margin-top:10px;font-weight:300}}
 
-/* pain ladder */
+/* pain ladder — 3D extruded bars */
 .ladder{{max-width:1000px;width:100%;margin:6px auto 0;flex:1;display:flex;
-  flex-direction:column;justify-content:center;gap:20px}}
+  flex-direction:column;justify-content:center;gap:30px}}
 .lrow{{display:flex;align-items:center;gap:18px}}
 .llab{{flex:0 0 250px;font-size:16.5px;color:var(--dmuted);font-weight:400}}
-.lbar{{flex:1;height:36px;border-radius:9px;background:#ffffff10;
-  border:1px solid #ffffff14;position:relative;overflow:hidden}}
-.fill{{position:absolute;top:0;right:0;bottom:0;border-radius:8px;background:#5d6a85}}
+.lbar{{flex:1;height:34px;position:relative;overflow:visible}}
+.lbar .track{{position:absolute;inset:0;border-radius:6px;background:#ffffff07;
+  border:1px dashed #ffffff14}}
+.fill{{position:absolute;top:0;right:0;bottom:0;background:#5d6a85;
+  border-radius:2px;box-shadow:0 10px 22px #0006}}
+.fill::before{{content:"";position:absolute;left:0;right:0;top:-11px;height:11px;
+  background:#7d89a4;transform:skewX(45deg);transform-origin:bottom}}
+.fill::after{{content:"";position:absolute;left:-11px;top:0;bottom:0;width:11px;
+  background:#454f68;transform:skewY(45deg);transform-origin:right}}
 .lnum{{flex:0 0 64px;font-family:var(--serif);font-weight:900;font-size:26px;
-  color:var(--dmuted);direction:ltr;text-align:left}}
+  color:var(--dmuted);direction:ltr;text-align:left;
+  text-shadow:0 2px 0 #0008,0 4px 10px #0006}}
 .lrow.crps .llab{{color:var(--gold);font-weight:800;font-size:18px}}
-.lrow.crps .lbar{{height:48px;border-color:#dfa35c66}}
+.lrow.crps .lbar{{height:46px}}
 .lrow.crps .fill{{background:linear-gradient(90deg,var(--gold),var(--copper));
-  box-shadow:0 0 24px #dfa35c55}}
+  box-shadow:0 14px 30px #dfa35c44}}
+.lrow.crps .fill::before{{top:-14px;height:14px;background:#f2c487}}
+.lrow.crps .fill::after{{left:-14px;width:14px;background:#8a4a1d}}
 .lrow.crps .lnum{{color:var(--gold);font-size:38px}}
 .kicker{{text-align:center;font-size:17px;color:var(--dink);font-weight:300;
   margin-top:16px;line-height:1.6}}
