@@ -265,32 +265,43 @@ txt(s, Inches(1.2), Inches(6.15), Inches(10.93), Inches(0.6),
 # ============================================================ 5 · NUMBERS
 s = slide(NAVY)
 chapter(s, "בשפה של מספרים", dark=True)
-head(s, "הכאב שמדורג מעל הכל", dark=True)
-big = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(6.9), Inches(1.8), Inches(5.8), Inches(4.9))
-big.adjustments[0] = 0.05
-big.fill.solid(); big.fill.fore_color.rgb = NAVY2
-big.line.color.rgb = GOLD; big.line.width = Pt(1); big.shadow.inherit = False
-txt(s, Inches(7.1), Inches(2.3), Inches(5.4), Inches(2.2),
-    [[("42", {"size": 110, "bold": True, "color": GOLD}),
-      (" / 50", {"size": 34, "bold": True, "color": DMUTED})]], align=PP_ALIGN.CENTER)
-txt(s, Inches(7.3), Inches(5.1), Inches(5.0), Inches(1.3),
-    "במדד הכאב של מקגיל (McGill) — מעל לידה ללא אלחוש, מעל קטיעת אצבע",
-    align=PP_ALIGN.CENTER, size=14, color=DMUTED, spacing=1.25)
-rows = [
-    ("3–4×", "שכיח יותר בנשים — לרוב סביב העשור הרביעי–חמישי לחיים"),
-    ("5–26", "מקרים חדשים ל‑100,000 איש בשנה — מחלה נדירה שקל לפספס"),
-    ("0", "בדיקות מעבדה או הדמיה שמאשרות את האבחנה — היא קלינית בלבד"),
+head(s, "כמה חזק הכאב הזה?",
+     "מדד הכאב של מקגיל (McGill) מדרג כאבים על סולם של 0–50, לפי דיווחי מטופלים — ככה נראה CRPS לעומת כאבים שכולנו מכירים",
+     dark=True)
+LADDER = [
+    ("שבר בעצם", 17, False),
+    ("לידה טבעית (ללא אלחוש)", 35, False),
+    ("קטיעת אצבע ללא הרדמה", 40, False),
+    ("CRPS — הכאב שאני חיה איתו", 42, True),
 ]
-for i, (num, cap) in enumerate(rows):
-    y = Inches(1.8 + i * 1.68)
-    r = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.6), y, Inches(6.0), Inches(1.5))
-    r.adjustments[0] = 0.09
-    r.fill.solid(); r.fill.fore_color.rgb = NAVY2
-    r.line.color.rgb = RGBColor(0x3A, 0x47, 0x63); r.line.width = Pt(0.75); r.shadow.inherit = False
-    txt(s, Inches(4.7), y + Inches(0.28), Inches(1.75), Inches(1.0),
-        [[(num, {"size": 34, "bold": True, "color": GOLD})]], align=PP_ALIGN.CENTER)
-    txt(s, Inches(0.85), y + Inches(0.3), Inches(3.85), Inches(1.0),
-        cap, size=12.5, color=DMUTED, spacing=1.2)
+bar_right = Inches(9.3)          # bars grow right-to-left from here
+bar_full = Inches(7.4)
+for i, (lab, val, is_crps) in enumerate(LADDER):
+    y = Inches(2.35 + i * 0.95)
+    h = Inches(0.62 if not is_crps else 0.78)
+    # label (right column)
+    txt(s, Inches(9.5), y + (Inches(0.05) if not is_crps else Inches(0.1)), Inches(3.35), Inches(0.7),
+        lab, size=13 if not is_crps else 14.5, bold=is_crps,
+        color=GOLD if is_crps else DMUTED, spacing=1.0)
+    # track
+    tr = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Emu(int(bar_right - bar_full)), y, bar_full, h)
+    tr.adjustments[0] = 0.5
+    tr.fill.solid(); tr.fill.fore_color.rgb = NAVY2
+    tr.line.color.rgb = RGBColor(0x3A, 0x47, 0x63); tr.line.width = Pt(0.5); tr.shadow.inherit = False
+    # fill, anchored to the right edge of the track
+    fw = Emu(int(int(bar_full) * val / 50))
+    f = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Emu(int(bar_right - fw)), y, fw, h)
+    f.adjustments[0] = 0.5
+    f.fill.solid(); f.fill.fore_color.rgb = GOLD if is_crps else RGBColor(0x5D, 0x6A, 0x85)
+    f.line.fill.background(); f.shadow.inherit = False
+    # value at the left end
+    txt(s, Inches(0.55), y - (Inches(0.02) if not is_crps else Inches(0.06)), Inches(1.0), Inches(0.8),
+        [[(str(val), {"size": 22 if not is_crps else 30, "bold": True,
+                      "color": GOLD if is_crps else DMUTED})]], align=PP_ALIGN.CENTER)
+txt(s, Inches(1.2), Inches(6.35), Inches(10.93), Inches(0.9), [
+    [("והנקודה שחשוב לזכור: לידה נגמרת אחרי שעות, שבר מחלים אחרי שבועות — ", {"color": DMUTED, "size": 13}),
+     ("הכאב של CRPS נמשך יום אחרי יום, שנה אחרי שנה.", {"color": GOLD, "size": 13, "bold": True})],
+], align=PP_ALIGN.CENTER, spacing=1.2)
 
 # ======================================================= 6 · PAIN INTRO
 s = slide()
