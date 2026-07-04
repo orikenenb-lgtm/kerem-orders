@@ -129,6 +129,25 @@ html,body{background:#e8e4dc;font-family:var(--sans)}
 .stat .num .of{font-size:44px;font-weight:700}
 .stat p{color:var(--dmuted);font-size:15px;line-height:1.55;margin-top:10px;font-weight:300}
 
+/* pain ladder */
+.ladder{max-width:1000px;width:100%;margin:6px auto 0;flex:1;display:flex;
+  flex-direction:column;justify-content:center;gap:20px}
+.lrow{display:flex;align-items:center;gap:18px}
+.llab{flex:0 0 250px;font-size:16.5px;color:var(--dmuted);font-weight:400}
+.lbar{flex:1;height:36px;border-radius:9px;background:#ffffff10;
+  border:1px solid #ffffff14;position:relative;overflow:hidden}
+.fill{position:absolute;top:0;right:0;bottom:0;border-radius:8px;background:#5d6a85}
+.lnum{flex:0 0 64px;font-family:var(--serif);font-weight:900;font-size:26px;
+  color:var(--dmuted);direction:ltr;text-align:left}
+.lrow.crps .llab{color:var(--gold);font-weight:800;font-size:18px}
+.lrow.crps .lbar{height:48px;border-color:#dfa35c66}
+.lrow.crps .fill{background:linear-gradient(90deg,var(--gold),var(--copper));
+  box-shadow:0 0 24px #dfa35c55}
+.lrow.crps .lnum{color:var(--gold);font-size:38px}
+.kicker{text-align:center;font-size:17px;color:var(--dink);font-weight:300;
+  margin-top:16px;line-height:1.6}
+.kicker b{color:var(--gold);font-weight:800}
+
 /* quote */
 .quotepage{align-items:center;justify-content:center}
 .quote-bg{position:absolute;inset:0}
@@ -233,18 +252,30 @@ html,body{background:#e8e4dc;font-family:var(--sans)}
 <section class="page dark "><div class="chap">בשפה של מספרים</div>
 <div class="center-head">
   <div class="eyebrow">בשפה של מספרים</div>
-  <h2 class="h">הכאב שמדורג מעל הכל</h2>
+  <h2 class="h">כמה חזק הכאב הזה?</h2>
+  <p class="sub">מדד הכאב של מקגיל (McGill) מדרג כאבים על סולם של 0–50, לפי דיווחי מטופלים.
+  ככה נראה CRPS לעומת כאבים שכולנו מכירים:</p>
 </div>
-<div class="stats">
-  <div class="stat main"><div class="num">42<span class="of">/50</span></div>
-    <p>במדד הכאב של מקגיל (McGill) — מעל לידה ללא אלחוש, מעל קטיעת אצבע</p></div>
-  <div class="statcol">
-    <div class="stat"><div class="num s">3–4×</div><p>שכיח יותר בנשים — לרוב סביב העשור הרביעי–חמישי לחיים</p></div>
-    <div class="stat"><div class="num s">5–26</div><p>מקרים חדשים ל‑100,000 איש בשנה — מחלה נדירה שקל לפספס</p></div>
-    <div class="stat"><div class="num s">0</div><p>בדיקות מעבדה או הדמיה שמאשרות את האבחנה — היא קלינית בלבד</p></div>
-  </div>
-</div>
-<p class="foot-note">מבוסס על ספרות הכאב המקובלת (IASP, McGill Pain Index) — נתונים להמחשה במסגרת הרצאה אישית.</p>
+<div class="ladder"><div class="lrow ">
+      <div class="llab">שבר בעצם</div>
+      <div class="lbar"><div class="fill" style="width:34%"></div></div>
+      <div class="lnum">17</div>
+    </div><div class="lrow ">
+      <div class="llab">לידה טבעית (ללא אלחוש)</div>
+      <div class="lbar"><div class="fill" style="width:70%"></div></div>
+      <div class="lnum">35</div>
+    </div><div class="lrow ">
+      <div class="llab">קטיעת אצבע ללא הרדמה</div>
+      <div class="lbar"><div class="fill" style="width:80%"></div></div>
+      <div class="lnum">40</div>
+    </div><div class="lrow crps">
+      <div class="llab">CRPS — הכאב שאני חיה איתו</div>
+      <div class="lbar"><div class="fill" style="width:84%"></div></div>
+      <div class="lnum">42</div>
+    </div></div>
+<p class="kicker">והנקודה שחשוב לזכור: לידה נגמרת אחרי שעות, שבר מחלים אחרי שבועות —
+<b>הכאב של CRPS נמשך יום אחרי יום, שנה אחרי שנה.</b></p>
+<p class="foot-note">ערכים מקורבים מתוך McGill Pain Index — להמחשה במסגרת הרצאה אישית.</p>
 <div class="folio"><span dir="ltr">05 / 25</span><span class="ft">CRPS · הילית פז לביא · מסע אישי</span></div></section>
 <section class="page light "><div class="chap">המסע שלי</div>
 <div class="split">
