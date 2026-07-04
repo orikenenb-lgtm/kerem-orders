@@ -57,6 +57,18 @@ export default function CatalogPage() {
   const [placed, setPlaced] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
+  const [minOrder, setMinOrder] = useState(0);
+
+  // minimum-order threshold, set by the manager in site_settings
+  useEffect(() => {
+    if (!session) return;
+    supabase
+      .from("site_settings")
+      .select("value")
+      .eq("key", "min_order_total")
+      .maybeSingle()
+      .then(({ data }) => setMinOrder(Number(data?.value) || 0));
+  }, [session]);
 
   useEffect(() => {
     if (!loading && !session) router.replace("/login");
@@ -279,12 +291,17 @@ export default function CatalogPage() {
                 const img = rivhitImg(p.picture_link);
                 return (
                   <div key={p.id} style={{ border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: 16, padding: "0.9rem", background: "#fff", boxShadow: "0 8px 24px rgba(26,23,48,0.05)", display: "flex", flexDirection: "column", gap: "0.45rem" }}>
-                    <div style={{ height: 150, borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "2.6rem" }}>
+                    <div style={{ position: "relative", height: 150, borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "2.6rem" }}>
                       {img ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={img} alt={p.name} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                       ) : (
                         <span>🧸</span>
+                      )}
+                      {p.stock_quantity <= 0 && (
+                        <span style={{ position: "absolute", top: 6, insetInlineStart: 6, fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#FF8A00", padding: "0.2rem 0.6rem", borderRadius: 999 }}>
+                          אזל מהמלאי
+                        </span>
                       )}
                     </div>
                     <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em" }}>{p.name}</h3>
@@ -383,9 +400,20 @@ export default function CatalogPage() {
                   <textarea placeholder="הערה להזמנה (לא חובה)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} style={{ ...miniInp, resize: "vertical" }} />
                 </div>
                 {error && <div role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.88rem", marginBottom: "0.8rem" }}>{error}</div>}
-                <button onClick={placeOrder} disabled={submitting} style={{ ...solidBtn, width: "100%", padding: "0.95rem" }}>
-                  {submitting ? "שולח…" : "שליחת הזמנה למנהל"}
-                </button>
+                {minOrder > 0 && cartTotal < minOrder ? (
+                  <>
+                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: "#C0143C", background: "rgba(255,138,0,0.1)", border: "1px solid rgba(255,138,0,0.35)", borderRadius: 12, padding: "0.7rem 0.9rem", marginBottom: "0.8rem", textAlign: "center" }}>
+                      מינימום הזמנה: {ils(minOrder)} · חסרים עוד {ils(minOrder - cartTotal)}
+                    </div>
+                    <button disabled style={{ ...solidBtn, width: "100%", padding: "0.95rem", opacity: 0.5, cursor: "default" }}>
+                      שליחת הזמנה למנהל
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={placeOrder} disabled={submitting} style={{ ...solidBtn, width: "100%", padding: "0.95rem" }}>
+                    {submitting ? "שולח…" : "שליחת הזמנה למנהל"}
+                  </button>
+                )}
               </>
             )}
           </div>
