@@ -133,6 +133,19 @@ def grid(s, paths, x, y, w, h, cols, gap=Inches(0.12), max_px=640):
         pic(s, p_, int(cx), int(cy), int(cw), int(ch), max_px=max_px)
 
 
+def make3d(shape, depth):
+    """Give a shape a real Office 3D extrusion (oblique top-left camera)."""
+    from lxml import etree
+    A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    spPr = shape._element.spPr
+    sc = etree.SubElement(spPr, A + "scene3d")
+    cam = etree.SubElement(sc, A + "camera"); cam.set("prst", "obliqueTopLeft")
+    lr = etree.SubElement(sc, A + "lightRig"); lr.set("rig", "threePt"); lr.set("dir", "t")
+    sp = etree.SubElement(spPr, A + "sp3d")
+    sp.set("extrusionH", str(depth)); sp.set("prstMaterial", "matte")
+    bv = etree.SubElement(sp, A + "bevelT"); bv.set("w", "38100"); bv.set("h", "19050")
+
+
 def card(s, x, y, w, h, title, body, dark=False):
     sh = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, y, w, h)
     sh.adjustments[0] = 0.07
@@ -141,6 +154,7 @@ def card(s, x, y, w, h, title, body, dark=False):
     sh.line.color.rgb = GOLD if dark else CARD_LINE
     sh.line.width = Pt(0.75)
     sh.shadow.inherit = False
+    make3d(sh, 90000)
     tf = sh.text_frame
     tf.word_wrap = True
     tf.margin_left = tf.margin_right = Inches(0.16)
@@ -274,19 +288,6 @@ LADDER = [
     ("קטיעת אצבע ללא הרדמה", 40, False),
     ("CRPS — הכאב שאני חיה איתו", 42, True),
 ]
-def make3d(shape, depth):
-    """Give a shape a real Office 3D extrusion (oblique top-left camera)."""
-    from lxml import etree
-    A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
-    spPr = shape._element.spPr
-    sc = etree.SubElement(spPr, A + "scene3d")
-    cam = etree.SubElement(sc, A + "camera"); cam.set("prst", "obliqueTopLeft")
-    lr = etree.SubElement(sc, A + "lightRig"); lr.set("rig", "threePt"); lr.set("dir", "t")
-    sp = etree.SubElement(spPr, A + "sp3d")
-    sp.set("extrusionH", str(depth)); sp.set("prstMaterial", "matte")
-    bv = etree.SubElement(sp, A + "bevelT"); bv.set("w", "38100"); bv.set("h", "19050")
-
-
 bar_right = Inches(9.3)          # bars grow right-to-left from here
 bar_full = Inches(7.4)
 for i, (lab, val, is_crps) in enumerate(LADDER):
@@ -508,6 +509,7 @@ for i, (t, b) in enumerate(asks):
     r.adjustments[0] = 0.16
     r.fill.solid(); r.fill.fore_color.rgb = NAVY2
     r.line.color.rgb = RGBColor(0x3A, 0x47, 0x63); r.line.width = Pt(0.75); r.shadow.inherit = False
+    make3d(r, 90000)
     txt(s, Inches(10.6), y + Inches(0.12), Inches(1.0), Inches(0.7),
         [[(str(i + 1), {"size": 26, "bold": True, "color": GOLD})]], align=PP_ALIGN.CENTER)
     txt(s, Inches(1.8), y + Inches(0.17), Inches(8.7), Inches(0.6),
