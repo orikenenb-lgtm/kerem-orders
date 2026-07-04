@@ -288,6 +288,19 @@ LADDER = [
     ("קטיעת אצבע ללא הרדמה", 40, False),
     ("CRPS — הכאב שאני חיה איתו", 42, True),
 ]
+def make3d(shape, depth):
+    """Give a shape a real Office 3D extrusion (oblique top-left camera)."""
+    from lxml import etree
+    A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    spPr = shape._element.spPr
+    sc = etree.SubElement(spPr, A + "scene3d")
+    cam = etree.SubElement(sc, A + "camera"); cam.set("prst", "obliqueTopLeft")
+    lr = etree.SubElement(sc, A + "lightRig"); lr.set("rig", "threePt"); lr.set("dir", "t")
+    sp = etree.SubElement(spPr, A + "sp3d")
+    sp.set("extrusionH", str(depth)); sp.set("prstMaterial", "matte")
+    bv = etree.SubElement(sp, A + "bevelT"); bv.set("w", "38100"); bv.set("h", "19050")
+
+
 bar_right = Inches(9.3)          # bars grow right-to-left from here
 bar_full = Inches(7.4)
 for i, (lab, val, is_crps) in enumerate(LADDER):
