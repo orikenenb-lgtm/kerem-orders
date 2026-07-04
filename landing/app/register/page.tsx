@@ -14,6 +14,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState({
     business_name: "",
     full_name: "",
+    vat_number: "",
     phone: "",
     email: "",
     password: "",
@@ -141,6 +142,7 @@ export default function RegisterPage() {
           <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
             <Field label="שם העסק / החנות" value={form.business_name} onChange={set("business_name")} required />
             <Field label="שם איש קשר" value={form.full_name} onChange={set("full_name")} required />
+            <Field label="עוסק מורשה / ח.פ" value={form.vat_number} onChange={set("vat_number")} inputMode="numeric" required />
             <Field label="טלפון" value={form.phone} onChange={set("phone")} type="tel" inputMode="tel" />
             <p style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, marginTop: "-0.4rem" }}>
               💡 כבר לקוחות של כרם טויס? הזינו את הטלפון המעודכן אצלנו — והמערכת תזהה אתכם אוטומטית.
