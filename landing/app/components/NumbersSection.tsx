@@ -5,16 +5,17 @@ import { useRef } from "react";
 
 const ACCENT = "#8A3FFC";
 
-// PLACEHOLDER NUMBERS — labels stay, the user will swap real values.
+// Real figures from the live Rivhit data (products/customers) — the remaining
+// rows are business facts the owner can refine anytime.
 const ROWS: [string, string][] = [
-  ["שנות פעילות", "15+"],
-  ["מותגים בקטלוג", "40+"],
-  ["פריטים במלאי", "5,000+"],
-  ["חנויות לקוחות", "600+"],
+  ["פריטים בקטלוג", "7,000+"],
+  ["חנויות לקוחות", "500+"],
+  ["קטגוריות", "25+"],
+  ["מלאי חי", "מסונכרן מרווחית"],
   ["זמן אספקה ממוצע", "24–48 שעות"],
   ["כיסוי הפצה", "כל הארץ"],
-  ["מינימום הזמנה", "גמיש"],
-  ["תנאי תשלום", "שוטף +30"],
+  ["מינימום הזמנה", "₪500"],
+  ["הזמנה אונליין", "24/7"],
 ];
 
 export default function NumbersSection() {

@@ -17,10 +17,22 @@ const assistant = Assistant({
   display: "swap",
 });
 
+const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
 export const metadata: Metadata = {
   title: "כרם טויס — יבוא ושיווק צעצועים",
   description:
     "אלפי צעצועים צבעוניים, מותגים מובילים ומחירי סיטונאות — הכול במקום אחד.",
+  manifest: `${base}/manifest.json`,
+  icons: {
+    icon: `${base}/icons/icon-192.png`,
+    apple: `${base}/icons/apple-touch-icon.png`,
+  },
+  appleWebApp: {
+    capable: true,
+    title: "כרם טויס",
+    statusBarStyle: "default",
+  },
 };
 
 export default function RootLayout({
