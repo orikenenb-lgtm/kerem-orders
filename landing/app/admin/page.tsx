@@ -144,6 +144,16 @@ function OrdersTab() {
       }
       const docId = (data as { doc_id?: number })?.doc_id ?? null;
       setOrders((os) => os.map((o) => (o.id === id ? { ...o, rivhit_doc_id: docId } : o)));
+      // Pick up the persisted doc link too, so "צפה במסמך" appears immediately
+      // without a manual refresh. Surgical single-row fetch — no list flash.
+      const { data: row } = await supabase
+        .from("orders")
+        .select("rivhit_doc_id,rivhit_doc_link,rivhit_error")
+        .eq("id", id)
+        .maybeSingle();
+      // Defensive merge: never let a stale/partial row regress the doc_id we
+      // just got from the push response (that would re-expose the push button).
+      if (row) setOrders((os) => os.map((o) => (o.id === id ? { ...o, ...row, rivhit_doc_id: row.rivhit_doc_id ?? docId } : o)));
     } catch {
       setErr("השליחה לרווחית נכשלה — בעיית רשת.");
     } finally {
@@ -262,9 +272,11 @@ type SyncRun = { id: string; status: string; summary: any; error: string | null;
 
 function CatalogImg({ link, name }: { link: string; name: string }) {
   const img = rivhitImg(link);
-  if (!img) return <span>🧸</span>;
+  const [err, setErr] = useState(false);
+  useEffect(() => { setErr(false); }, [img]);
+  if (!img || err) return <span>🧸</span>;
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={img} alt={name} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "contain" }} />;
+  return <img src={img} alt={name} loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />;
 }
 
 function ProductsTab() {
@@ -275,6 +287,9 @@ function ProductsTab() {
   const [syncing, setSyncing] = useState(false);
   const [runs, setRuns] = useState<SyncRun[]>([]);
   const [msg, setMsg] = useState("");
+  // Load errors get their own state (separate from sync messages) so a stale
+  // "load failed" never lingers after a later successful load — and vice versa.
+  const [loadErr, setLoadErr] = useState("");
 
   const loadRuns = useCallback(async () => {
     const { data } = await supabase.from("rivhit_sync_runs").select("*").order("created_at", { ascending: false }).limit(5);
@@ -286,7 +301,14 @@ function ProductsTab() {
     const s = query.trim().replace(/[,()%]/g, " ").trim();
     let q = supabase.from("products").select("id,name,price,sku,picture_link,stock_quantity", { count: "exact" }).eq("is_active", true);
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
-    const { data, count } = await q.order("name").range(0, 49);
+    const { data, count, error } = await q.order("name").range(0, 49);
+    if (error) {
+      // Don't render a fake "0 מוצרים" on a failed fetch — keep what we have.
+      setLoadErr("טעינת הקטלוג נכשלה, נסו שוב.");
+      setBusy(false);
+      return;
+    }
+    setLoadErr("");
     setItems(data ?? []); setCount(count ?? 0); setBusy(false);
   }, [query]);
 
@@ -299,15 +321,22 @@ function ProductsTab() {
       const { data, error } = await supabase.functions.invoke("rivhit-sync", { body: { mode: "sync", what: "both" } });
       if (error) throw error;
       const runId = (data as any)?.run_id;
+      let finished = false;
       for (let i = 0; i < 40 && runId; i++) {
         await new Promise((r) => setTimeout(r, 3000));
         const { data: row } = await supabase.from("rivhit_sync_runs").select("status,summary,error").eq("id", runId).maybeSingle();
         if (row && row.status !== "running") {
+          finished = true;
           setMsg(row.status === "done"
             ? `הסנכרון הושלם: ${row.summary?.products?.synced ?? 0} מוצרים, ${row.summary?.customers?.synced ?? 0} לקוחות.`
             : `שגיאה: ${row.error}`);
           break;
         }
+      }
+      if (runId && !finished) {
+        // Polling window elapsed while the sync is still running — say so
+        // instead of silently re-enabling the button with no result.
+        setMsg("הסנכרון עדיין רץ ברקע — רעננו את הרשימה בעוד רגע כדי לראות את התוצאה.");
       }
       await load(); await loadRuns();
     } catch (e: any) {
@@ -327,6 +356,7 @@ function ProductsTab() {
         <button onClick={runSync} disabled={syncing} style={solidBtnA(syncing)}>{syncing ? "מסנכרן…" : "סנכרן מרווחית ↻"}</button>
       </div>
       {msg && <p style={{ fontFamily: tokens.assistant, color: tokens.body, fontSize: "0.9rem", marginBottom: "1rem" }}>{msg}</p>}
+      {loadErr && <p style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.9rem", marginBottom: "1rem" }}>{loadErr}</p>}
 
       {runs.length > 0 && (
         <div style={{ marginBottom: "1.25rem" }}>
@@ -389,15 +419,23 @@ function CustomersTab() {
   const [busy, setBusy] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
+  const [loadErr, setLoadErr] = useState("");
 
   const load = useCallback(async () => {
     setBusy(true);
-    const [{ data: ps }, { data: cs }] = await Promise.all([
+    const [ps, cs] = await Promise.all([
       supabase.from("profiles").select("id,email,full_name,business_name,phone,role,rivhit_customer_id").order("created_at", { ascending: false }),
       supabase.from("customers").select("rivhit_id,name,city,phone,email").eq("is_active", true).order("name"),
     ]);
-    setProfiles((ps as SiteProfile[]) ?? []);
-    setRivhit((cs as RivhitCustomer[]) ?? []);
+    if (ps.error || cs.error) {
+      // A failed fetch is not "0 לקוחות" — surface it and keep existing data.
+      setLoadErr("טעינת הלקוחות נכשלה, נסו שוב.");
+      setBusy(false);
+      return;
+    }
+    setLoadErr("");
+    setProfiles((ps.data as SiteProfile[]) ?? []);
+    setRivhit((cs.data as RivhitCustomer[]) ?? []);
     setBusy(false);
   }, []);
 
@@ -436,6 +474,14 @@ function CustomersTab() {
         </p>
       </div>
       {msg && <p style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.9rem", marginBottom: "1rem" }}>{msg}</p>}
+      {loadErr && (
+        <p style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.9rem", marginBottom: "1rem" }}>
+          {loadErr}{" "}
+          <button onClick={load} style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.accent, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
+            נסו שוב
+          </button>
+        </p>
+      )}
 
       <div style={{ display: "grid", gap: "0.8rem" }}>
         {profiles.map((p) => {
@@ -482,8 +528,12 @@ function LinkPicker({ rivhit, suggestion, saving, onPick }: {
 }) {
   const [q, setQ] = useState("");
   const needle = q.trim().toLowerCase();
+  // Only match by phone when the query actually contains digits — otherwise
+  // includes("") is true for every customer and a name search shows arbitrary
+  // results (risking linking the account to the WRONG Rivhit card).
+  const nd = digits(needle);
   const matches = needle
-    ? rivhit.filter((c) => c.name.toLowerCase().includes(needle) || digits(c.phone).includes(digits(needle))).slice(0, 6)
+    ? rivhit.filter((c) => c.name.toLowerCase().includes(needle) || (nd !== "" && digits(c.phone).includes(nd))).slice(0, 6)
     : [];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", minWidth: 240 }}>

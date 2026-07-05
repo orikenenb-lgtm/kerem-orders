@@ -52,12 +52,31 @@ export default function RegisterPage() {
     const base =
       process.env.NEXT_PUBLIC_SUPABASE_URL ||
       "https://mcdchalyzeqjkkgfeznd.supabase.co";
+    // The functions gateway requires the (public) anon key — same one the SDK
+    // sends. Without it the fallback would always be rejected with a 401.
+    const anonKey =
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      "sb_publishable_ie1SyncNyRabOTCWTxt8pw_AsESY6F9";
     const res = await fetch(`${base}/functions/v1/signup`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
       body: JSON.stringify(form),
     });
-    return await res.json();
+    let body: { ok?: boolean; error?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      /* non-JSON response */
+    }
+    // Never treat a failed HTTP response without an explicit error as success.
+    if (!res.ok && !body?.error) {
+      return { error: "ההרשמה נכשלה. נסו שוב בעוד רגע." };
+    }
+    return body;
   };
 
   const onSubmit = async (e: React.FormEvent) => {

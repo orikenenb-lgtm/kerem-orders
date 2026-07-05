@@ -59,13 +59,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       return;
     }
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", uid)
       .maybeSingle();
     if (data) {
       setProfile(data as Profile);
+      return;
+    }
+    if (error) {
+      // Transient READ failure (network blip / timeout) — NOT a missing row.
+      // Keep whatever profile we already have and bail: rebuilding one here
+      // would hardcode role:"customer" and demote a manager mid-session.
       return;
     }
     // Self-heal: the user exists but has no profile row (e.g. an old account or
