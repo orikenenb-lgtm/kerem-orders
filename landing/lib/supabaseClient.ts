@@ -24,6 +24,8 @@ export type Profile = {
   business_name: string;
   phone: string;
   role: "customer" | "manager";
+  // Optional: the column may not exist in the DB yet; missing/null means 0.
+  discount_percent?: number | null;
 };
 
 export type Product = {
