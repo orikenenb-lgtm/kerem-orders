@@ -24,6 +24,7 @@ export default function AccountPage() {
   const { session, profile, loading } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [busy, setBusy] = useState(true);
+  const [err, setErr] = useState(false);
 
   useEffect(() => {
     if (!loading && !session) router.replace("/login");
@@ -31,10 +32,18 @@ export default function AccountPage() {
 
   const load = useCallback(async () => {
     setBusy(true);
-    const { data } = await supabase
+    setErr(false);
+    const { data, error } = await supabase
       .from("orders")
       .select("*, order_items(*)")
       .order("created_at", { ascending: false });
+    if (error) {
+      // A fetch failure is NOT an empty history — show an error + retry
+      // instead of "עוד לא ביצעתם הזמנות".
+      setErr(true);
+      setBusy(false);
+      return;
+    }
     setOrders((data as Order[]) ?? []);
     setBusy(false);
   }, []);
@@ -56,6 +65,13 @@ export default function AccountPage() {
 
         {busy ? (
           <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>טוען…</p>
+        ) : err ? (
+          <div style={{ textAlign: "center", padding: "3rem 1rem", border: `1px dashed ${tokens.border}`, borderRadius: 18 }}>
+            <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "1rem" }}>טעינת ההזמנות נכשלה. בדקו את החיבור ונסו שוב.</p>
+            <button onClick={load} style={{ fontFamily: tokens.rubik, fontWeight: 700, color: "#fff", background: tokens.rainbow, padding: "0.7rem 1.5rem", borderRadius: 999, border: "none", cursor: "pointer" }}>
+              נסו שוב
+            </button>
+          </div>
         ) : orders.length === 0 ? (
           <div style={{ textAlign: "center", padding: "3rem 1rem", border: `1px dashed ${tokens.border}`, borderRadius: 18 }}>
             <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginBottom: "1rem" }}>עוד לא ביצעתם הזמנות.</p>

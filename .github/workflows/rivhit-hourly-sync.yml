@@ -1,0 +1,58 @@
+name: Hourly Rivhit sync
+
+# Keeps the catalog and customer list fresh by invoking the rivhit-sync Edge
+# Function once an hour, so the store is always up to date without anyone having
+# to press "סנכרן" in the admin screen.
+#
+# Rivhit is READ ONLY here — the sync pulls items/customers from Rivhit into
+# Supabase; nothing is ever written back to Rivhit.
+#
+# One-time setup (GitHub → repo Settings → Secrets and variables → Actions):
+#   SUPABASE_URL               = https://mcdchalyzeqjkkgfeznd.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY  = <Service role key from Supabase → Settings → API>
+# The rivhit-sync function must accept a service-role call (server-to-server).
+#
+# Scheduled workflows only run from the repository's default branch, so this is
+# inert until it is merged to main.
+
+on:
+  schedule:
+    - cron: "17 * * * *"   # every hour at :17 (deliberately off the :00 rush)
+  workflow_dispatch: {}     # also allow a manual run from the Actions tab
+
+# The job only calls Supabase over HTTPS — it needs no GitHub token permissions.
+permissions: {}
+
+concurrency:
+  group: rivhit-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Invoke rivhit-sync Edge Function
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            # Soft skip (green) until the secrets are configured, so merging this
+            # file never floods the repo with hourly red runs beforehand.
+            echo "::warning::SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY secrets not configured yet — skipping sync."
+            exit 0
+          fi
+          code=$(curl -sS -o response.json -w "%{http_code}" \
+            -X POST "${SUPABASE_URL%/}/functions/v1/rivhit-sync" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json" \
+            --data '{"mode":"sync","what":"both"}' \
+            --max-time 300)
+          echo "HTTP $code"
+          cat response.json 2>/dev/null || true
+          echo
+          case "$code" in
+            2*) echo "Rivhit sync triggered successfully." ;;
+            *)  echo "::error::Rivhit sync failed (HTTP $code)."; exit 1 ;;
+          esac

@@ -46,6 +46,7 @@ export default function CatalogPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [loadErr, setLoadErr] = useState(false);
   const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
   const [activeCat, setActiveCat] = useState("all");
 
@@ -109,8 +110,10 @@ export default function CatalogPage() {
   // reset to first page when switching category
   useEffect(() => { setPage(0); }, [activeCat]);
 
+  const loadSeq = useRef(0);
   const loadProducts = useCallback(async () => {
     if (!session) return;
+    const seq = ++loadSeq.current;
     setLoadingProducts(true);
     const s = query.trim().replace(/[,()%]/g, " ").trim();
     let q = supabase
@@ -119,9 +122,19 @@ export default function CatalogPage() {
       .eq("is_active", true);
     if (activeCat !== "all") q = q.eq("category", activeCat);
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
-    const { data, count } = await q
+    const { data, count, error: qErr } = await q
       .order("name", { ascending: true })
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+    // A newer request superseded this one (fast typing / category hopping) —
+    // drop the stale result so the grid never shows the wrong page.
+    if (seq !== loadSeq.current) return;
+    if (qErr) {
+      // A failed fetch is not "לא נמצאו מוצרים" — keep what's shown and offer a retry.
+      setLoadErr(true);
+      setLoadingProducts(false);
+      return;
+    }
+    setLoadErr(false);
     setProducts((data as Product[]) ?? []);
     setTotal(count ?? 0);
     setLoadingProducts(false);
@@ -157,10 +170,62 @@ export default function CatalogPage() {
   }, [categories]);
 
   const placeOrder = async () => {
-    if (!session || lines.length === 0) return;
+    if (!session || lines.length === 0 || submitting) return;
     setSubmitting(true);
     setError("");
     try {
+      // Reconcile the cart against the DB (the single source of truth) before
+      // ordering: drop sold-out items and refresh changed prices IN THE CART.
+      // If anything changed, update the cart and ask the customer to review and
+      // confirm again — so an order is never placed on a stale/tampered price or
+      // on an unavailable item, and the total shown always matches what is sent.
+      const ids = lines.map((l) => l.id);
+      // Fetch in chunks of 100 so even a huge cart never builds a query string
+      // longer than the gateway allows.
+      const byId = new Map<string, { id: string; name: string; price: number; is_active: boolean }>();
+      for (let i = 0; i < ids.length; i += 100) {
+        const { data: fresh, error: pErr } = await supabase
+          .from("products")
+          .select("id,name,price,is_active")
+          .in("id", ids.slice(i, i + 100));
+        if (pErr) throw pErr;
+        for (const p of (fresh ?? []) as { id: string; name: string; price: number; is_active: boolean }[]) {
+          byId.set(p.id, p);
+        }
+      }
+      const removed: string[] = [];
+      let priceChanged = false;
+      const reconciled: Cart = {};
+      for (const l of lines) {
+        const p = byId.get(l.id);
+        if (!p || p.is_active === false) { removed.push(l.name); continue; }
+        const freshPrice = Number(p.price) || 0;
+        if (Math.abs(freshPrice - (Number(l.price) || 0)) > 0.001) priceChanged = true;
+        reconciled[l.id] = { qty: l.qty, name: p.name ?? l.name, price: freshPrice, sku: l.sku, picture_link: l.picture_link };
+      }
+      if (removed.length > 0 || priceChanged) {
+        setCart(reconciled);
+        setError(
+          removed.length > 0
+            ? `חלק מהמוצרים אזלו והוסרו מהעגלה: ${removed.join(", ")}. בדקו את העגלה ואשרו שוב.`
+            : "המחירים התעדכנו מאז שהוספתם לעגלה. בדקו את הסכום ואשרו שוב."
+        );
+        setSubmitting(false);
+        return;
+      }
+      const validLines = Object.entries(reconciled).map(([id, v]) => ({ id, ...v }));
+      if (validLines.length === 0) {
+        setError("העגלה ריקה.");
+        setSubmitting(false);
+        return;
+      }
+      const freshTotal = validLines.reduce((s, l) => s + l.price * l.qty, 0);
+      if (minOrder > 0 && freshTotal < minOrder) {
+        setError(`מינימום הזמנה: ${ils(minOrder)}. עדכנו את העגלה ונסו שוב.`);
+        setSubmitting(false);
+        return;
+      }
+
       // Identity is guaranteed: email always comes from the session, and
       // name/business fall back to the signup metadata if the profile is empty.
       const meta = (session.user.user_metadata ?? {}) as Record<string, string>;
@@ -168,7 +233,7 @@ export default function CatalogPage() {
         .from("orders")
         .insert({
           user_id: session.user.id,
-          total: cartTotal,
+          total: freshTotal,
           note,
           contact_name: contactName || profile?.full_name || meta.full_name || "",
           contact_phone: contactPhone || profile?.phone || meta.phone || "",
@@ -179,7 +244,7 @@ export default function CatalogPage() {
         .select("id")
         .single();
       if (oErr || !order) throw oErr ?? new Error("order failed");
-      const items = lines.map((l) => ({
+      const items = validLines.map((l) => ({
         order_id: order.id,
         product_id: l.id,
         product_sku: l.sku ?? "",
@@ -188,7 +253,13 @@ export default function CatalogPage() {
         quantity: l.qty,
       }));
       const { error: iErr } = await supabase.from("order_items").insert(items);
-      if (iErr) throw iErr;
+      if (iErr) {
+        // The order row was created but its lines failed — roll it back so no
+        // empty "orphan" order is left behind. Best-effort: if RLS forbids the
+        // delete it simply stays, exactly as it would have before this guard.
+        try { await supabase.from("orders").delete().eq("id", order.id); } catch { /* ignore */ }
+        throw iErr;
+      }
       // Auto-push the order into Rivhit as an "הזמנה" document (only if this
       // account is linked to a Rivhit customer). Fire-and-forget: the order is
       // safely stored either way, and the manager can push it manually later.
@@ -280,6 +351,11 @@ export default function CatalogPage() {
 
         {loadingProducts ? (
           <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>
+        ) : loadErr ? (
+          <div style={{ textAlign: "center", marginTop: "2rem" }}>
+            <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת הקטלוג נכשלה. בדקו את החיבור ונסו שוב.</p>
+            <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
+          </div>
         ) : products.length === 0 ? (
           <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>לא נמצאו מוצרים{query ? ` עבור “${query}”` : ""}.</p>
         ) : (
@@ -292,12 +368,7 @@ export default function CatalogPage() {
                 return (
                   <div key={p.id} style={{ border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: 16, padding: "0.9rem", background: "#fff", boxShadow: "0 8px 24px rgba(26,23,48,0.05)", display: "flex", flexDirection: "column", gap: "0.45rem" }}>
                     <div style={{ position: "relative", height: 150, borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "2.6rem" }}>
-                      {img ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={img} alt={p.name} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                      ) : (
-                        <span>🧸</span>
-                      )}
+                      <ProductImg src={img} alt={p.name} />
                       {p.stock_quantity <= 0 && (
                         <span style={{ position: "absolute", top: 6, insetInlineStart: 6, fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#FF8A00", padding: "0.2rem 0.6rem", borderRadius: 999 }}>
                           אזל מהמלאי
@@ -363,6 +434,10 @@ export default function CatalogPage() {
               <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.4rem", color: tokens.text }}>העגלה ({itemCount})</h2>
               <button onClick={() => setCartOpen(false)} style={{ background: "none", border: "none", fontSize: "1.6rem", cursor: "pointer", color: tokens.dim }}>×</button>
             </div>
+            {/* The error banner lives OUTSIDE the empty/non-empty branch, so the
+                "items sold out and were removed" explanation is still visible
+                even when the reconcile emptied the whole cart. */}
+            {error && <div role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.88rem", marginBottom: "0.8rem" }}>{error}</div>}
             {lines.length === 0 ? (
               <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>העגלה ריקה.</p>
             ) : (
@@ -373,10 +448,7 @@ export default function CatalogPage() {
                     return (
                       <div key={l.id} style={{ display: "flex", gap: "0.6rem", alignItems: "center", borderBottom: `1px solid ${tokens.border}`, paddingBottom: "0.6rem" }}>
                         <div style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>
-                          {img ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={img} alt={l.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                          ) : (<span>🧸</span>)}
+                          <ProductImg src={img} alt={l.name} />
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.88rem", color: tokens.text }}>{l.name}</div>
@@ -384,7 +456,7 @@ export default function CatalogPage() {
                         </div>
                         <Stepper qty={l.qty} accent={tokens.accent} compact onChange={(n) => setCart((c) => {
                           const next = { ...c };
-                          if (n <= 0) delete next[l.id]; else next[l.id] = { ...c[l.id], qty: n };
+                          if (n <= 0) delete next[l.id]; else next[l.id] = { ...c[l.id], qty: Math.min(n, 9999) };
                           return next;
                         })} />
                       </div>
@@ -399,7 +471,6 @@ export default function CatalogPage() {
                   <input placeholder="טלפון" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} style={miniInp} inputMode="tel" />
                   <textarea placeholder="הערה להזמנה (לא חובה)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} style={{ ...miniInp, resize: "vertical" }} />
                 </div>
-                {error && <div role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.88rem", marginBottom: "0.8rem" }}>{error}</div>}
                 {minOrder > 0 && cartTotal < minOrder ? (
                   <>
                     <div style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: "#C0143C", background: "rgba(255,138,0,0.1)", border: "1px solid rgba(255,138,0,0.35)", borderRadius: 12, padding: "0.7rem 0.9rem", marginBottom: "0.8rem", textAlign: "center" }}>
@@ -420,6 +491,18 @@ export default function CatalogPage() {
         </div>
       )}
     </>
+  );
+}
+
+// Product image with a graceful fallback: if the (proxied) image fails to load,
+// show the toy emoji instead of a broken-image icon.
+function ProductImg({ src, alt }: { src: string | null; alt: string }) {
+  const [err, setErr] = useState(false);
+  useEffect(() => { setErr(false); }, [src]);
+  if (!src || err) return <span>🧸</span>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
   );
 }
 
