@@ -6,7 +6,7 @@ import SiteHeader from "../components/SiteHeader";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
 import { rivhitImg } from "../../lib/images";
-import { tokens, ils } from "../../lib/ui";
+import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
 
 type Product = {
   id: string;
@@ -38,7 +38,7 @@ function cartonSize(name: string): number | null {
 
 export default function CatalogPage() {
   const router = useRouter();
-  const { session, profile, loading } = useAuth();
+  const { session, profile, loading, refreshProfile } = useAuth();
 
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
@@ -59,16 +59,26 @@ export default function CatalogPage() {
   const [error, setError] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
   const [minOrder, setMinOrder] = useState(0);
+  const [vatLabel, setVatLabel] = useState(true);
 
-  // minimum-order threshold, set by the manager in site_settings
+  // The customer's fixed discount (0 when none / column not present yet).
+  // ONE derived value drives display, cart storage and checkout reconcile.
+  const discount = discountPct(profile?.discount_percent);
+
+  // site settings: minimum-order threshold + whether to show the VAT label
+  // (prices_include_vat defaults to on; set the row to 'false' to hide).
   useEffect(() => {
     if (!session) return;
     supabase
       .from("site_settings")
-      .select("value")
-      .eq("key", "min_order_total")
-      .maybeSingle()
-      .then(({ data }) => setMinOrder(Number(data?.value) || 0));
+      .select("key,value")
+      .in("key", ["min_order_total", "prices_include_vat"])
+      .then(({ data }) => {
+        const rows = (data ?? []) as { key: string; value: string }[];
+        setMinOrder(Number(rows.find((r) => r.key === "min_order_total")?.value) || 0);
+        const vat = rows.find((r) => r.key === "prices_include_vat")?.value;
+        setVatLabel(vat === undefined || vat === "true" || vat === "1");
+      });
   }, [session]);
 
   useEffect(() => {
@@ -146,7 +156,9 @@ export default function CatalogPage() {
     setCart((c) => {
       const next = { ...c };
       if (qty <= 0) delete next[p.id];
-      else next[p.id] = { qty: Math.min(qty, 9999), name: p.name, price: p.price, sku: p.sku, picture_link: p.picture_link };
+      // The cart stores the price the customer actually pays — after their
+      // fixed discount. applyDiscount(x, 0) === x, so no discount → unchanged.
+      else next[p.id] = { qty: Math.min(qty, 9999), name: p.name, price: applyDiscount(p.price, discount), sku: p.sku, picture_link: p.picture_link };
       return next;
     });
 
@@ -174,6 +186,20 @@ export default function CatalogPage() {
     setSubmitting(true);
     setError("");
     try {
+      // Use the freshest discount straight from the DB for THIS order — a
+      // discount granted or changed mid-session must not be missed. On any
+      // failure we keep the session value (fail-safe: worst case is the
+      // discount the customer already sees).
+      let d = discount;
+      try {
+        const { data: prow } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", session.user.id)
+          .maybeSingle();
+        if (prow) d = discountPct((prow as { discount_percent?: number | null }).discount_percent);
+      } catch { /* keep session value */ }
+      if (d !== discount) refreshProfile().catch(() => {});
       // Reconcile the cart against the DB (the single source of truth) before
       // ordering: drop sold-out items and refresh changed prices IN THE CART.
       // If anything changed, update the cart and ask the customer to review and
@@ -199,7 +225,11 @@ export default function CatalogPage() {
       for (const l of lines) {
         const p = byId.get(l.id);
         if (!p || p.is_active === false) { removed.push(l.name); continue; }
-        const freshPrice = Number(p.price) || 0;
+        // CRITICAL: apply the SAME customer discount here as at add-to-cart
+        // time (applyDiscount is shared), otherwise every discounted
+        // customer's checkout would flag a false "price changed" and rewrite
+        // the cart back to full price — silently erasing the discount.
+        const freshPrice = applyDiscount(Number(p.price) || 0, d);
         if (Math.abs(freshPrice - (Number(l.price) || 0)) > 0.001) priceChanged = true;
         reconciled[l.id] = { qty: l.qty, name: p.name ?? l.name, price: freshPrice, sku: l.sku, picture_link: l.picture_link };
       }
@@ -315,8 +345,13 @@ export default function CatalogPage() {
           הקטלוג הסיטונאי
         </h1>
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.3rem" }}>
-          {total.toLocaleString("he-IL")} מוצרים · מסונכרן מרווחית
+          {total.toLocaleString("he-IL")} מוצרים · מסונכרן מרווחית{vatLabel ? " · המחירים כוללים מע״מ" : ""}
         </p>
+        {discount > 0 && (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", marginTop: "0.7rem", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: "#1A7A4D", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 999, padding: "0.45rem 1.1rem" }}>
+            🎁 יש לך הנחה קבועה של {discount}% — כל המחירים כבר מחושבים אחרי ההנחה
+          </div>
+        )}
 
         <div style={{ position: "sticky", top: 64, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
           <input
@@ -377,7 +412,15 @@ export default function CatalogPage() {
                     </div>
                     <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em" }}>{p.name}</h3>
                     <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{p.sku || "—"}</span></div>
-                    <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{ils(p.price)}</div>
+                    {discount > 0 ? (
+                      <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: "#1A7A4D" }}>{ils(applyDiscount(p.price, discount))}</span>
+                        <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(p.price)}</s>
+                        <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#25C77E", padding: "0.15rem 0.5rem", borderRadius: 999 }}>‎-{discount}%</span>
+                      </div>
+                    ) : (
+                      <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{ils(p.price)}</div>
+                    )}
                     {(() => {
                       const carton = cartonSize(p.name);
                       if (qty === 0) {
@@ -463,9 +506,14 @@ export default function CatalogPage() {
                     );
                   })}
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", color: tokens.text, marginBottom: "1.2rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", color: tokens.text, marginBottom: vatLabel ? "0.2rem" : "1.2rem" }}>
                   <span>סה״כ</span><span>{ils(cartTotal)}</span>
                 </div>
+                {vatLabel && (
+                  <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim, textAlign: "left", marginBottom: "1.2rem" }}>
+                    המחירים כוללים מע״מ
+                  </div>
+                )}
                 <div style={{ display: "grid", gap: "0.6rem", marginBottom: "1rem" }}>
                   <input placeholder="שם איש קשר" value={contactName} onChange={(e) => setContactName(e.target.value)} style={miniInp} />
                   <input placeholder="טלפון" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} style={miniInp} inputMode="tel" />

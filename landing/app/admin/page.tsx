@@ -7,7 +7,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
 import { rivhitImg } from "../../lib/images";
-import { tokens, ils } from "../../lib/ui";
+import { tokens, ils, discountPct } from "../../lib/ui";
 
 type OrderItem = { id: string; product_name: string; product_sku: string; unit_price: number; quantity: number };
 type Order = {
@@ -408,6 +408,8 @@ type SiteProfile = {
   phone: string;
   role: string;
   rivhit_customer_id: number | null;
+  // Optional: column may not exist until discount-setup.sql is applied.
+  discount_percent?: number | null;
 };
 type RivhitCustomer = { rivhit_id: number; name: string; city: string; phone: string; email: string };
 
@@ -424,7 +426,9 @@ function CustomersTab() {
   const load = useCallback(async () => {
     setBusy(true);
     const [ps, cs] = await Promise.all([
-      supabase.from("profiles").select("id,email,full_name,business_name,phone,role,rivhit_customer_id").order("created_at", { ascending: false }),
+      // select("*") on purpose: an explicit column list would 400 if
+      // discount_percent doesn't exist in the DB yet; "*" degrades gracefully.
+      supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("customers").select("rivhit_id,name,city,phone,email").eq("is_active", true).order("name"),
     ]);
     if (ps.error || cs.error) {
@@ -460,6 +464,18 @@ function CustomersTab() {
     const { error } = await supabase.from("profiles").update({ rivhit_customer_id: rivhitId }).eq("id", p.id);
     if (error) setMsg("שמירת הקישור נכשלה: " + error.message);
     else setProfiles((ps) => ps.map((x) => (x.id === p.id ? { ...x, rivhit_customer_id: rivhitId } : x)));
+    setSavingId(null);
+  };
+
+  // Set a customer's fixed discount (%) — same manager→profiles update path
+  // that link() already uses in production.
+  const saveDiscount = async (p: SiteProfile, n: number) => {
+    setSavingId(p.id);
+    setMsg("");
+    const d = Math.min(Math.max(Number(n) || 0, 0), 99);
+    const { error } = await supabase.from("profiles").update({ discount_percent: d }).eq("id", p.id);
+    if (error) setMsg("שמירת ההנחה נכשלה: " + error.message + " (אם העמודה חסרה — יש להריץ קודם את supabase/discount-setup.sql)");
+    else setProfiles((ps) => ps.map((x) => (x.id === p.id ? { ...x, discount_percent: d } : x)));
     setSavingId(null);
   };
 
@@ -512,11 +528,55 @@ function CustomersTab() {
                   )}
                 </div>
               </div>
+              <DiscountEditor
+                current={discountPct(p.discount_percent)}
+                saving={savingId === p.id}
+                onSave={(n) => saveDiscount(p, n)}
+              />
             </div>
           );
         })}
       </div>
     </>
+  );
+}
+
+// Inline editor for a customer's fixed discount, shown on every account row.
+function DiscountEditor({ current, saving, onSave }: { current: number; saving: boolean; onSave: (n: number) => void }) {
+  const [val, setVal] = useState(String(current || 0));
+  useEffect(() => { setVal(String(current || 0)); }, [current]);
+  // Malformed input (e.g. "7..5" or an emptied field) must never silently
+  // save as 0 and wipe a customer's discount — it simply isn't savable.
+  const n = Number(val);
+  const valid = val.trim() !== "" && Number.isFinite(n);
+  const parsed = valid ? Math.min(Math.max(n, 0), 99) : current;
+  const dirty = valid && parsed !== current;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.7rem", paddingTop: "0.7rem", borderTop: `1px dashed ${tokens.border}`, flexWrap: "wrap" }}>
+      <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: current > 0 ? "#1A7A4D" : tokens.body, fontWeight: current > 0 ? 700 : 400 }}>
+        🎁 הנחה קבועה:
+      </span>
+      <input
+        value={val}
+        onChange={(e) => setVal(e.target.value.replace(/[^\d.]/g, ""))}
+        disabled={saving}
+        inputMode="decimal"
+        aria-label="אחוז הנחה קבועה"
+        style={{ width: 64, fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", padding: "0.35rem 0.5rem", borderRadius: 8, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, textAlign: "center" }}
+      />
+      <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>%</span>
+      {dirty && (
+        <button onClick={() => onSave(parsed)} disabled={saving}
+          style={{ ...ghostBtn, padding: "0.35rem 0.9rem", fontSize: "0.78rem", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "שומר…" : "שמירה"}
+        </button>
+      )}
+      {current > 0 && !dirty && (
+        <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim }}>
+          הלקוח רואה את כל המחירים אחרי {current}% הנחה
+        </span>
+      )}
+    </div>
   );
 }
 
