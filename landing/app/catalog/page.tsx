@@ -16,6 +16,8 @@ type Product = {
   barcode: string;
   picture_link: string;
   stock_quantity: number;
+  rank?: number;
+  total?: number;
 };
 type CartLine = { qty: number; name: string; price: number; sku: string | null; picture_link: string };
 type Cart = Record<string, CartLine>;
@@ -121,11 +123,36 @@ export default function CatalogPage() {
   useEffect(() => { setPage(0); }, [activeCat]);
 
   const loadSeq = useRef(0);
+  const [fuzzyNote, setFuzzyNote] = useState(false);
+
   const loadProducts = useCallback(async () => {
     if (!session) return;
     const seq = ++loadSeq.current;
     setLoadingProducts(true);
+    setFuzzyNote(false);
     const s = query.trim().replace(/[,()%]/g, " ").trim();
+    if (s.length >= 2) {
+      // smart typo-tolerant search (trigram-ranked in the database)
+      const { data, error: rpcErr } = await supabase.rpc("search_products", {
+        q: s,
+        lim: PAGE_SIZE,
+        off: page * PAGE_SIZE,
+      });
+      if (seq !== loadSeq.current) return;
+      if (rpcErr) {
+        setLoadErr(true);
+        setLoadingProducts(false);
+        return;
+      }
+      setLoadErr(false);
+      const rows = (data as Product[]) ?? [];
+      setProducts(rows);
+      setTotal(Number(rows[0]?.total ?? 0));
+      // no exact match but similar ones found → "did you mean" mode
+      setFuzzyNote(rows.length > 0 && (rows[0]?.rank ?? 0) < 0.55);
+      setLoadingProducts(false);
+      return;
+    }
     let q = supabase
       .from("products")
       .select("id,name,price,sku,barcode,picture_link,stock_quantity", { count: "exact" })
@@ -392,9 +419,16 @@ export default function CatalogPage() {
             <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
           </div>
         ) : products.length === 0 ? (
-          <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>לא נמצאו מוצרים{query ? ` עבור “${query}”` : ""}.</p>
+          <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>
+            לא נמצאו מוצרים{query ? ` עבור “${query}”` : ""}. נסו לכתוב חלק מהשם — החיפוש יודע להשלים לבד.
+          </p>
         ) : (
           <>
+            {fuzzyNote && (
+              <div style={{ fontFamily: tokens.assistant, fontSize: "0.95rem", color: tokens.body, background: "rgba(138,63,252,0.08)", border: "1px solid rgba(138,63,252,0.25)", borderRadius: 12, padding: "0.7rem 1rem", marginTop: "1rem" }}>
+                🔎 לא מצאנו התאמה מדויקת ל־“{query}” — אלה המוצרים הכי דומים:
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
               {products.map((p, i) => {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
