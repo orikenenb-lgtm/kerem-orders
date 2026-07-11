@@ -1,0 +1,17 @@
+{
+  "//": "Copy into ~/.claude/.mcp.json on your laptop (or merge into an existing one).",
+  "//1": "Replace <INSTALL_PATH> with where you cloned tradingview-mcp, e.g. /Users/you/tradingview-mcp",
+  "//2": "The kite/groww entries are optional broker connections (Part 6) — delete what you don't use.",
+  "mcpServers": {
+    "tradingview": {
+      "command": "node",
+      "args": ["<INSTALL_PATH>/src/server.js"]
+    },
+    "kite": {
+      "url": "https://mcp.kite.trade/mcp"
+    },
+    "groww": {
+      "url": "https://mcp.groww.in/mcp"
+    }
+  }
+}
