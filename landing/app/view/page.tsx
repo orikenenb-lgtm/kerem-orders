@@ -49,10 +49,21 @@ export default function PublicCatalogPage() {
   useEffect(() => { setPage(0); }, [activeCat]);
 
   const loadSeq = useRef(0);
+
+  // Infinite scroll: page 0 replaces the grid, later pages append (deduped by
+  // id, so an item shifting between DB pages can never render twice).
+  const applyRows = (rows: PublicProduct[], append: boolean) => {
+    setProducts((prev) => {
+      if (!append) return rows;
+      const seen = new Set(prev.map((p) => p.id));
+      return [...prev, ...rows.filter((r) => !seen.has(r.id))];
+    });
+  };
+
   const loadProducts = useCallback(async () => {
     const seq = ++loadSeq.current;
     setLoadingProducts(true);
-    setFuzzyNote(false);
+    if (page === 0) setFuzzyNote(false);
     const s = query.trim().replace(/[,()%]/g, " ").trim();
     const { data, error } = await supabase.rpc("catalog_public", {
       q: s || null,
@@ -68,16 +79,29 @@ export default function PublicCatalogPage() {
     }
     setLoadErr(false);
     const rows = (data as PublicProduct[]) ?? [];
-    setProducts(rows);
+    applyRows(rows, page > 0);
     setTotal(Number(rows[0]?.total ?? 0));
     // no exact match but similar ones found → "did you mean" mode
-    setFuzzyNote(s.length >= 2 && rows.length > 0 && (rows[0]?.rank ?? 0) < 0.55);
+    if (page === 0) setFuzzyNote(s.length >= 2 && rows.length > 0 && (rows[0]?.rank ?? 0) < 0.55);
     setLoadingProducts(false);
   }, [query, page, activeCat]);
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Auto-load the next page when the sentinel under the grid scrolls into
+  // view, so visitors see everything just by scrolling — no page buttons.
+  const hasMore = products.length < total;
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore || loadingProducts || loadErr) return;
+    const obs = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) setPage((p) => p + 1); },
+      { rootMargin: "700px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasMore, loadingProducts, loadErr, products.length]);
 
   // keep all "חדש/חדשים" categories grouped together (adjacent) in the chip bar
   const orderedCats = useMemo(() => {
@@ -139,9 +163,9 @@ export default function PublicCatalogPage() {
           )}
         </div>
 
-        {loadingProducts ? (
+        {loadingProducts && products.length === 0 ? (
           <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>
-        ) : loadErr ? (
+        ) : loadErr && products.length === 0 ? (
           <div style={{ textAlign: "center", marginTop: "2rem" }}>
             <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת הקטלוג נכשלה. בדקו את החיבור ונסו שוב.</p>
             <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
@@ -180,13 +204,25 @@ export default function PublicCatalogPage() {
               })}
             </div>
 
-            {pages > 1 && (
-              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "1rem", marginTop: "2rem" }}>
-                <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} style={{ ...ghostBtn, opacity: page === 0 ? 0.4 : 1 }}>← הקודם</button>
-                <span style={{ fontFamily: tokens.rubik, fontWeight: 700, color: tokens.body }}>עמוד {page + 1} מתוך {pages}</span>
-                <button onClick={() => setPage((p) => Math.min(pages - 1, p + 1))} disabled={page >= pages - 1} style={{ ...ghostBtn, opacity: page >= pages - 1 ? 0.4 : 1 }}>הבא →</button>
-              </div>
-            )}
+            {/* Infinite-scroll sentinel: when it nears the viewport the next
+                page loads automatically — visitors just keep scrolling. */}
+            <div ref={sentinelRef} aria-hidden="true" />
+            {hasMore ? (
+              loadErr ? (
+                <div style={{ textAlign: "center", marginTop: "1.5rem" }}>
+                  <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת עוד מוצרים נכשלה.</p>
+                  <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
+                </div>
+              ) : (
+                <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
+                  טוען עוד מוצרים…
+                </p>
+              )
+            ) : products.length > PAGE_SIZE ? (
+              <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
+                זהו — רואים את כל {total.toLocaleString("he-IL")} המוצרים ✔
+              </p>
+            ) : null}
           </>
         )}
       </main>
