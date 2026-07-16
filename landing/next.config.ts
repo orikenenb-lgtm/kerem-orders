@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   output: "export",
   basePath,
   assetPrefix: basePath,
+  // Each page exports as a folder (view/index.html instead of view.html), so
+  // shared links work both with and without a trailing slash on GitHub Pages.
+  trailingSlash: true,
   images: { unoptimized: true },
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath,
