@@ -481,13 +481,11 @@ export default function CatalogPage() {
                 const img = rivhitImg(p.picture_link);
                 return (
                   <div key={p.id} style={{ border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: 16, padding: "0.9rem", background: "#fff", boxShadow: "0 8px 24px rgba(26,23,48,0.05)", display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                    {/* No stock badge: quantities in Rivhit are not maintained
+                        reliably (new items arrive as 0), so an automatic
+                        "אזל מהמלאי" label mislabels products that ARE in stock. */}
                     <div style={{ position: "relative", height: 150, borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "2.6rem" }}>
                       <ProductImg src={img} alt={p.name} />
-                      {p.stock_quantity <= 0 && (
-                        <span style={{ position: "absolute", top: 6, insetInlineStart: 6, fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#FF8A00", padding: "0.2rem 0.6rem", borderRadius: 999 }}>
-                          אזל מהמלאי
-                        </span>
-                      )}
                     </div>
                     <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em" }}>{p.name}</h3>
                     <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{p.sku || "—"}</span></div>

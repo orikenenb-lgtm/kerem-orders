@@ -42,6 +42,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="he" dir="rtl" className={`${rubik.variable} ${assistant.variable}`}>
+      <head>
+        {/* Every page talks to Supabase (data + product images) — open the
+            connection during HTML parse instead of on first fetch. */}
+        <link rel="preconnect" href="https://mcdchalyzeqjkkgfeznd.supabase.co" />
+      </head>
       <body>
         <Providers>{children}</Providers>
       </body>
