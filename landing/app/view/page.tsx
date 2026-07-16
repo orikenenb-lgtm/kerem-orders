@@ -40,15 +40,25 @@ export default function PublicCatalogPage() {
     });
   }, []);
 
+  // Filter generation: bumped whenever the query or category changes. The grid
+  // remembers which generation its rows belong to, so a page>0 response can
+  // never append onto rows from a previous filter — it restarts at page 0.
+  const filterGen = useRef(0);
+  const gridGen = useRef(-1);
+
   // debounce search -> query, reset to page 0
   useEffect(() => {
-    const t = setTimeout(() => { setQuery(input); setPage(0); }, 350);
+    const t = setTimeout(() => { filterGen.current++; setQuery(input); setPage(0); }, 350);
     return () => clearTimeout(t);
   }, [input]);
 
-  useEffect(() => { setPage(0); }, [activeCat]);
+  useEffect(() => { filterGen.current++; setPage(0); }, [activeCat]);
 
   const loadSeq = useRef(0);
+  // A short page (fewer than PAGE_SIZE rows) means the data is exhausted, even
+  // when dedup/count drift leaves products.length below total — without this
+  // the observer would keep requesting empty pages forever.
+  const [endReached, setEndReached] = useState(false);
 
   // Infinite scroll: page 0 replaces the grid, later pages append (deduped by
   // id, so an item shifting between DB pages can never render twice).
@@ -62,6 +72,7 @@ export default function PublicCatalogPage() {
 
   const loadProducts = useCallback(async () => {
     const seq = ++loadSeq.current;
+    const gen = filterGen.current;
     setLoadingProducts(true);
     if (page === 0) setFuzzyNote(false);
     const s = query.trim().replace(/[,()%]/g, " ").trim();
@@ -77,10 +88,16 @@ export default function PublicCatalogPage() {
       setLoadingProducts(false);
       return;
     }
+    // A page>0 response whose filter no longer matches the grid's rows must
+    // not append — restart cleanly from the first page instead.
+    if (page > 0 && gen !== gridGen.current) { setPage(0); return; }
     setLoadErr(false);
     const rows = (data as PublicProduct[]) ?? [];
     applyRows(rows, page > 0);
-    setTotal(Number(rows[0]?.total ?? 0));
+    gridGen.current = gen;
+    setEndReached(rows.length < PAGE_SIZE);
+    // An empty overflow page carries no window count — keep the known total.
+    if (page === 0 || rows.length > 0) setTotal(Number(rows[0]?.total ?? 0));
     // no exact match but similar ones found → "did you mean" mode
     if (page === 0) setFuzzyNote(s.length >= 2 && rows.length > 0 && (rows[0]?.rank ?? 0) < 0.55);
     setLoadingProducts(false);
@@ -90,7 +107,7 @@ export default function PublicCatalogPage() {
 
   // Auto-load the next page when the sentinel under the grid scrolls into
   // view, so visitors see everything just by scrolling — no page buttons.
-  const hasMore = products.length < total;
+  const hasMore = !endReached && products.length < total;
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = sentinelRef.current;
@@ -207,17 +224,18 @@ export default function PublicCatalogPage() {
             {/* Infinite-scroll sentinel: when it nears the viewport the next
                 page loads automatically — visitors just keep scrolling. */}
             <div ref={sentinelRef} aria-hidden="true" />
-            {hasMore ? (
-              loadErr ? (
-                <div style={{ textAlign: "center", marginTop: "1.5rem" }}>
-                  <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת עוד מוצרים נכשלה.</p>
-                  <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
-                </div>
-              ) : (
-                <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
-                  טוען עוד מוצרים…
-                </p>
-              )
+            {/* The error block renders whenever a load failed — even when the
+                grid is full and hasMore is false (e.g. a failed re-search),
+                so a failure is never silent. */}
+            {loadErr ? (
+              <div style={{ textAlign: "center", marginTop: "1.5rem" }}>
+                <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת המוצרים נכשלה. בדקו את החיבור.</p>
+                <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
+              </div>
+            ) : hasMore || loadingProducts ? (
+              <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
+                טוען עוד מוצרים…
+              </p>
             ) : products.length > PAGE_SIZE ? (
               <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
                 זהו — רואים את כל {total.toLocaleString("he-IL")} המוצרים ✔
