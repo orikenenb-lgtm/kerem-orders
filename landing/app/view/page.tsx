@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import SiteHeader from "../components/SiteHeader";
 import { supabase } from "../../lib/supabaseClient";
 import { rivhitImg } from "../../lib/images";
@@ -141,13 +140,6 @@ export default function PublicCatalogPage() {
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.3rem" }}>
           {total.toLocaleString("he-IL")} מוצרים · לצפייה בלבד
         </p>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "0.8rem", flexWrap: "wrap", marginTop: "0.8rem", fontFamily: tokens.assistant, fontSize: "0.95rem", color: tokens.body, background: "rgba(46,125,255,0.07)", border: "1px solid rgba(46,125,255,0.2)", borderRadius: 14, padding: "0.8rem 1rem" }}>
-          <span>💼 מחירים סיטונאיים והזמנות — ללקוחות רשומים בלבד.</span>
-          <Link href="/register" style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: "#fff", background: tokens.rainbow, padding: "0.45rem 1.1rem", borderRadius: 999, textDecoration: "none", whiteSpace: "nowrap" }}>
-            פתיחת חשבון סיטונאי
-          </Link>
-        </div>
 
         <div style={{ position: "sticky", top: 64, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
           <input
