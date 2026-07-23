@@ -8,6 +8,8 @@ import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
 import { rivhitImg } from "../../lib/images";
 import { tokens, ils, discountPct } from "../../lib/ui";
+import { featureFlags } from "../../lib/featureFlags";
+import { stepOf } from "../../lib/quantity";
 
 type OrderItem = { id: string; product_name: string; product_sku: string; unit_price: number; quantity: number };
 type Order = {
@@ -279,9 +281,44 @@ function CatalogImg({ link, name }: { link: string; name: string }) {
   return <img src={img} alt={name} loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />;
 }
 
+// Wave 3: the packaging (מארז/מגש) fields a manager can edit per product.
+// Only the columns the editor actually shows/saves are selected — plus
+// min_order_qty/order_step which feed the live preview via stepOf().
+type ProductRow = {
+  id: string;
+  name: string;
+  price: number;
+  sku: string | null;
+  picture_link: string | null;
+  stock_quantity: number | null;
+  display_qty: number | null;
+  display_name: string | null;
+  carton_qty: number | null;
+  min_order_qty: number | null;
+  order_step: number | null;
+  sell_by: string | null;
+};
+
+// The pack-name presets offered in the editor (free text is also allowed).
+const PACK_NAMES: string[] = ["מגש", "מארז", "דיספליי", "קרטונית"];
+
+// One-line human summary of how a product is packaged/sold, for the list row.
+// e.g. "מגש = 12 יח׳ · קרטון 144"  /  "נמכר ביחידות"
+function packagingSummary(p: ProductRow): { text: string; packSold: boolean } {
+  const dq = Math.floor(Number(p.display_qty) || 1);
+  const packSold = (p.sell_by === "display" || p.sell_by === "carton") && dq > 1;
+  const name = (p.display_name || "מארז").trim() || "מארז";
+  const parts = packSold ? [`${name} = ${dq} יח׳`] : ["נמכר ביחידות"];
+  const cq = Math.floor(Number(p.carton_qty) || 0);
+  if (cq > 0) parts.push(`קרטון ${cq}`);
+  return { text: parts.join(" · "), packSold };
+}
+
 function ProductsTab() {
   const [query, setQuery] = useState("");
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<ProductRow[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [count, setCount] = useState(0);
   const [busy, setBusy] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -299,7 +336,7 @@ function ProductsTab() {
   const load = useCallback(async () => {
     setBusy(true);
     const s = query.trim().replace(/[,()%]/g, " ").trim();
-    let q = supabase.from("products").select("id,name,price,sku,picture_link,stock_quantity", { count: "exact" }).eq("is_active", true);
+    let q = supabase.from("products").select("id,name,price,sku,picture_link,stock_quantity,display_qty,display_name,carton_qty,min_order_qty,order_step,sell_by", { count: "exact" }).eq("is_active", true);
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
     const { data, count, error } = await q.order("name").range(0, 49);
     if (error) {
@@ -309,11 +346,29 @@ function ProductsTab() {
       return;
     }
     setLoadErr("");
-    setItems(data ?? []); setCount(count ?? 0); setBusy(false);
+    setItems((data as ProductRow[]) ?? []); setCount(count ?? 0); setBusy(false);
   }, [query]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadRuns(); }, [loadRuns]);
+
+  // ---- packaging editor helpers ----
+  const toggleSelect = useCallback((id: string) => {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // Merge saved packaging fields back into the visible list, so the row
+  // summary refreshes instantly without a refetch.
+  const mergeRows = useCallback((ids: string[], patch: Partial<ProductRow>) => {
+    const idSet = new Set(ids);
+    setItems((xs) => xs.map((x) => (idSet.has(x.id) ? { ...x, ...patch } : x)));
+  }, []);
+
+  const selectedIds = useMemo(() => Array.from(selected), [selected]);
 
   const runSync = async () => {
     setSyncing(true); setMsg("");
@@ -372,22 +427,63 @@ function ProductsTab() {
         </div>
       )}
 
-      <input placeholder="🔍 חיפוש מוצר / קוד…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.6rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, marginBottom: "1rem" }} />
+      {!featureFlags.ff_display_quantities && (
+        <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, background: tokens.surface, border: `1px dashed ${tokens.border}`, borderRadius: 10, padding: "0.55rem 0.9rem", marginBottom: "1rem", lineHeight: 1.6 }}>
+          💡 שינויים במארזים נשמרים כאן מיד, אבל באתר הלקוחות המכירה במארזים שלמים תופעל רק כשנדליק את האפשרות — עד אז הלקוחות ממשיכים להזמין כרגיל.
+        </p>
+      )}
+
+      <input placeholder="🔍 חיפוש מוצר / קוד…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.6rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, marginBottom: "0.5rem" }} />
+      <p style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, marginBottom: "0.8rem" }}>
+        לחצו על מוצר כדי לערוך את המארז שלו · סמנו ✓ כמה מוצרים יחד לעדכון קבוצתי
+      </p>
+
+      {selectedIds.length > 0 && (
+        <BulkBar
+          ids={selectedIds}
+          onApplied={mergeRows}
+          onClear={() => setSelected(new Set())}
+        />
+      )}
 
       {busy ? (
         <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>טוען…</p>
       ) : (
         <div style={{ display: "grid", gap: "0.4rem" }}>
-          {items.map((p) => (
-            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.8rem", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.5rem 0.9rem", background: "#fff" }}>
-              <span style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem" }}>
-                <CatalogImg link={p.picture_link} name={p.name} />
-              </span>
-              <span style={{ flex: 1, fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.text }}>{p.name}</span>
-              <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim }} dir="ltr">{p.sku}</span>
-              <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", color: tokens.text, minWidth: 64, textAlign: "left" }}>{ils(p.price)}</span>
-            </div>
-          ))}
+          {items.map((p) => {
+            const isOpen = expandedId === p.id;
+            const sum = packagingSummary(p);
+            return (
+              <div key={p.id} style={{ border: `1px solid ${isOpen ? tokens.accent : tokens.border}`, borderRadius: 10, background: "#fff", overflow: "hidden" }}>
+                <div
+                  onClick={() => setExpandedId(isOpen ? null : p.id)}
+                  style={{ display: "flex", alignItems: "center", gap: "0.8rem", padding: "0.5rem 0.9rem", cursor: "pointer" }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(p.id)}
+                    onChange={() => toggleSelect(p.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`סימון ${p.name} לעדכון קבוצתי`}
+                    style={{ width: 16, height: 16, flexShrink: 0, accentColor: tokens.accent, cursor: "pointer" }}
+                  />
+                  <span style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem" }}>
+                    <CatalogImg link={p.picture_link ?? ""} name={p.name} />
+                  </span>
+                  <span style={{ flex: 1, minWidth: 160 }}>
+                    <span style={{ display: "block", fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.text }}>{p.name}</span>
+                    <span style={{ display: "block", fontFamily: tokens.assistant, fontSize: "0.76rem", fontWeight: sum.packSold ? 700 : 400, color: sum.packSold ? "#1A7A4D" : tokens.dim }}>
+                      📦 {sum.text}
+                    </span>
+                  </span>
+                  <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim }} dir="ltr">{p.sku}</span>
+                  <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", color: tokens.text, minWidth: 64, textAlign: "left" }}>{ils(p.price)}</span>
+                  <span aria-hidden style={{ fontFamily: tokens.assistant, fontSize: "0.7rem", color: tokens.dim, flexShrink: 0 }}>{isOpen ? "▲" : "▼"}</span>
+                </div>
+                {isOpen && <PackagingEditor key={p.id} p={p} onSaved={(patch) => mergeRows([p.id], patch)} />}
+              </div>
+            );
+          })}
           {count > items.length && <p style={{ fontFamily: tokens.assistant, color: tokens.dim, fontSize: "0.82rem", textAlign: "center", marginTop: "0.5rem" }}>מציג 50 ראשונים · השתמשו בחיפוש למציאת מוצר</p>}
         </div>
       )}
@@ -397,6 +493,248 @@ function ProductsTab() {
 
 function solidBtnA(busy: boolean): React.CSSProperties {
   return { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.7rem 1.4rem", borderRadius: 999, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1 };
+}
+
+/* --------- Wave 3: per-product packaging (מארז) editor --------- */
+
+const fieldLabel: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", color: tokens.text };
+const fieldHint: React.CSSProperties = { fontFamily: tokens.assistant, fontSize: "0.75rem", color: tokens.dim, lineHeight: 1.5 };
+// Validation notes are warm amber, not alarm-red — the manager just needs a nudge.
+const softWarn: React.CSSProperties = { fontFamily: tokens.assistant, fontSize: "0.78rem", color: "#B45309", lineHeight: 1.5 };
+const editInput: React.CSSProperties = {
+  fontFamily: tokens.assistant, fontSize: "0.9rem", padding: "0.5rem 0.7rem", borderRadius: 10,
+  border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, width: "100%",
+};
+
+function ToggleChip({ active, disabled, onClick, children }: { active: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", padding: "0.45rem 1rem", borderRadius: 999,
+        border: `1px solid ${active ? "transparent" : tokens.border}`,
+        background: active ? tokens.rainbow : "#fff", color: active ? "#fff" : tokens.body,
+        cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function PackagingEditor({ p, onSaved }: { p: ProductRow; onSaved: (patch: Partial<ProductRow>) => void }) {
+  const initName = (p.display_name || "מארז").trim() || "מארז";
+  const initIsPreset = PACK_NAMES.includes(initName);
+  const [qtyStr, setQtyStr] = useState(String(Math.floor(Number(p.display_qty) || 1)));
+  const [nameChoice, setNameChoice] = useState<string>(initIsPreset ? initName : "custom");
+  const [customName, setCustomName] = useState(initIsPreset ? "" : initName);
+  const [cartonStr, setCartonStr] = useState(p.carton_qty ? String(Math.floor(Number(p.carton_qty))) : "");
+  const [sellBy, setSellBy] = useState<"unit" | "display">(p.sell_by === "display" || p.sell_by === "carton" ? "display" : "unit");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
+
+  // Any edit clears the "✓ נשמר" mark and stale errors (runs once on mount too — harmless).
+  useEffect(() => { setSaved(false); setErr(""); }, [qtyStr, nameChoice, customName, cartonStr, sellBy]);
+
+  const packName = (nameChoice === "custom" ? customName : nameChoice).trim() || "מארז";
+
+  const qtyNum = Number(qtyStr);
+  const qtyOk = qtyStr.trim() !== "" && Number.isInteger(qtyNum) && qtyNum >= 1 && qtyNum <= 1000;
+  const cartonEmpty = cartonStr.trim() === "";
+  const cartonNum = Number(cartonStr);
+  const cartonIsInt = Number.isInteger(cartonNum) && cartonNum >= 1;
+  const cartonOk = cartonEmpty || (cartonIsInt && (!qtyOk || cartonNum >= qtyNum));
+
+  const qtyWarn = qtyOk ? "" : "כמות היחידות במארז צריכה להיות מספר שלם בין 1 ל־1000.";
+  const cartonWarn = cartonOk
+    ? ""
+    : cartonIsInt
+      ? `קרטון שלם מכיל לפחות מארז אחד — הזינו ${qtyNum} או יותר (או השאירו ריק).`
+      : "כמות היחידות בקרטון צריכה להיות מספר שלם — או להישאר ריקה.";
+
+  // Live preview: exactly what the customer will experience, from the DRAFT values.
+  const packSold = sellBy === "display" && qtyOk && qtyNum > 1;
+  let preview = "";
+  if (qtyOk) {
+    if (packSold) {
+      preview = `${packName} = ${qtyNum} יחידות · כל לחיצה על + מוסיפה עוד ${packName} (${qtyNum} יח׳)`;
+    } else {
+      const step = stepOf({ price: p.price, display_qty: qtyNum, sell_by: sellBy, order_step: p.order_step, min_order_qty: p.min_order_qty });
+      const stepTxt = step > 1 ? `כל לחיצה על + מוסיפה ${step} יח׳` : "כל לחיצה על + מוסיפה יחידה אחת";
+      preview = sellBy === "display" && qtyNum === 1
+        ? `נמכר ביחידות (כי במארז יש רק יחידה אחת) · ${stepTxt}`
+        : `נמכר ביחידות · ${stepTxt}`;
+    }
+    if (cartonOk && !cartonEmpty) {
+      preview += packSold && cartonNum % qtyNum === 0
+        ? ` · קרטון שלם = ${cartonNum} יח׳ (${cartonNum / qtyNum} × ${packName})`
+        : ` · קרטון שלם = ${cartonNum} יח׳`;
+    }
+  }
+
+  const canSave = qtyOk && cartonOk && !saving;
+  const save = async () => {
+    if (!canSave) return;
+    setSaving(true); setErr(""); setSaved(false);
+    const patch: Partial<ProductRow> = {
+      display_qty: qtyNum,
+      display_name: packName,
+      carton_qty: cartonEmpty ? null : cartonNum,
+      sell_by: sellBy,
+    };
+    const { data, error } = await supabase.from("products").update(patch).eq("id", p.id).select("id");
+    if (error || !data || data.length === 0) {
+      setErr("השמירה נכשלה, נסו שוב." + (error?.message ? ` (${error.message})` : ""));
+    } else {
+      onSaved(patch);
+      setSaved(true);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ borderTop: `1px solid ${tokens.border}`, background: tokens.surface, padding: "1rem 0.9rem", display: "grid", gap: "0.9rem" }}>
+      <div style={{ display: "grid", gap: "0.35rem" }}>
+        <span style={fieldLabel}>איך המוצר נמכר ללקוח?</span>
+        <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+          <ToggleChip active={sellBy === "unit"} disabled={saving} onClick={() => setSellBy("unit")}>נמכר ביחידות</ToggleChip>
+          <ToggleChip active={sellBy === "display"} disabled={saving} onClick={() => setSellBy("display")}>נמכר במארזים שלמים</ToggleChip>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gap: "0.9rem", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+        <label style={{ display: "grid", gap: "0.3rem", alignContent: "start" }}>
+          <span style={fieldLabel}>כמה יחידות במארז?</span>
+          <input
+            value={qtyStr}
+            onChange={(e) => setQtyStr(e.target.value.replace(/\D/g, ""))}
+            disabled={saving}
+            inputMode="numeric"
+            style={editInput}
+          />
+          <span style={fieldHint}>כמה יחידות יש במארז/מגש אחד? 1 = נמכר ביחידות</span>
+          {qtyWarn && <span style={softWarn}>{qtyWarn}</span>}
+        </label>
+
+        <label style={{ display: "grid", gap: "0.3rem", alignContent: "start" }}>
+          <span style={fieldLabel}>איך קוראים למארז?</span>
+          <select value={nameChoice} onChange={(e) => setNameChoice(e.target.value)} disabled={saving} style={{ ...selStyle, width: "100%" }}>
+            {PACK_NAMES.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+            <option value="custom">שם אחר…</option>
+          </select>
+          {nameChoice === "custom" && (
+            <input
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              disabled={saving}
+              placeholder="למשל: שרוול, חבילה…"
+              style={editInput}
+            />
+          )}
+          <span style={fieldHint}>השם שהלקוח יראה ליד הכמות (מגש, מארז, דיספליי…)</span>
+        </label>
+
+        <label style={{ display: "grid", gap: "0.3rem", alignContent: "start" }}>
+          <span style={fieldLabel}>כמה יחידות בקרטון שלם?</span>
+          <input
+            value={cartonStr}
+            onChange={(e) => setCartonStr(e.target.value.replace(/\D/g, ""))}
+            disabled={saving}
+            inputMode="numeric"
+            placeholder="לא חובה"
+            style={editInput}
+          />
+          <span style={fieldHint}>כמה יחידות בקרטון שלם? לא חובה — אפשר להשאיר ריק</span>
+          {cartonWarn && <span style={softWarn}>{cartonWarn}</span>}
+        </label>
+      </div>
+
+      {preview && (
+        <div style={{ fontFamily: tokens.assistant, fontSize: "0.88rem", color: tokens.text, background: "rgba(37,199,126,0.10)", border: "1px solid rgba(37,199,126,0.35)", borderRadius: 10, padding: "0.6rem 0.9rem", lineHeight: 1.6 }}>
+          👁 מה הלקוח יראה: <strong>{preview}</strong>
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: "0.7rem", flexWrap: "wrap" }}>
+        <button onClick={save} disabled={!canSave} style={{ ...solidBtnA(saving), padding: "0.55rem 1.4rem", fontSize: "0.85rem", opacity: canSave ? 1 : 0.6 }}>
+          {saving ? "שומר…" : "שמירה"}
+        </button>
+        {saved && <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: "#25C77E", fontWeight: 700 }}>✓ נשמר</span>}
+        {err && <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: "#C0143C" }}>{err}</span>}
+      </div>
+    </div>
+  );
+}
+
+// Bulk bar: set the same units-per-pack for every checked product in one update.
+function BulkBar({ ids, onApplied, onClear }: {
+  ids: string[];
+  onApplied: (ids: string[], patch: Partial<ProductRow>) => void;
+  onClear: () => void;
+}) {
+  const [val, setVal] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [isErr, setIsErr] = useState(false);
+
+  // A stale "✓ עודכנו…" must not survive a change in what's selected.
+  useEffect(() => { setMsg(""); setIsErr(false); }, [ids.length]);
+
+  const n = Number(val);
+  const valid = val.trim() !== "" && Number.isInteger(n) && n >= 1 && n <= 1000;
+
+  const apply = async () => {
+    if (!valid || saving) return;
+    setSaving(true); setMsg(""); setIsErr(false);
+    // One update for all: units-per-pack, and the matching sale mode —
+    // more than one unit per pack means "sold in whole packs".
+    const patch: Partial<ProductRow> = { display_qty: n, sell_by: n > 1 ? "display" : "unit" };
+    const { data, error } = await supabase.from("products").update(patch).in("id", ids).select("id");
+    if (error) {
+      setMsg("העדכון הקבוצתי נכשל, נסו שוב." + (error.message ? ` (${error.message})` : ""));
+      setIsErr(true);
+    } else {
+      const updated = ((data as { id: string }[]) ?? []).map((r) => r.id);
+      onApplied(updated, patch);
+      // Report the ACTUAL count the DB confirmed — if fewer rows came back
+      // than were selected, say so instead of claiming full success.
+      setMsg(updated.length < ids.length
+        ? `✓ עודכנו ${updated.length} מתוך ${ids.length} מוצרים`
+        : `✓ עודכנו ${updated.length} מוצרים`);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ background: "#fff", border: `1px solid ${tokens.accent}`, borderRadius: 12, padding: "0.8rem 1rem", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+      <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text }}>
+        עדכון קבוצתי · {ids.length} מסומנים
+      </span>
+      <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>קבע לכל המסומנים: יחידות במארז =</span>
+      <input
+        value={val}
+        onChange={(e) => setVal(e.target.value.replace(/\D/g, ""))}
+        disabled={saving}
+        inputMode="numeric"
+        aria-label="יחידות במארז לכל המסומנים"
+        style={{ ...editInput, width: 72, textAlign: "center", fontFamily: tokens.rubik, fontWeight: 700 }}
+      />
+      <button onClick={apply} disabled={!valid || saving} style={{ ...solidBtnA(saving), padding: "0.5rem 1.2rem", fontSize: "0.8rem", opacity: valid && !saving ? 1 : 0.6 }}>
+        {saving ? "מעדכן…" : "עדכון"}
+      </button>
+      <button onClick={onClear} disabled={saving} style={{ ...ghostBtn, padding: "0.5rem 1rem", fontSize: "0.8rem" }}>נקה בחירה</button>
+      {msg && <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", fontWeight: 700, color: isErr ? "#C0143C" : "#25C77E" }}>{msg}</span>}
+      {!valid && val.trim() !== "" && <span style={softWarn}>כמות היחידות צריכה להיות מספר שלם בין 1 ל־1000.</span>}
+      <span style={{ ...fieldHint, flexBasis: "100%" }}>
+        מארז של יחידה אחת = נמכר ביחידות · יותר מיחידה אחת = נמכר במארזים שלמים. שם המארז והקרטון לא משתנים כאן.
+      </span>
+    </div>
+  );
 }
 
 /* ---------------- Customers (site accounts ↔ Rivhit) ---------------- */
