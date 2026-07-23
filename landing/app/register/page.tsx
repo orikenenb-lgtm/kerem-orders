@@ -326,7 +326,9 @@ export default function RegisterPage() {
   };
 
   const phoneHint = (
-    <p style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, marginTop: "-0.4rem" }}>
+    // tokens.body, not dim: axe measured dim at 3.45:1 on white for this
+    // 12.8px text — below the 4.5:1 minimum.
+    <p style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.body, marginTop: "-0.4rem" }}>
       💡 כבר לקוחות של כרם טויס? הזינו את הטלפון המעודכן אצלנו — והמערכת תזהה אתכם אוטומטית.
     </p>
   );
