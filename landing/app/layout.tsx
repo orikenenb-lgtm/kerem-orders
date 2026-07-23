@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Rubik, Assistant } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
+import A11yWidget from "./components/A11yWidget";
+import { featureFlags } from "../lib/featureFlags";
 
 const rubik = Rubik({
   subsets: ["hebrew", "latin"],
@@ -48,7 +50,13 @@ export default function RootLayout({
         <link rel="preconnect" href="https://mcdchalyzeqjkkgfeznd.supabase.co" />
       </head>
       <body>
+        {/* Keyboard users can jump past the header straight to the content.
+            Visually hidden until focused (styles in globals.css). */}
+        <a href="#main-content" className="skip-link">
+          דלגו לתוכן הראשי
+        </a>
         <Providers>{children}</Providers>
+        {featureFlags.ff_a11y_widget && <A11yWidget />}
       </body>
     </html>
   );

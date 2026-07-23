@@ -155,7 +155,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   return (
     <>
       <SiteHeader />
-      <main style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
+      <main id="main-content" style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
         <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.6rem,4vw,2.6rem)", color: tokens.text }}>
           {showPrices ? "קטלוג ומחירון" : "קטלוג המוצרים"}
         </h1>

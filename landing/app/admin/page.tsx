@@ -46,7 +46,7 @@ export default function AdminPage() {
     return (
       <>
         <SiteHeader />
-        <main style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
+        <main id="main-content" style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
           טוען…
         </main>
       </>
@@ -56,7 +56,7 @@ export default function AdminPage() {
   return (
     <>
       <SiteHeader />
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.5rem,4vw,3rem) clamp(1rem,4vw,2.5rem)" }}>
+      <main id="main-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.5rem,4vw,3rem) clamp(1rem,4vw,2.5rem)" }}>
         <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.8rem,4vw,2.6rem)", color: tokens.text, marginBottom: "1.2rem" }}>
           ניהול
         </h1>

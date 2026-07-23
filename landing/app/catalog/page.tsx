@@ -471,7 +471,7 @@ export default function CatalogPage() {
     return (
       <>
         <SiteHeader />
-        <main style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
+        <main id="main-content" style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
           טוען…
         </main>
       </>
@@ -482,7 +482,7 @@ export default function CatalogPage() {
     return (
       <>
         <SiteHeader />
-        <main style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
+        <main id="main-content" style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
           <div style={{ fontSize: "4rem", marginBottom: "1rem" }}>🎉</div>
           <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "2rem", color: tokens.text, marginBottom: "0.6rem" }}>ההזמנה נשלחה!</h1>
           <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginBottom: "2rem" }}>
@@ -500,7 +500,7 @@ export default function CatalogPage() {
   return (
     <>
       <SiteHeader />
-      <main style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
+      <main id="main-content" style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
         <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.6rem,4vw,2.6rem)", color: tokens.text }}>
           הקטלוג הסיטונאי
         </h1>

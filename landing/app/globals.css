@@ -15,3 +15,31 @@ body {
   overflow-x: hidden;
   font-family: var(--font-assistant), system-ui, sans-serif;
 }
+
+/* --- accessibility (Wave 6) --- */
+.skip-link {
+  position: absolute;
+  inset-inline-start: -9999px;
+  top: 0;
+  z-index: 200;
+  background: #1a1730;
+  color: #fff;
+  padding: 0.7rem 1.2rem;
+  border-radius: 0 0 12px 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip-link:focus {
+  inset-inline-start: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -12,7 +12,7 @@ export default function Home() {
     return <LandingV2 />;
   }
   return (
-    <main style={{ background: "#fff" }}>
+    <main id="main-content" style={{ background: "#fff" }}>
       <ScrollHero />
       <FeaturesSection />
       <NumbersSection />

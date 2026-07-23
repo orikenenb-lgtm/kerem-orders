@@ -38,7 +38,7 @@ export default function AccessibilityPage() {
     <div style={{ background: tokens.bg, minHeight: "100vh" }}>
       <SiteHeader />
 
-      <main
+      <main id="main-content"
         style={{
           maxWidth: 720,
           margin: "0 auto",

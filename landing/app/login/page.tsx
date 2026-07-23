@@ -61,7 +61,7 @@ export default function LoginPage() {
   return (
     <>
       <SiteHeader />
-      <main
+      <main id="main-content"
         style={{
           minHeight: "calc(100vh - 64px)",
           display: "flex",
