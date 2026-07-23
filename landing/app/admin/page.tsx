@@ -965,7 +965,7 @@ function CustomersTab() {
                 <div>
                   <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: tokens.text }}>
                     {p.business_name || p.full_name || p.email}
-                    {p.role === "manager" && <span style={{ marginInlineStart: 8, fontFamily: tokens.rubik, fontSize: "0.68rem", color: tokens.accent, background: `${tokens.accent}14`, padding: "0.15rem 0.6rem", borderRadius: 999 }}>מנהל</span>}
+                    {p.role === "manager" && <span style={{ marginInlineStart: 8, fontFamily: tokens.rubik, fontSize: "0.68rem", color: tokens.accent, background: "rgba(138,63,252,0.078)", padding: "0.15rem 0.6rem", borderRadius: 999 }}>מנהל</span>}
                   </div>
                   <div style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.body }}>
                     {p.full_name} · <span dir="ltr">{p.email}</span> {p.phone && <span dir="ltr">· {p.phone}</span>}
