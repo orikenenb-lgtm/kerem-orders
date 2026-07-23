@@ -146,7 +146,7 @@ export default function RegisterPage() {
               marginBottom: "0.4rem",
             }}
           >
-            פתיחת חשבון סיטונאי
+            פתיחת חשבון לקוח
           </h1>
           <p
             style={{
