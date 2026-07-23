@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "frames": "python3 scripts/generate_frames.py"
+    "frames": "python3 scripts/generate_frames.py",
+    "test": "node tests/quantity.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
