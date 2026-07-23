@@ -8,6 +8,7 @@ import { useAuth } from "../../lib/auth";
 import { rivhitImg } from "../../lib/images";
 import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
 import { featureFlags } from "../../lib/featureFlags";
+import { VAT_RATE } from "../../lib/config";
 import { resolveQuantity, stepOf, describeQuantity } from "../../lib/quantity";
 
 type Product = {
@@ -45,6 +46,8 @@ type Cart = Record<string, CartLine>;
 const CART_KEY = "kt_cart_v2";
 const PAGE_SIZE = 24;
 const ffQty = featureFlags.ff_display_quantities;
+// Wave 5: minimum-order progress bar + VAT breakdown in the cart drawer.
+const ffMinVat = featureFlags.ff_min_order_vat_ui;
 
 // Wave 3: rebuild a quantity-model view of a stored cart line. Only
 // display_qty/display_name are persisted; min_order_qty/order_step are not —
@@ -504,6 +507,15 @@ export default function CatalogPage() {
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.3rem" }}>
           {total.toLocaleString("he-IL")} מוצרים · מסונכרן מרווחית{vatLabel ? " · המחירים כוללים מע״מ" : ""}
         </p>
+        {/* Wave 5 (ff_min_order_vat_ui): quiet reminder of the minimum while
+            the cart is still under it — disappears once the minimum is met. */}
+        {ffMinVat && minOrder > 0 && cartTotal < minOrder && (
+          <div style={{ marginTop: "0.6rem" }}>
+            <span style={{ display: "inline-block", fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 999, padding: "0.35rem 0.9rem" }}>
+              מינימום הזמנה: {ils(minOrder)} · בעגלה: {ils(cartTotal)}
+            </span>
+          </div>
+        )}
         {discount > 0 && (
           <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", marginTop: "0.7rem", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: "#1A7A4D", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 999, padding: "0.45rem 1.1rem" }}>
             🎁 יש לך הנחה קבועה של {discount}% — כל המחירים כבר מחושבים אחרי ההנחה
@@ -751,21 +763,60 @@ export default function CatalogPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", color: tokens.text, marginBottom: vatLabel ? "0.2rem" : "1.2rem" }}>
                   <span>סה״כ</span><span>{ils(cartTotal)}</span>
                 </div>
-                {vatLabel && (
+                {vatLabel && (ffMinVat ? (() => {
+                  // Wave 5: the plain "המחירים כוללים מע״מ" note becomes a
+                  // breakdown. Prices already include VAT, so the pre-VAT part
+                  // is EXTRACTED from the total (X = Z/(1+VAT), Y = Z−X), all
+                  // in whole agorot so the three lines always add up exactly.
+                  const totalAg = Math.round(cartTotal * 100);
+                  const preVatAg = Math.round(totalAg / (1 + VAT_RATE));
+                  const row: React.CSSProperties = { display: "flex", justifyContent: "space-between" };
+                  return (
+                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, display: "grid", gap: "0.3rem", marginBottom: "1.2rem" }}>
+                      <div style={row}><span>סה״כ לפני מע״מ:</span><span>{ils(preVatAg / 100)}</span></div>
+                      <div style={row}><span>מע״מ ({Math.round(VAT_RATE * 100)}%):</span><span>{ils((totalAg - preVatAg) / 100)}</span></div>
+                      <div style={{ ...row, borderTop: `1px solid ${tokens.border}`, paddingTop: "0.4rem", fontFamily: tokens.rubik, fontWeight: 700, color: tokens.text }}>
+                        <span>סה״כ לתשלום:</span><span>{ils(totalAg / 100)}</span>
+                      </div>
+                    </div>
+                  );
+                })() : (
                   <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim, textAlign: "left", marginBottom: "1.2rem" }}>
                     המחירים כוללים מע״מ
                   </div>
-                )}
+                ))}
                 <div style={{ display: "grid", gap: "0.6rem", marginBottom: "1rem" }}>
                   <input placeholder="שם איש קשר" value={contactName} onChange={(e) => setContactName(e.target.value)} style={miniInp} />
                   <input placeholder="טלפון" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} style={miniInp} inputMode="tel" />
                   <textarea placeholder="הערה להזמנה (לא חובה)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} style={{ ...miniInp, resize: "vertical" }} />
                 </div>
+                {/* Wave 5 (ff_min_order_vat_ui): minimum-order progress. The
+                    track is a flex row, so the fill grows from the inline-start
+                    (right, in RTL); capped at 100% once the minimum is met. */}
+                {ffMinVat && minOrder > 0 && (
+                  <div style={{ marginBottom: "0.9rem" }}>
+                    <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.88rem", color: cartTotal < minOrder ? tokens.body : "#1A7A4D", marginBottom: "0.35rem" }}>
+                      {cartTotal < minOrder ? `עוד ${ils(minOrder - cartTotal)} למינימום ההזמנה` : "הגעת למינימום ההזמנה 🎉"}
+                    </div>
+                    <div role="progressbar" aria-label="התקדמות למינימום ההזמנה" aria-valuemin={0} aria-valuemax={minOrder} aria-valuenow={Math.round(Math.min(cartTotal, minOrder))}
+                      style={{ height: 10, borderRadius: 999, background: tokens.surface, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", justifyContent: "flex-start" }}>
+                      <div style={{ width: `${Math.min(100, (cartTotal / minOrder) * 100)}%`, background: tokens.rainbow, borderRadius: 999, transition: "width 0.3s ease" }} />
+                    </div>
+                  </div>
+                )}
                 {minOrder > 0 && cartTotal < minOrder ? (
                   <>
-                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: "#C0143C", background: "rgba(255,138,0,0.1)", border: "1px solid rgba(255,138,0,0.35)", borderRadius: 12, padding: "0.7rem 0.9rem", marginBottom: "0.8rem", textAlign: "center" }}>
-                      מינימום הזמנה: {ils(minOrder)} · חסרים עוד {ils(minOrder - cartTotal)}
-                    </div>
+                    {ffMinVat ? (
+                      // Wave 5: the progress bar above carries the message —
+                      // the explanation shrinks to a quiet caption beside it.
+                      <div style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, textAlign: "center", marginBottom: "0.6rem" }}>
+                        מינימום הזמנה: {ils(minOrder)} · חסרים עוד {ils(minOrder - cartTotal)}
+                      </div>
+                    ) : (
+                      <div style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: "#C0143C", background: "rgba(255,138,0,0.1)", border: "1px solid rgba(255,138,0,0.35)", borderRadius: 12, padding: "0.7rem 0.9rem", marginBottom: "0.8rem", textAlign: "center" }}>
+                        מינימום הזמנה: {ils(minOrder)} · חסרים עוד {ils(minOrder - cartTotal)}
+                      </div>
+                    )}
                     <button disabled style={{ ...solidBtn, width: "100%", padding: "0.95rem", opacity: 0.5, cursor: "default" }}>
                       שליחת הזמנה למנהל
                     </button>
