@@ -270,7 +270,61 @@ function OrdersTab() {
 }
 
 /* ---------------- Catalog (Rivhit-synced) ---------------- */
-type SyncRun = { id: string; status: string; summary: any; error: string | null; created_at: string };
+type SyncRun = {
+  id: string;
+  status: string;
+  mode: string | null;
+  what: string | null;
+  summary: any;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+};
+
+// Relative time in plain Hebrew: "לפני 5 דקות", "לפני שעתיים", "לפני יומיים".
+function heAgo(iso: string, now: number): string {
+  const min = Math.floor(Math.max(0, now - new Date(iso).getTime()) / 60000);
+  if (min < 1) return "לפני פחות מדקה";
+  if (min === 1) return "לפני דקה";
+  if (min === 2) return "לפני שתי דקות";
+  if (min < 60) return `לפני ${min} דקות`;
+  const hr = Math.floor(min / 60);
+  if (hr === 1) return "לפני שעה";
+  if (hr === 2) return "לפני שעתיים";
+  if (hr < 24) return `לפני ${hr} שעות`;
+  const d = Math.floor(hr / 24);
+  if (d === 1) return "לפני יום";
+  if (d === 2) return "לפני יומיים";
+  return `לפני ${d} ימים`;
+}
+
+// Owner-friendly Hebrew for the runs log — no technical values on screen.
+const SYNC_WHAT_HE: Record<string, string> = { full: "מלא", both: "מלא", products: "מוצרים", customers: "לקוחות" };
+const SYNC_MODE_HE: Record<string, string> = { sync: "עדכון", dry: "בדיקה", test: "בדיקה", check: "בדיקה" };
+const SYNC_STATUS_HE: Record<string, { word: string; color: string }> = {
+  done: { word: "הצליח", color: "#25C77E" },
+  error: { word: "נכשל", color: "#C0143C" },
+  running: { word: "רץ עכשיו…", color: "#2563EB" },
+};
+const syncModeHe = (m: string | null) => (m ? SYNC_MODE_HE[m] ?? m : "עדכון");
+const syncWhatHe = (w: string | null) => (w ? SYNC_WHAT_HE[w] ?? w : "");
+
+// "עודכנו 915 מוצרים (מתוך 8,790 ברווחית) · 12 לקוחות" from the summary jsonb.
+function syncNumbers(summary: any): string {
+  const parts: string[] = [];
+  const p = summary?.products;
+  if (p?.synced != null) {
+    let t = `עודכנו ${Number(p.synced).toLocaleString("he-IL")} מוצרים`;
+    if (p.from_rivhit != null) t += ` (מתוך ${Number(p.from_rivhit).toLocaleString("he-IL")} ברווחית)`;
+    parts.push(t);
+  }
+  const c = summary?.customers;
+  if (c?.synced != null) {
+    const n = Number(c.synced).toLocaleString("he-IL");
+    parts.push(parts.length > 0 ? `${n} לקוחות` : `עודכנו ${n} לקוחות`);
+  }
+  return parts.join(" · ");
+}
 
 function CatalogImg({ link, name }: { link: string; name: string }) {
   const img = rivhitImg(link);
@@ -328,10 +382,24 @@ function ProductsTab() {
   // "load failed" never lingers after a later successful load — and vice versa.
   const [loadErr, setLoadErr] = useState("");
 
+  // A once-a-minute tick: relative times ("לפני X דקות") stay fresh, and the
+  // runs list refreshes so server-side (cron) syncs show up while the tab is open.
+  const [now, setNow] = useState(() => Date.now());
+
   const loadRuns = useCallback(async () => {
     const { data } = await supabase.from("rivhit_sync_runs").select("*").order("created_at", { ascending: false }).limit(5);
-    setRuns((data as SyncRun[]) ?? []);
+    const rows = (data as SyncRun[]) ?? [];
+    setRuns(rows);
+    return rows;
   }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setNow(Date.now());
+      loadRuns();
+    }, 60000);
+    return () => clearInterval(t);
+  }, [loadRuns]);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -376,54 +444,104 @@ function ProductsTab() {
       const { data, error } = await supabase.functions.invoke("rivhit-sync", { body: { mode: "sync", what: "both" } });
       if (error) throw error;
       const runId = (data as any)?.run_id;
+      // Show the fresh "running" row right away (headline flips to
+      // "מתעדכן עכשיו…"), then poll every ~3s up to ~60s. Each poll reloads
+      // the runs list, so the headline and the log update live.
+      setNow(Date.now());
+      await loadRuns();
       let finished = false;
-      for (let i = 0; i < 40 && runId; i++) {
+      for (let i = 0; i < 20 && runId; i++) {
         await new Promise((r) => setTimeout(r, 3000));
-        const { data: row } = await supabase.from("rivhit_sync_runs").select("status,summary,error").eq("id", runId).maybeSingle();
+        setNow(Date.now());
+        const rows = await loadRuns();
+        const row = rows.find((x) => x.id === runId);
         if (row && row.status !== "running") {
           finished = true;
-          setMsg(row.status === "done"
-            ? `הסנכרון הושלם: ${row.summary?.products?.synced ?? 0} מוצרים, ${row.summary?.customers?.synced ?? 0} לקוחות.`
-            : `שגיאה: ${row.error}`);
           break;
         }
       }
       if (runId && !finished) {
         // Polling window elapsed while the sync is still running — say so
         // instead of silently re-enabling the button with no result.
-        setMsg("הסנכרון עדיין רץ ברקע — רעננו את הרשימה בעוד רגע כדי לראות את התוצאה.");
+        setMsg("העדכון נמשך ברקע — הכותרת למעלה תתעדכן לבד כשהוא יסתיים.");
       }
-      await load(); await loadRuns();
+      await load();
     } catch (e: any) {
-      setMsg("הסנכרון נכשל: " + (e?.message ?? e));
+      setMsg("העדכון נכשל: " + (e?.message ?? e));
     } finally {
       setSyncing(false);
     }
   };
 
+  // ---- status headline, computed from the freshest run ----
+  const latest = runs[0];
+  let headText = "עוד לא בוצע עדכון — הוא יתחיל אוטומטית בקרוב";
+  let headColor: string = tokens.dim;
+  if (latest) {
+    if (latest.status === "done") {
+      headText = `✓ העדכון האחרון הצליח — ${heAgo(latest.finished_at ?? latest.created_at, now)}`;
+      headColor = "#1A7A4D";
+    } else if (latest.status === "error") {
+      headText = `⚠ בעיה בעדכון האחרון — ${heAgo(latest.finished_at ?? latest.created_at, now)}`;
+      headColor = "#C0143C";
+    } else {
+      const runMin = Math.floor(Math.max(0, now - new Date(latest.created_at).getTime()) / 60000);
+      if (runMin >= 10) {
+        headText = `עדכון תקוע? רץ כבר ${runMin} דקות`;
+        headColor = "#B45309";
+      } else {
+        headText = "מתעדכן עכשיו…";
+        headColor = "#2563EB";
+      }
+    }
+  }
+  // Numbers from the freshest run that actually finished successfully.
+  const lastDone = runs.find((r) => r.status === "done");
+  const lastNumbers = lastDone ? syncNumbers(lastDone.summary) : "";
+
   return (
     <>
-      <div style={{ background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 14, padding: "1.1rem 1.2rem", marginBottom: "1.25rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+      <div style={{ background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 14, padding: "1.1rem 1.2rem", marginBottom: "1.25rem", display: "grid", gap: "0.7rem" }}>
         <div>
-          <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{count.toLocaleString("he-IL")} מוצרים פעילים</div>
-          <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>מסונכרן מרווחית (קריאה בלבד) — לא משנה דבר ברווחית.</div>
+          <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.25rem", color: headColor, lineHeight: 1.4 }}>{headText}</div>
+          {latest?.status === "error" && latest.error && (
+            <div style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C", marginTop: "0.2rem", lineHeight: 1.5 }}>{latest.error}</div>
+          )}
+          <div style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, marginTop: "0.3rem" }}>
+            עדכון אוטומטי: מלאי ומחירים כל 15 דקות · קטלוג מלא כל לילה ב־03:00
+          </div>
         </div>
-        <button onClick={runSync} disabled={syncing} style={solidBtnA(syncing)}>{syncing ? "מסנכרן…" : "סנכרן מרווחית ↻"}</button>
+        {lastNumbers && (
+          <div style={{ fontFamily: tokens.assistant, fontSize: "0.92rem", color: tokens.body }}>{lastNumbers}</div>
+        )}
+        <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{count.toLocaleString("he-IL")} מוצרים פעילים</div>
+            <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>מסונכרן מרווחית (קריאה בלבד) — לא משנה דבר ברווחית.</div>
+          </div>
+          <button onClick={runSync} disabled={syncing} style={solidBtnA(syncing)}>{syncing ? "מעדכן…" : "עדכן עכשיו"}</button>
+        </div>
       </div>
       {msg && <p style={{ fontFamily: tokens.assistant, color: tokens.body, fontSize: "0.9rem", marginBottom: "1rem" }}>{msg}</p>}
       {loadErr && <p style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.9rem", marginBottom: "1rem" }}>{loadErr}</p>}
 
       {runs.length > 0 && (
         <div style={{ marginBottom: "1.25rem" }}>
-          <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", color: tokens.dim, marginBottom: "0.4rem" }}>ריצות סנכרון אחרונות</div>
-          {runs.map((r) => (
-            <div key={r.id} style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.body, display: "flex", gap: "0.6rem", padding: "0.15rem 0", flexWrap: "wrap" }}>
-              <span>{new Date(r.created_at).toLocaleString("he-IL")}</span>
-              <span style={{ fontWeight: 700, color: r.status === "done" ? "#25C77E" : r.status === "error" ? "#C0143C" : tokens.dim }}>{r.status}</span>
-              {r.summary?.products && <span>· {r.summary.products.synced} מוצרים</span>}
-              {r.summary?.customers && <span>· {r.summary.customers.synced} לקוחות</span>}
-            </div>
-          ))}
+          <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", color: tokens.dim, marginBottom: "0.4rem" }}>עדכונים אחרונים</div>
+          {runs.map((r) => {
+            const st = SYNC_STATUS_HE[r.status] ?? { word: r.status, color: tokens.dim };
+            const what = syncWhatHe(r.what);
+            const nums = syncNumbers(r.summary);
+            return (
+              <div key={r.id} style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.body, display: "flex", gap: "0.6rem", padding: "0.15rem 0", flexWrap: "wrap" }}>
+                <span style={{ color: tokens.dim }}>{heAgo(r.created_at, now)}</span>
+                <span>{syncModeHe(r.mode)}{what ? ` ${what}` : ""}</span>
+                <span style={{ fontWeight: 700, color: st.color }}>{st.word}</span>
+                {nums && <span>· {nums}</span>}
+                {r.status === "error" && r.error && <span style={{ color: "#C0143C" }}>· {r.error}</span>}
+              </div>
+            );
+          })}
         </div>
       )}
 
