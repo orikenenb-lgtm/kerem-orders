@@ -44,12 +44,16 @@ export default function LandingV2() {
 
         <div className="lv2-actions">
           <Link href="/login" className="lv2-btn lv2-btn-primary">
-            כניסה
+            כניסה לחשבון
           </Link>
           <Link href="/register" className="lv2-btn lv2-btn-secondary">
             פתיחת חשבון לקוח
           </Link>
         </div>
+
+        <Link href="/view" className="lv2-browse">
+          לצפייה בקטלוג — בלי צורך בחשבון ←
+        </Link>
 
         <div className="lv2-facts">
           <p className="lv2-fact">
@@ -67,9 +71,10 @@ export default function LandingV2() {
       <footer className="lv2-footer">
         <a href={`tel:${PHONE_TEL}`} className="lv2-phone">
           <span aria-hidden="true">📞</span>
+          <span>להזמנות ושאלות:</span>
           <span dir="ltr">{PHONE_DISPLAY}</span>
         </a>
-        <p className="lv2-copy">
+        <p className="lv2-copy" suppressHydrationWarning>
           {BUSINESS_NAME} · {new Date().getFullYear()}
         </p>
       </footer>
@@ -144,8 +149,9 @@ export default function LandingV2() {
         }
         .lv2-btn-primary {
           color: #fff;
-          background: linear-gradient(105deg, #F25C05, #E8336D);
-          box-shadow: 0 10px 24px rgba(232, 51, 109, 0.28);
+          /* darkened from #F25C05/#E8336D so white 18px text passes 4.5:1 */
+          background: linear-gradient(105deg, #CC4A00, #C81E56);
+          box-shadow: 0 10px 24px rgba(200, 30, 86, 0.28);
         }
         .lv2-btn-secondary {
           color: #B22355;
@@ -203,8 +209,23 @@ export default function LandingV2() {
         .lv2-copy {
           font-family: ${tokens.assistant};
           font-size: 0.85rem;
-          color: #8B8898;
+          color: #6B6357;
           margin: 0;
+        }
+        .lv2-browse {
+          font-family: ${tokens.assistant};
+          font-size: 16px;
+          font-weight: 600;
+          color: #B22355;
+          text-decoration: underline;
+          text-underline-offset: 3px;
+          justify-self: center;
+          padding: 0.3rem 0.5rem;
+          border-radius: 8px;
+        }
+        .lv2-browse:focus-visible {
+          outline: 3px solid #1A1730;
+          outline-offset: 3px;
         }
       `}</style>
     </main>

@@ -2,6 +2,7 @@
 
 import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
+import { MIN_ORDER_FALLBACK } from "../../lib/config";
 
 const ACCENT = "#8A3FFC";
 
@@ -14,7 +15,7 @@ const ROWS: [string, string][] = [
   ["מלאי חי", "מסונכרן מרווחית"],
   ["זמן אספקה ממוצע", "24–48 שעות"],
   ["כיסוי הפצה", "כל הארץ"],
-  ["מינימום הזמנה", "₪3,500"],
+  ["מינימום הזמנה", `₪${MIN_ORDER_FALLBACK.toLocaleString("he-IL")}`],
   ["הזמנה אונליין", "24/7"],
 ];
 
