@@ -24,7 +24,7 @@ export const featureFlags = {
   /** Wave 5: minimum-order progress bar + VAT breakdown in cart/checkout. */
   ff_min_order_vat_ui: true,
   /** Wave 6: accessibility widget + statement page. */
-  ff_a11y_widget: true,
+  ff_a11y_widget: false,
   /** Wave 7: new visual theme (tokens.css). */
   ff_new_theme: true,
 } as const;
