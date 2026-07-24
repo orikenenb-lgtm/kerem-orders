@@ -21,6 +21,10 @@ type Product = {
   stock_quantity: number;
   rank?: number;
   total?: number;
+  // Manual clockwise rotation override (0/90/180/270) for photos crooked
+  // without EXIF. Nullable; the search_products RPC does not return it, so
+  // RPC-sourced rows leave it undefined → treated as 0 (no rotation).
+  rotation_override?: number | null;
   // Wave 3 quantity-model columns (ff_display_quantities). Optional because the
   // search_products RPC returns its own column set WITHOUT them — for
   // RPC-sourced rows they are undefined, so resolveQuantity/stepOf treat those
@@ -219,7 +223,7 @@ export default function CatalogPage() {
     }
     let q = supabase
       .from("products")
-      .select("id,name,price,sku,barcode,picture_link,stock_quantity,unit_name,display_qty,display_name,carton_qty,min_order_qty,order_step,sell_by", { count: "exact" })
+      .select("id,name,price,sku,barcode,picture_link,stock_quantity,rotation_override,unit_name,display_qty,display_name,carton_qty,min_order_qty,order_step,sell_by", { count: "exact" })
       .eq("is_active", true);
     if (activeCat !== "all") q = q.eq("category", activeCat);
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
@@ -575,7 +579,7 @@ export default function CatalogPage() {
               {products.map((p, i) => {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
                 const qty = cart[p.id]?.qty ?? 0;
-                const img = rivhitImg(p.picture_link);
+                const img = rivhitImg(p.picture_link, 480, p.rotation_override ?? 0);
                 // Wave 3 (flag on): pack-aware card. RPC rows lack the quantity
                 // columns → step 1 (unit product), so nothing changes for them.
                 const step = ffQty ? stepOf(p) : 1;

@@ -21,6 +21,9 @@ type PublicProduct = {
   in_stock: boolean;
   rank?: number;
   total?: number;
+  // Manual clockwise rotation override (0/90/180/270) for crooked photos.
+  // Both public RPCs return this column; nullable → treated as 0.
+  rotation_override?: number | null;
 };
 
 const PAGE_SIZE = 24;
@@ -216,7 +219,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
               {products.map((p, i) => {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
-                const img = rivhitImg(p.picture_link);
+                const img = rivhitImg(p.picture_link, 480, p.rotation_override ?? 0);
                 return (
                   <div key={p.id} className="kt-card" style={{ border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
                     {/* No stock badge: quantities in Rivhit are not maintained
