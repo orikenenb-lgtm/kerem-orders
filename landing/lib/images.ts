@@ -10,8 +10,14 @@ const SUPA =
 // (about half the Rivhit photos carry Orientation=6; the first resize
 // pipeline stripped the tag without rotating, serving them sideways — the
 // old cached variants must be skipped, not waited out for 30 days).
-export function rivhitImg(pictureLink: string, w = 480): string {
+//
+// rot: a MANUAL extra clockwise rotation (90/180/270) for photos that are
+// crooked but carry no EXIF tag — set from products.rotation_override by the
+// manager in the image-review screen. It joins the cache key so a corrected
+// image replaces the crooked cached one immediately.
+export function rivhitImg(pictureLink: string, w = 480, rot = 0): string {
   if (!pictureLink) return "";
   const size = w > 0 ? `&w=${w}&v=2` : "";
-  return `${SUPA}/functions/v1/rivhit-img?u=${encodeURIComponent(pictureLink)}${size}`;
+  const r = rot && [90, 180, 270].includes(rot) ? `&rot=${rot}` : "";
+  return `${SUPA}/functions/v1/rivhit-img?u=${encodeURIComponent(pictureLink)}${size}${r}`;
 }

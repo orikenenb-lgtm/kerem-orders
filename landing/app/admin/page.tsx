@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import SiteHeader from "../components/SiteHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { supabase } from "../../lib/supabaseClient";
@@ -520,6 +521,13 @@ function ProductsTab() {
             <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>מסונכרן מרווחית (קריאה בלבד) — לא משנה דבר ברווחית.</div>
           </div>
           <button onClick={runSync} disabled={syncing} style={solidBtnA(syncing)}>{syncing ? "מעדכן…" : "עדכן עכשיו"}</button>
+        </div>
+        <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>יישור תמונות</div>
+            <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>תמונה שצולמה עקום? עוברים עליהן ומסובבים בלחיצה.</div>
+          </div>
+          <Link href="/admin/images-review" style={{ ...ghostBtn, textDecoration: "none", whiteSpace: "nowrap" }}>פתיחת מסך היישור ←</Link>
         </div>
       </div>
       {msg && <p style={{ fontFamily: tokens.assistant, color: tokens.body, fontSize: "0.9rem", marginBottom: "1rem" }}>{msg}</p>}
