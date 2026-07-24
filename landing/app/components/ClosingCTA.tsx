@@ -112,7 +112,7 @@ export default function ClosingCTA() {
             marginBottom: "2.5rem",
           }}
         >
-          פתחו חשבון סיטונאי והתחילו לקבל את הצעצועים שילדים מבקשים — במחירים
+          פתחו חשבון לקוח והתחילו לקבל את הצעצועים שילדים מבקשים — במחירים
           שמשאירים לכם רווח.
         </motion.p>
 
@@ -144,7 +144,7 @@ export default function ClosingCTA() {
             transition: "color 0.25s ease, background-image 0.25s ease",
           }}
         >
-          פתחו חשבון סיטונאי
+          פתחו חשבון לקוח
         </motion.a>
       </motion.div>
     </section>

@@ -55,7 +55,7 @@ export default function AccountPage() {
   return (
     <>
       <SiteHeader />
-      <main style={{ maxWidth: 860, margin: "0 auto", padding: "clamp(1.5rem,4vw,3rem) clamp(1rem,4vw,2.5rem)" }}>
+      <main id="main-content" style={{ maxWidth: 860, margin: "0 auto", padding: "clamp(1.5rem,4vw,3rem) clamp(1rem,4vw,2.5rem)" }}>
         <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.8rem,4vw,2.6rem)", color: tokens.text }}>
           ההזמנות שלי
         </h1>

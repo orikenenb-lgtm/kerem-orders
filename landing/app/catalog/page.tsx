@@ -7,6 +7,9 @@ import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
 import { rivhitImg } from "../../lib/images";
 import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
+import { featureFlags } from "../../lib/featureFlags";
+import { VAT_RATE } from "../../lib/config";
+import { resolveQuantity, stepOf, describeQuantity } from "../../lib/quantity";
 
 type Product = {
   id: string;
@@ -18,12 +21,46 @@ type Product = {
   stock_quantity: number;
   rank?: number;
   total?: number;
+  // Wave 3 quantity-model columns (ff_display_quantities). Optional because the
+  // search_products RPC returns its own column set WITHOUT them — for
+  // RPC-sourced rows they are undefined, so resolveQuantity/stepOf treat those
+  // rows as unit products (step 1). Acceptable until the RPC is extended.
+  unit_name?: string | null;
+  display_qty?: number | null;
+  display_name?: string | null;
+  carton_qty?: number | null;
+  min_order_qty?: number | null;
+  order_step?: number | null;
+  sell_by?: string | null;
 };
-type CartLine = { qty: number; name: string; price: number; sku: string | null; picture_link: string };
+type CartLine = {
+  qty: number; name: string; price: number; sku: string | null; picture_link: string;
+  // Wave 3 (ff_display_quantities): pack info persisted with the line so the
+  // cart drawer can describe/step display-sold products. Optional so carts
+  // saved before the flag keep working — missing means a unit product.
+  display_qty?: number | null;
+  display_name?: string | null;
+};
 type Cart = Record<string, CartLine>;
 
 const CART_KEY = "kt_cart_v2";
 const PAGE_SIZE = 24;
+const ffQty = featureFlags.ff_display_quantities;
+// Wave 5: minimum-order progress bar + VAT breakdown in the cart drawer.
+const ffMinVat = featureFlags.ff_min_order_vat_ui;
+
+// Wave 3: rebuild a quantity-model view of a stored cart line. Only
+// display_qty/display_name are persisted; min_order_qty/order_step are not —
+// the checkout reconcile re-normalizes against the fresh DB row anyway.
+function lineQtyProduct(l: CartLine) {
+  const dq = Math.floor(Number(l.display_qty) || 0);
+  return {
+    price: l.price,
+    display_qty: dq > 1 ? dq : null,
+    display_name: l.display_name ?? null,
+    sell_by: dq > 1 ? "display" : "unit",
+  };
+}
 
 // Extract the carton (wholesale pack) quantity embedded in the product name,
 // as the wholesaler writes it: "קרטון 864" / "ק 216" / "144 יח".
@@ -182,7 +219,7 @@ export default function CatalogPage() {
     }
     let q = supabase
       .from("products")
-      .select("id,name,price,sku,barcode,picture_link,stock_quantity", { count: "exact" })
+      .select("id,name,price,sku,barcode,picture_link,stock_quantity,unit_name,display_qty,display_name,carton_qty,min_order_qty,order_step,sell_by", { count: "exact" })
       .eq("is_active", true);
     if (activeCat !== "all") q = q.eq("category", activeCat);
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
@@ -225,15 +262,46 @@ export default function CatalogPage() {
     return () => obs.disconnect();
   }, [hasMore, loadingProducts, loadErr, products.length]);
 
-  const setQty = (p: Product, qty: number) =>
+  // Wave 3: transient "we rounded your quantity" note per product card
+  // (product id → Hebrew message). Set/cleared on every setQty when the flag
+  // is on; only display-sold products get a note.
+  const [qtyNotes, setQtyNotes] = useState<Record<string, string>>({});
+
+  const setQty = (p: Product, qty: number) => {
+    // Wave 3: when the flag is on EVERY path into the cart goes through the
+    // shared resolver — add button, stepper, carton button, typed input — so
+    // the stored quantity is always step-aligned. Cap BEFORE resolving so the
+    // cap can never break step alignment.
+    let q = qty;
+    if (ffQty) {
+      const r = resolveQuantity(p, Math.min(qty, 9999));
+      q = r.units;
+      const dq = Math.floor(Number(p.display_qty) || 0);
+      const packName = (p.display_name || "מארז").trim() || "מארז";
+      setQtyNotes((notes) => {
+        const show = r.wasAdjusted && q > 0 && dq > 1;
+        if (!show && !(p.id in notes)) return notes;
+        const next = { ...notes };
+        if (show) next[p.id] = `עיגלנו ל־${q.toLocaleString("he-IL")} יחידות (${describeQuantity(p, q)}) — המוצר נמכר ב${packName}ים שלמים`;
+        else delete next[p.id];
+        return next;
+      });
+    }
     setCart((c) => {
       const next = { ...c };
-      if (qty <= 0) delete next[p.id];
+      if (q <= 0) delete next[p.id];
       // The cart stores the price the customer actually pays — after their
       // fixed discount. applyDiscount(x, 0) === x, so no discount → unchanged.
-      else next[p.id] = { qty: Math.min(qty, 9999), name: p.name, price: applyDiscount(p.price, discount), sku: p.sku, picture_link: p.picture_link };
+      // Flag on: q is already resolved (and capped pre-resolve), so no second
+      // cap — it could knock the quantity off its step.
+      else next[p.id] = {
+        qty: ffQty ? q : Math.min(q, 9999),
+        name: p.name, price: applyDiscount(p.price, discount), sku: p.sku, picture_link: p.picture_link,
+        ...(ffQty ? { display_qty: p.display_qty ?? null, display_name: p.display_name ?? null } : {}),
+      };
       return next;
     });
+  };
 
   const lines = useMemo(
     () => Object.entries(cart).map(([id, v]) => ({ id, ...v })),
@@ -280,19 +348,28 @@ export default function CatalogPage() {
       const ids = lines.map((l) => l.id);
       // Fetch in chunks of 100 so even a huge cart never builds a query string
       // longer than the gateway allows.
-      const byId = new Map<string, { id: string; name: string; price: number; is_active: boolean }>();
+      type FreshRow = {
+        id: string; name: string; price: number; is_active: boolean;
+        unit_name?: string | null; display_qty?: number | null; display_name?: string | null;
+        carton_qty?: number | null; min_order_qty?: number | null; order_step?: number | null; sell_by?: string | null;
+      };
+      const byId = new Map<string, FreshRow>();
       for (let i = 0; i < ids.length; i += 100) {
         const { data: fresh, error: pErr } = await supabase
           .from("products")
-          .select("id,name,price,is_active")
+          .select("id,name,price,is_active,unit_name,display_qty,display_name,carton_qty,min_order_qty,order_step,sell_by")
           .in("id", ids.slice(i, i + 100));
         if (pErr) throw pErr;
-        for (const p of (fresh ?? []) as { id: string; name: string; price: number; is_active: boolean }[]) {
+        for (const p of (fresh ?? []) as FreshRow[]) {
           byId.set(p.id, p);
         }
       }
       const removed: string[] = [];
       let priceChanged = false;
+      // Wave 3: quantities are re-normalized against the FRESH row (pack sizes
+      // may have changed since the line was added) — a changed quantity blocks
+      // the order the same way a changed price does.
+      let qtyChanged = false;
       const reconciled: Cart = {};
       for (const l of lines) {
         const p = byId.get(l.id);
@@ -303,14 +380,25 @@ export default function CatalogPage() {
         // the cart back to full price — silently erasing the discount.
         const freshPrice = applyDiscount(Number(p.price) || 0, d);
         if (Math.abs(freshPrice - (Number(l.price) || 0)) > 0.001) priceChanged = true;
-        reconciled[l.id] = { qty: l.qty, name: p.name ?? l.name, price: freshPrice, sku: l.sku, picture_link: l.picture_link };
+        let qty = l.qty;
+        if (ffQty) {
+          const r = resolveQuantity(p, l.qty);
+          if (r.units !== l.qty) qtyChanged = true;
+          qty = r.units;
+        }
+        reconciled[l.id] = {
+          qty, name: p.name ?? l.name, price: freshPrice, sku: l.sku, picture_link: l.picture_link,
+          ...(ffQty ? { display_qty: p.display_qty ?? null, display_name: p.display_name ?? null } : {}),
+        };
       }
-      if (removed.length > 0 || priceChanged) {
+      if (removed.length > 0 || priceChanged || qtyChanged) {
         setCart(reconciled);
         setError(
           removed.length > 0
             ? `חלק מהמוצרים אזלו והוסרו מהעגלה: ${removed.join(", ")}. בדקו את העגלה ואשרו שוב.`
-            : "המחירים התעדכנו מאז שהוספתם לעגלה. בדקו את הסכום ואשרו שוב."
+            : priceChanged
+            ? "המחירים התעדכנו מאז שהוספתם לעגלה. בדקו את הסכום ואשרו שוב."
+            : "כמויות בעגלה עודכנו לפי גדלי המארזים העדכניים — חלק מהמוצרים נמכרים במארזים שלמים. בדקו את העגלה ואשרו שוב."
         );
         setSubmitting(false);
         return;
@@ -383,7 +471,7 @@ export default function CatalogPage() {
     return (
       <>
         <SiteHeader />
-        <main style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
+        <main id="main-content" style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
           טוען…
         </main>
       </>
@@ -394,7 +482,7 @@ export default function CatalogPage() {
     return (
       <>
         <SiteHeader />
-        <main style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
+        <main id="main-content" style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
           <div style={{ fontSize: "4rem", marginBottom: "1rem" }}>🎉</div>
           <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "2rem", color: tokens.text, marginBottom: "0.6rem" }}>ההזמנה נשלחה!</h1>
           <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginBottom: "2rem" }}>
@@ -412,13 +500,22 @@ export default function CatalogPage() {
   return (
     <>
       <SiteHeader />
-      <main style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
+      <main id="main-content" style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
         <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.6rem,4vw,2.6rem)", color: tokens.text }}>
           הקטלוג הסיטונאי
         </h1>
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.3rem" }}>
           {total.toLocaleString("he-IL")} מוצרים · מסונכרן מרווחית{vatLabel ? " · המחירים כוללים מע״מ" : ""}
         </p>
+        {/* Wave 5 (ff_min_order_vat_ui): quiet reminder of the minimum while
+            the cart is still under it — disappears once the minimum is met. */}
+        {ffMinVat && minOrder > 0 && cartTotal < minOrder && (
+          <div style={{ marginTop: "0.6rem" }}>
+            <span style={{ display: "inline-block", fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 999, padding: "0.35rem 0.9rem" }}>
+              מינימום הזמנה: {ils(minOrder)} · בעגלה: {ils(cartTotal)}
+            </span>
+          </div>
+        )}
         {discount > 0 && (
           <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", marginTop: "0.7rem", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: "#1A7A4D", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 999, padding: "0.45rem 1.1rem" }}>
             🎁 יש לך הנחה קבועה של {discount}% — כל המחירים כבר מחושבים אחרי ההנחה
@@ -479,8 +576,14 @@ export default function CatalogPage() {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
                 const qty = cart[p.id]?.qty ?? 0;
                 const img = rivhitImg(p.picture_link);
+                // Wave 3 (flag on): pack-aware card. RPC rows lack the quantity
+                // columns → step 1 (unit product), so nothing changes for them.
+                const step = ffQty ? stepOf(p) : 1;
+                const dq = Math.floor(Number(p.display_qty) || 0);
+                const displaySold = ffQty && step > 1 && dq > 1;
+                const packName = (p.display_name || "מארז").trim() || "מארז";
                 return (
-                  <div key={p.id} style={{ border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: 16, padding: "0.9rem", background: "#fff", boxShadow: "0 8px 24px rgba(26,23,48,0.05)", display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                  <div key={p.id} className="kt-card" style={{ border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
@@ -489,7 +592,30 @@ export default function CatalogPage() {
                     </div>
                     <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em" }}>{p.name}</h3>
                     <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{p.sku || "—"}</span></div>
-                    {discount > 0 ? (
+                    {displaySold && (
+                      <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.78rem", color: tokens.body }}>
+                        {packName} = {dq.toLocaleString("he-IL")} יחידות
+                      </div>
+                    )}
+                    {displaySold ? (
+                      // Pack-sold price line: per-display figure first (this is
+                      // what one +/- press adds), per-unit after it. The
+                      // strikethrough/badge for discounted customers stays,
+                      // applied to the per-display figure.
+                      discount > 0 ? (
+                        <div style={{ display: "flex", alignItems: "baseline", gap: "0.45rem", flexWrap: "wrap" }}>
+                          <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: "#1A7A4D" }}>ל{packName}: {ils(applyDiscount(p.price, discount) * dq)}</span>
+                          <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(p.price * dq)}</s>
+                          <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#25C77E", padding: "0.15rem 0.5rem", borderRadius: 999 }}>‎-{discount}%</span>
+                          <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>· ליחידה: {ils(applyDiscount(p.price, discount))}</span>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "baseline", gap: "0.45rem", flexWrap: "wrap" }}>
+                          <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>ל{packName}: {ils(p.price * dq)}</span>
+                          <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>· ליחידה: {ils(p.price)}</span>
+                        </div>
+                      )
+                    ) : discount > 0 ? (
                       <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
                         <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: "#1A7A4D" }}>{ils(applyDiscount(p.price, discount))}</span>
                         <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(p.price)}</s>
@@ -499,23 +625,46 @@ export default function CatalogPage() {
                       <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{ils(p.price)}</div>
                     )}
                     {(() => {
-                      const carton = cartonSize(p.name);
+                      // Wave 3 (flag on): the DB carton_qty wins; the legacy
+                      // name-parse stays as fallback. Flag off: name-parse only.
+                      const dbCarton = ffQty ? Math.floor(Number(p.carton_qty) || 0) : 0;
+                      const carton = dbCarton >= 2 ? dbCarton : cartonSize(p.name);
                       if (qty === 0) {
                         return (
-                          <div style={{ display: "flex", gap: "0.4rem" }}>
-                            <button onClick={() => setQty(p, 1)} style={{ ...solidBtn, flex: 1, padding: "0.55rem" }}>הוספה</button>
-                            {carton && (
-                              <button onClick={() => setQty(p, carton)} title={`הוספת קרטון של ${carton} יחידות`}
-                                style={{ ...ghostBtn, flex: 1, padding: "0.55rem 0.4rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
-                                📦 קרטון ({carton})
-                              </button>
+                          <>
+                            <div style={{ display: "flex", gap: "0.4rem" }}>
+                              {/* Flag on: one press adds one whole step (setQty
+                                  normalizes anyway). Flag off: step === 1. */}
+                              <button onClick={() => setQty(p, step)} style={{ ...solidBtn, flex: 1, padding: "0.55rem" }}>הוספה</button>
+                              {carton && (
+                                <button onClick={() => setQty(p, carton)} title={`הוספת קרטון של ${carton} יחידות`}
+                                  style={{ ...ghostBtn, flex: 1, padding: "0.55rem 0.4rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
+                                  📦 קרטון ({carton})
+                                </button>
+                              )}
+                            </div>
+                            {displaySold && (
+                              <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim, textAlign: "center" }}>
+                                +1 {packName}
+                              </div>
                             )}
-                          </div>
+                          </>
                         );
                       }
                       return (
                         <div style={{ display: "grid", gap: "0.35rem" }}>
-                          <Stepper qty={qty} onChange={(n) => setQty(p, n)} accent={accent} />
+                          <Stepper qty={qty} onChange={(n) => setQty(p, n)} accent={accent} step={step}
+                            onCommitTyped={ffQty ? (n) => setQty(p, n) : undefined} />
+                          {displaySold && (
+                            <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>
+                              סה״כ: {describeQuantity(p, qty)}
+                            </div>
+                          )}
+                          {ffQty && qtyNotes[p.id] && (
+                            <div role="status" style={{ fontFamily: tokens.assistant, fontSize: "0.75rem", color: "#1A7A4D", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 8, padding: "0.4rem 0.6rem" }}>
+                              {qtyNotes[p.id]}
+                            </div>
+                          )}
                           {carton && (
                             <button onClick={() => setQty(p, qty + carton)}
                               style={{ ...ghostBtn, padding: "0.4rem", fontSize: "0.75rem" }}>
@@ -578,6 +727,20 @@ export default function CatalogPage() {
                 <div style={{ display: "grid", gap: "0.8rem", marginBottom: "1rem" }}>
                   {lines.map((l) => {
                     const img = rivhitImg(l.picture_link);
+                    // Wave 3: the drawer is a path into the cart too — when the
+                    // flag is on its stepper moves by the pack size and every
+                    // change is normalized. Lines without pack fields (old
+                    // carts, flag off) behave as unit products, exactly as today.
+                    const lp = lineQtyProduct(l);
+                    const lineStep = ffQty ? stepOf(lp) : 1;
+                    const changeLineQty = (n: number) => {
+                      const q = ffQty ? resolveQuantity(lp, Math.min(n, 9999)).units : n;
+                      setCart((c) => {
+                        const next = { ...c };
+                        if (q <= 0) delete next[l.id]; else next[l.id] = { ...c[l.id], qty: ffQty ? q : Math.min(q, 9999) };
+                        return next;
+                      });
+                    };
                     return (
                       <div key={l.id} style={{ display: "flex", gap: "0.6rem", alignItems: "center", borderBottom: `1px solid ${tokens.border}`, paddingBottom: "0.6rem" }}>
                         <div style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>
@@ -586,12 +749,13 @@ export default function CatalogPage() {
                         <div style={{ flex: 1 }}>
                           <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.88rem", color: tokens.text }}>{l.name}</div>
                           <div style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>{ils(l.price)} ליח׳</div>
+                          {ffQty && lineStep > 1 && (
+                            <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>{describeQuantity(lp, l.qty)}</div>
+                          )}
                         </div>
-                        <Stepper qty={l.qty} accent={tokens.accent} compact onChange={(n) => setCart((c) => {
-                          const next = { ...c };
-                          if (n <= 0) delete next[l.id]; else next[l.id] = { ...c[l.id], qty: Math.min(n, 9999) };
-                          return next;
-                        })} />
+                        <Stepper qty={l.qty} accent={tokens.accent} compact step={lineStep}
+                          onCommitTyped={ffQty ? changeLineQty : undefined}
+                          onChange={changeLineQty} />
                       </div>
                     );
                   })}
@@ -599,21 +763,60 @@ export default function CatalogPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", color: tokens.text, marginBottom: vatLabel ? "0.2rem" : "1.2rem" }}>
                   <span>סה״כ</span><span>{ils(cartTotal)}</span>
                 </div>
-                {vatLabel && (
+                {vatLabel && (ffMinVat ? (() => {
+                  // Wave 5: the plain "המחירים כוללים מע״מ" note becomes a
+                  // breakdown. Prices already include VAT, so the pre-VAT part
+                  // is EXTRACTED from the total (X = Z/(1+VAT), Y = Z−X), all
+                  // in whole agorot so the three lines always add up exactly.
+                  const totalAg = Math.round(cartTotal * 100);
+                  const preVatAg = Math.round(totalAg / (1 + VAT_RATE));
+                  const row: React.CSSProperties = { display: "flex", justifyContent: "space-between" };
+                  return (
+                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, display: "grid", gap: "0.3rem", marginBottom: "1.2rem" }}>
+                      <div style={row}><span>סה״כ לפני מע״מ:</span><span>{ils(preVatAg / 100)}</span></div>
+                      <div style={row}><span>מע״מ ({Math.round(VAT_RATE * 100)}%):</span><span>{ils((totalAg - preVatAg) / 100)}</span></div>
+                      <div style={{ ...row, borderTop: `1px solid ${tokens.border}`, paddingTop: "0.4rem", fontFamily: tokens.rubik, fontWeight: 700, color: tokens.text }}>
+                        <span>סה״כ לתשלום:</span><span>{ils(totalAg / 100)}</span>
+                      </div>
+                    </div>
+                  );
+                })() : (
                   <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim, textAlign: "left", marginBottom: "1.2rem" }}>
                     המחירים כוללים מע״מ
                   </div>
-                )}
+                ))}
                 <div style={{ display: "grid", gap: "0.6rem", marginBottom: "1rem" }}>
                   <input placeholder="שם איש קשר" value={contactName} onChange={(e) => setContactName(e.target.value)} style={miniInp} />
                   <input placeholder="טלפון" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} style={miniInp} inputMode="tel" />
                   <textarea placeholder="הערה להזמנה (לא חובה)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} style={{ ...miniInp, resize: "vertical" }} />
                 </div>
+                {/* Wave 5 (ff_min_order_vat_ui): minimum-order progress. The
+                    track is a flex row, so the fill grows from the inline-start
+                    (right, in RTL); capped at 100% once the minimum is met. */}
+                {ffMinVat && minOrder > 0 && (
+                  <div style={{ marginBottom: "0.9rem" }}>
+                    <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.88rem", color: cartTotal < minOrder ? tokens.body : "#1A7A4D", marginBottom: "0.35rem" }}>
+                      {cartTotal < minOrder ? `עוד ${ils(minOrder - cartTotal)} למינימום ההזמנה` : "הגעת למינימום ההזמנה 🎉"}
+                    </div>
+                    <div role="progressbar" aria-label="התקדמות למינימום ההזמנה" aria-valuemin={0} aria-valuemax={minOrder} aria-valuenow={Math.round(Math.min(cartTotal, minOrder))}
+                      style={{ height: 10, borderRadius: 999, background: tokens.surface, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", justifyContent: "flex-start" }}>
+                      <div style={{ width: `${Math.min(100, (cartTotal / minOrder) * 100)}%`, background: tokens.rainbow, borderRadius: 999, transition: "width 0.3s ease" }} />
+                    </div>
+                  </div>
+                )}
                 {minOrder > 0 && cartTotal < minOrder ? (
                   <>
-                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: "#C0143C", background: "rgba(255,138,0,0.1)", border: "1px solid rgba(255,138,0,0.35)", borderRadius: 12, padding: "0.7rem 0.9rem", marginBottom: "0.8rem", textAlign: "center" }}>
-                      מינימום הזמנה: {ils(minOrder)} · חסרים עוד {ils(minOrder - cartTotal)}
-                    </div>
+                    {ffMinVat ? (
+                      // Wave 5: the progress bar above carries the message —
+                      // the explanation shrinks to a quiet caption beside it.
+                      <div style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, textAlign: "center", marginBottom: "0.6rem" }}>
+                        מינימום הזמנה: {ils(minOrder)} · חסרים עוד {ils(minOrder - cartTotal)}
+                      </div>
+                    ) : (
+                      <div style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: "#C0143C", background: "rgba(255,138,0,0.1)", border: "1px solid rgba(255,138,0,0.35)", borderRadius: 12, padding: "0.7rem 0.9rem", marginBottom: "0.8rem", textAlign: "center" }}>
+                        מינימום הזמנה: {ils(minOrder)} · חסרים עוד {ils(minOrder - cartTotal)}
+                      </div>
+                    )}
                     <button disabled style={{ ...solidBtn, width: "100%", padding: "0.95rem", opacity: 0.5, cursor: "default" }}>
                       שליחת הזמנה למנהל
                     </button>
@@ -644,14 +847,38 @@ function ProductImg({ src, alt }: { src: string | null; alt: string }) {
   );
 }
 
-function Stepper({ qty, onChange, accent, compact }: { qty: number; onChange: (q: number) => void; accent: string; compact?: boolean }) {
+function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped }: {
+  qty: number; onChange: (q: number) => void; accent: string; compact?: boolean;
+  /** Wave 3 (ff_display_quantities): +/- move by this many units. Default 1. */
+  step?: number;
+  /** Wave 3: when set, typed input edits a local draft committed on blur/Enter
+   *  (so a normalizer can't fight each keystroke); +/- commit immediately.
+   *  When absent (flag off) typing calls onChange per keystroke, as today. */
+  onCommitTyped?: (q: number) => void;
+}) {
   const sz = compact ? 30 : 34;
+  const [draft, setDraft] = useState<string | null>(null);
   const btn: React.CSSProperties = { width: sz, height: sz, borderRadius: 9, border: `1px solid ${accent}`, background: "#fff", color: accent, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", cursor: "pointer", flexShrink: 0 };
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.4rem" }}>
-      <button aria-label="פחות" style={btn} onClick={() => onChange(qty - 1)}>−</button>
-      <input value={qty} onChange={(e) => { const n = parseInt(e.target.value.replace(/\D/g, ""), 10); onChange(Number.isFinite(n) ? n : 0); }} style={{ width: compact ? 44 : 52, textAlign: "center", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", border: `1px solid ${tokens.border}`, borderRadius: 9, padding: "0.4rem 0" }} inputMode="numeric" />
-      <button aria-label="עוד" style={btn} onClick={() => onChange(qty + 1)}>+</button>
+      <button aria-label="פחות" style={btn} onClick={() => onChange(qty - step)}>−</button>
+      <input
+        value={draft ?? qty}
+        onChange={(e) => {
+          const digits = e.target.value.replace(/\D/g, "");
+          if (onCommitTyped) { setDraft(digits); return; }
+          const n = parseInt(digits, 10);
+          onChange(Number.isFinite(n) ? n : 0);
+        }}
+        onBlur={onCommitTyped ? () => {
+          if (draft === null) return;
+          const n = parseInt(draft, 10);
+          setDraft(null);
+          onCommitTyped(Number.isFinite(n) ? n : 0);
+        } : undefined}
+        onKeyDown={onCommitTyped ? (e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); } : undefined}
+        style={{ width: compact ? 44 : 52, textAlign: "center", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", border: `1px solid ${tokens.border}`, borderRadius: 9, padding: "0.4rem 0" }} inputMode="numeric" />
+      <button aria-label="עוד" style={btn} onClick={() => onChange(qty + step)}>+</button>
     </div>
   );
 }

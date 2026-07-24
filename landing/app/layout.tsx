@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { Rubik, Assistant } from "next/font/google";
 import "./globals.css";
+import "./tokens.css";
 import Providers from "./providers";
+import A11yWidget from "./components/A11yWidget";
+import { featureFlags } from "../lib/featureFlags";
 
 const rubik = Rubik({
   subsets: ["hebrew", "latin"],
@@ -41,14 +44,27 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="he" dir="rtl" className={`${rubik.variable} ${assistant.variable}`}>
+    <html
+      lang="he"
+      dir="rtl"
+      // Wave 7 (ff_new_theme): the kt-theme-new class switches the CSS
+      // variables in tokens.css to the warm skin. Flag off → class absent →
+      // :root values (identical to the old literals) apply everywhere.
+      className={`${rubik.variable} ${assistant.variable}${featureFlags.ff_new_theme ? " kt-theme-new" : ""}`}
+    >
       <head>
         {/* Every page talks to Supabase (data + product images) — open the
             connection during HTML parse instead of on first fetch. */}
         <link rel="preconnect" href="https://mcdchalyzeqjkkgfeznd.supabase.co" />
       </head>
       <body>
+        {/* Keyboard users can jump past the header straight to the content.
+            Visually hidden until focused (styles in globals.css). */}
+        <a href="#main-content" className="skip-link">
+          דלגו לתוכן הראשי
+        </a>
         <Providers>{children}</Providers>
+        {featureFlags.ff_a11y_widget && <A11yWidget />}
       </body>
     </html>
   );

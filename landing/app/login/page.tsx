@@ -61,7 +61,7 @@ export default function LoginPage() {
   return (
     <>
       <SiteHeader />
-      <main
+      <main id="main-content"
         style={{
           minHeight: "calc(100vh - 64px)",
           display: "flex",
@@ -144,7 +144,7 @@ export default function LoginPage() {
           <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "1.3rem", textAlign: "center" }}>
             עוד אין לכם חשבון?{" "}
             <Link href="/register" style={{ color: tokens.accent, fontWeight: 600 }}>
-              פתיחת חשבון סיטונאי
+              פתיחת חשבון לקוח
             </Link>
           </p>
         </div>
