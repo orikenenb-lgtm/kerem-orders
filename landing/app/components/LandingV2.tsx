@@ -75,7 +75,12 @@ export default function LandingV2() {
           <span dir="ltr">{PHONE_DISPLAY}</span>
         </a>
         <p className="lv2-copy" suppressHydrationWarning>
-          {BUSINESS_NAME} · {new Date().getFullYear()}
+          {BUSINESS_NAME} · {new Date().getFullYear()} ·{" "}
+          {/* The statement page must stay reachable (IS 5568) even though the
+              floating widget was removed — a quiet text link, not a button. */}
+          <Link href="/accessibility" className="lv2-a11y">
+            הצהרת נגישות
+          </Link>
         </p>
       </footer>
 
@@ -205,6 +210,15 @@ export default function LandingV2() {
           gap: 0.5rem;
           padding: 0.4rem 0.8rem;
           border-radius: 10px;
+        }
+        .lv2-a11y {
+          color: #6B6357;
+          text-decoration: underline;
+          text-underline-offset: 2px;
+        }
+        .lv2-a11y:focus-visible {
+          outline: 3px solid #1A1730;
+          outline-offset: 2px;
         }
         .lv2-copy {
           font-family: ${tokens.assistant};
