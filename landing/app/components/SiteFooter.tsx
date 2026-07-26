@@ -1,11 +1,30 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { tokens } from "../../lib/ui";
+import { supabase } from "../../lib/supabaseClient";
+import { MIN_ORDER_FALLBACK } from "../../lib/config";
 import { CONTACT } from "./SiteHeader";
 
 // פוטר מקצועי משותף לעמודי החנות — מותג, קישורים מהירים ופרטי קשר.
 export default function SiteFooter() {
+  // Same rule as the header strip: never hardcode the minimum — read the one
+  // value the cart actually enforces.
+  const [minOrder, setMinOrder] = useState(MIN_ORDER_FALLBACK);
+
+  useEffect(() => {
+    supabase
+      .from("site_settings")
+      .select("value")
+      .eq("key", "min_order_total")
+      .maybeSingle()
+      .then(({ data }) => {
+        const n = Number((data as { value: string } | null)?.value);
+        if (Number.isFinite(n) && n > 0) setMinOrder(n);
+      });
+  }, []);
+
   const col: React.CSSProperties = { display: "flex", flexDirection: "column", gap: "0.55rem" };
   const link: React.CSSProperties = {
     fontFamily: tokens.assistant,
@@ -63,7 +82,9 @@ export default function SiteFooter() {
         <div style={col}>
           <span style={head}>מידע</span>
           <span style={{ ...link, color: tokens.dim }}>🚚 משלוח לכל הארץ</span>
-          <span style={{ ...link, color: tokens.dim }}>🧾 מינימום הזמנה ₪500</span>
+          <span style={{ ...link, color: tokens.dim }}>
+            🧾 מינימום הזמנה ₪{minOrder.toLocaleString("he-IL")}
+          </span>
           <span style={{ ...link, color: tokens.dim }}>💯 המחירים כוללים מע״מ</span>
           <Link href="/accessibility" style={link}>הצהרת נגישות</Link>
         </div>
