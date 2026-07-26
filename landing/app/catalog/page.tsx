@@ -505,12 +505,28 @@ export default function CatalogPage() {
     <>
       <SiteHeader />
       <main id="main-content" style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
-        <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.6rem,4vw,2.6rem)", color: tokens.text }}>
-          הקטלוג הסיטונאי
-        </h1>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.3rem" }}>
-          {total.toLocaleString("he-IL")} מוצרים · מסונכרן מרווחית{vatLabel ? " · המחירים כוללים מע״מ" : ""}
-        </p>
+        <section
+          style={{
+            position: "relative",
+            overflow: "hidden",
+            borderRadius: 24,
+            background:
+              "linear-gradient(120deg, rgba(138,63,252,0.10), rgba(37,199,126,0.10) 55%, rgba(255,138,0,0.10))",
+            border: `1px solid ${tokens.border}`,
+            padding: "clamp(1.5rem,4vw,2.6rem)",
+          }}
+        >
+          <div aria-hidden style={{ position: "absolute", insetInlineEnd: -30, top: -40, fontSize: 170, opacity: 0.12, lineHeight: 1, pointerEvents: "none" }}>🧸</div>
+          <span style={{ display: "inline-block", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.72rem", letterSpacing: "0.12em", color: tokens.accent, background: "rgba(138,63,252,0.10)", border: "1px solid rgba(138,63,252,0.25)", borderRadius: 999, padding: "0.3rem 0.9rem", marginBottom: "0.9rem" }}>
+            הקטלוג הסיטונאי · כרם טויס
+          </span>
+          <h1 style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "clamp(1.8rem,4.5vw,3rem)", color: tokens.text, lineHeight: 1.1, maxWidth: 620 }}>
+            כל הצעצועים שילדים אוהבים — במחירי סיטונאות
+          </h1>
+          <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.7rem", fontSize: "1rem" }}>
+            {total.toLocaleString("he-IL")} מוצרים · מעודכן ישירות מהמלאי{vatLabel ? " · המחירים כוללים מע״מ" : ""}
+          </p>
+        </section>
         {/* Wave 5 (ff_min_order_vat_ui): quiet reminder of the minimum while
             the cart is still under it — disappears once the minimum is met. */}
         {ffMinVat && minOrder > 0 && cartTotal < minOrder && (
@@ -526,7 +542,7 @@ export default function CatalogPage() {
           </div>
         )}
 
-        <div style={{ position: "sticky", top: 64, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
+        <div style={{ position: "sticky", top: 92, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
           <input
             placeholder="🔍 חיפוש לפי שם, קוד פריט או ברקוד…"
             value={input}
