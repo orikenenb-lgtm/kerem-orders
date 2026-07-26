@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../components/SiteHeader";
+import SiteFooter from "../components/SiteFooter";
 import { StatusBadge } from "../components/StatusBadge";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
@@ -107,6 +108,7 @@ export default function AccountPage() {
           </div>
         )}
       </main>
+      <SiteFooter />
     </>
   );
 }

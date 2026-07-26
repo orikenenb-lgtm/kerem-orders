@@ -33,6 +33,18 @@ body {
   inset-inline-start: 12px;
 }
 
+/* --- product card lift on hover (storefront polish) --- */
+.kt-card {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+@media (hover: hover) {
+  .kt-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 36px rgba(26, 23, 48, 0.12);
+    border-color: rgba(138, 63, 252, 0.35);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
