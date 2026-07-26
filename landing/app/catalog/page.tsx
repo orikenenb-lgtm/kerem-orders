@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
 import { supabase } from "../../lib/supabaseClient";
@@ -632,10 +633,14 @@ export default function CatalogPage() {
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
-                    <div style={{ position: "relative", height: 150, borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "2.6rem" }}>
-                      <ProductImg src={img} alt={p.name} />
-                    </div>
-                    <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em" }}>{p.name}</h3>
+                    <Link href={`/product/?id=${p.id}`} aria-label={`פרטים על ${p.name}`} style={{ display: "block", position: "relative", height: 150, borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, overflow: "hidden" }}>
+                      <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>
+                        <ProductImg src={img} alt={p.name} />
+                      </span>
+                    </Link>
+                    <Link href={`/product/?id=${p.id}`} style={{ textDecoration: "none" }}>
+                      <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em" }}>{p.name}</h3>
+                    </Link>
                     <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{p.sku || "—"}</span></div>
                     {displaySold && (
                       <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.78rem", color: tokens.body }}>
