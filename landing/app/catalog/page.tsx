@@ -92,6 +92,7 @@ export default function CatalogPage() {
   const [loadErr, setLoadErr] = useState(false);
   const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
   const [activeCat, setActiveCat] = useState("all");
+  const [sort, setSort] = useState<"name" | "price_asc" | "price_desc">("name");
 
   const [cart, setCart] = useState<Cart>({});
   const [note, setNote] = useState("");
@@ -167,7 +168,7 @@ export default function CatalogPage() {
   }, [input]);
 
   // reset to first page when switching category
-  useEffect(() => { filterGen.current++; setPage(0); }, [activeCat]);
+  useEffect(() => { filterGen.current++; setPage(0); }, [activeCat, sort]);
 
   const loadSeq = useRef(0);
   const [fuzzyNote, setFuzzyNote] = useState(false);
@@ -227,8 +228,15 @@ export default function CatalogPage() {
       .eq("is_active", true);
     if (activeCat !== "all") q = q.eq("category", activeCat);
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
-    const { data, count, error: qErr } = await q
-      .order("name", { ascending: true })
+    // Browse-mode sorting. Price sorts add a name tiebreak so paging is stable
+    // (equal prices keep a deterministic order across pages).
+    const sorted =
+      sort === "price_asc"
+        ? q.order("price", { ascending: true }).order("name", { ascending: true })
+        : sort === "price_desc"
+        ? q.order("price", { ascending: false }).order("name", { ascending: true })
+        : q.order("name", { ascending: true });
+    const { data, count, error: qErr } = await sorted
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
     // A newer request superseded this one (fast typing / category hopping) —
     // drop the stale result so the grid never shows the wrong page.
@@ -247,7 +255,7 @@ export default function CatalogPage() {
     setEndReached(rows.length < PAGE_SIZE);
     setTotal(count ?? 0);
     setLoadingProducts(false);
-  }, [session, query, page, activeCat]);
+  }, [session, query, page, activeCat, sort]);
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
@@ -569,6 +577,23 @@ export default function CatalogPage() {
                   </button>
                 );
               })}
+            </div>
+          )}
+          {/* Sorting applies while browsing; during a text search results are
+              ranked by relevance, so the control is hidden then. */}
+          {query.trim().length < 2 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.7rem" }}>
+              <label htmlFor="kt-sort" style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>מיון:</label>
+              <select
+                id="kt-sort"
+                value={sort}
+                onChange={(e) => setSort(e.target.value as "name" | "price_asc" | "price_desc")}
+                style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", color: tokens.text, background: "#fff", border: `1px solid ${tokens.border}`, borderRadius: 999, padding: "0.4rem 0.9rem", cursor: "pointer" }}
+              >
+                <option value="name">שם (א-ת)</option>
+                <option value="price_asc">מחיר: מהזול ליקר</option>
+                <option value="price_desc">מחיר: מהיקר לזול</option>
+              </select>
             </div>
           )}
         </div>
