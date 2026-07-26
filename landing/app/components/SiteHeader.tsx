@@ -6,13 +6,14 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../../lib/auth";
 import { tokens } from "../../lib/ui";
 import { supabase } from "../../lib/supabaseClient";
-import { MIN_ORDER_FALLBACK } from "../../lib/config";
+import { MIN_ORDER_FALLBACK, PHONE_DISPLAY } from "../../lib/config";
 
-// ── מלאו כאן את פרטי הקשר של כרם טויס — ברגע שמזינים, הכפתורים מופיעים לבד ──
+// פרטי קשר של כרם טויס. הטלפון מגיע מ-lib/config (מקור אמת אחד).
+// וואטסאפ/אימייל — מלאו כאן וברגע שמזינים הכפתורים מופיעים לבד.
 export const CONTACT = {
-  phone: "",     // לדוגמה: "03-1234567"
-  whatsapp: "",  // מספר בינ״ל ללא +/רווחים, לדוגמה: "972501234567"
-  email: "",     // לדוגמה: "info@keremtoys.co.il"
+  phone: PHONE_DISPLAY, // 050-852-4448 (מתוך lib/config)
+  whatsapp: "",         // מספר בינ״ל ללא +/רווחים, לדוגמה: "972508524448"
+  email: "",            // לדוגמה: "info@keremtoys.co.il"
 };
 
 const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
