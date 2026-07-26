@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../lib/auth";
 import { tokens } from "../../lib/ui";
+import { supabase } from "../../lib/supabaseClient";
+import { MIN_ORDER_FALLBACK } from "../../lib/config";
 
 // ── מלאו כאן את פרטי הקשר של כרם טויס — ברגע שמזינים, הכפתורים מופיעים לבד ──
 export const CONTACT = {
@@ -52,6 +54,25 @@ export default function SiteHeader() {
   const { session, isManager, signOut, loading } = useAuth();
   const router = useRouter();
 
+  // The minimum shown in the top strip must be the SAME number the cart
+  // enforces. It lived here as a hardcoded ₪500 and went stale the moment the
+  // owner raised it to ₪3,500 — read it from the DB instead, exactly like the
+  // landing screen does, so the two can never disagree again. Anon RLS exposes
+  // this one key; on any failure fall back to the config constant.
+  const [minOrder, setMinOrder] = useState(MIN_ORDER_FALLBACK);
+
+  useEffect(() => {
+    supabase
+      .from("site_settings")
+      .select("value")
+      .eq("key", "min_order_total")
+      .maybeSingle()
+      .then(({ data }) => {
+        const n = Number((data as { value: string } | null)?.value);
+        if (Number.isFinite(n) && n > 0) setMinOrder(n);
+      });
+  }, []);
+
   const navLink = {
     fontFamily: tokens.assistant,
     fontWeight: 600,
@@ -83,7 +104,9 @@ export default function SiteHeader() {
             flexWrap: "wrap",
           }}
         >
-          <span style={{ opacity: 0.92 }}>🚚 משלוח לכל הארץ · מינימום הזמנה ₪500 · המחירים כוללים מע״מ</span>
+          <span style={{ opacity: 0.92 }}>
+            🚚 משלוח לכל הארץ · מינימום הזמנה ₪{minOrder.toLocaleString("he-IL")} · המחירים כוללים מע״מ
+          </span>
           <span style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
             {CONTACT.whatsapp && (
               <a href={`https://wa.me/${CONTACT.whatsapp}`} target="_blank" rel="noreferrer"
