@@ -92,6 +92,10 @@ export default function CatalogPage() {
   const [loadErr, setLoadErr] = useState(false);
   const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
   const [activeCat, setActiveCat] = useState("all");
+  // Categories used to be a horizontal scroll strip: everything past the third
+  // chip was off-screen and customers never found it. They now live in a
+  // full-screen sheet where every category is a full-width tap target.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [cart, setCart] = useState<Cart>({});
   const [note, setNote] = useState("");
@@ -543,35 +547,51 @@ export default function CatalogPage() {
         )}
 
         <div style={{ position: "sticky", top: 92, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
-          <input
-            placeholder="🔍 חיפוש לפי שם, קוד פריט או ברקוד…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
-          />
-          {categories.length > 0 && (
-            <div style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
-              {[{ category: "all", n: 0 }, ...orderedCats].map((c, i) => {
-                const active = activeCat === c.category;
-                const accent = c.category === "all" ? tokens.accent : tokens.rainbowColors[i % tokens.rainbowColors.length];
-                return (
-                  <button
-                    key={c.category}
-                    onClick={() => setActiveCat(c.category)}
-                    style={{
-                      whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem",
-                      padding: "0.45rem 1rem", borderRadius: 999, cursor: "pointer",
-                      border: `1px solid ${active ? "transparent" : tokens.border}`,
-                      background: active ? accent : "#fff", color: active ? "#fff" : tokens.body,
-                    }}
-                  >
-                    {c.category === "all" ? "הכל" : `${c.category} (${c.n})`}
-                  </button>
-                );
-              })}
+          <div style={{ display: "flex", gap: "0.6rem", alignItems: "stretch" }}>
+            <input
+              placeholder="🔍 חיפוש לפי שם, קוד פריט או ברקוד…"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              style={{ flex: 1, minWidth: 0, fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
+            />
+            {categories.length > 0 && (
+              <button
+                onClick={() => setFiltersOpen(true)}
+                aria-haspopup="dialog"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "0.5rem", whiteSpace: "nowrap",
+                  fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                  padding: "0.85rem 1.2rem", borderRadius: 14,
+                  border: `1px solid ${activeCat === "all" ? tokens.border : "transparent"}`,
+                  background: activeCat === "all" ? "#fff" : tokens.accent,
+                  color: activeCat === "all" ? tokens.text : "#fff",
+                }}
+              >
+                <span aria-hidden="true">☰</span>
+                סינון
+              </button>
+            )}
+          </div>
+          {activeCat !== "all" && (
+            <div style={{ marginTop: "0.6rem" }}>
+              <button
+                onClick={() => setActiveCat("all")}
+                style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 999, padding: "0.35rem 0.9rem", cursor: "pointer" }}
+              >
+                {activeCat} ✕
+              </button>
             </div>
           )}
         </div>
+
+        {filtersOpen && (
+          <FilterSheet
+            categories={[{ category: "all", n: total }, ...orderedCats]}
+            active={activeCat}
+            onPick={(c) => { setActiveCat(c); setFiltersOpen(false); }}
+            onClose={() => setFiltersOpen(false)}
+          />
+        )}
 
         {loadingProducts && products.length === 0 ? (
           <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>
@@ -592,8 +612,7 @@ export default function CatalogPage() {
               </div>
             )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
-              {products.map((p, i) => {
-                const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
+              {products.map((p) => {
                 const qty = cart[p.id]?.qty ?? 0;
                 const img = rivhitImg(p.picture_link, 480, p.rotation_override ?? 0);
                 // Wave 3 (flag on): pack-aware card. RPC rows lack the quantity
@@ -603,7 +622,7 @@ export default function CatalogPage() {
                 const displaySold = ffQty && step > 1 && dq > 1;
                 const packName = (p.display_name || "מארז").trim() || "מארז";
                 return (
-                  <div key={p.id} className="kt-card" style={{ border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                  <div key={p.id} className="kt-card" style={{ border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
@@ -611,12 +630,15 @@ export default function CatalogPage() {
                       <ProductImg src={img} alt={p.name} />
                     </div>
                     <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em" }}>{p.name}</h3>
-                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{p.sku || "—"}</span></div>
-                    {displaySold && (
-                      <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.78rem", color: tokens.body }}>
-                        {packName} = {dq.toLocaleString("he-IL")} יחידות
-                      </div>
-                    )}
+                    {/* Pack size sits on its own line, always — it is the first
+                        thing a wholesale buyer looks for and it decides what one
+                        press of + actually adds. */}
+                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "0.5rem", fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>
+                      <span style={{ fontWeight: displaySold ? 600 : 400, color: displaySold ? tokens.body : tokens.dim }}>
+                        {displaySold ? `${dq.toLocaleString("he-IL")} יח׳ ב${packName}` : "נמכר ביחידות"}
+                      </span>
+                      <span style={{ color: tokens.dim, fontSize: "0.72rem" }} dir="ltr">{p.sku || "—"}</span>
+                    </div>
                     {displaySold ? (
                       // Pack-sold price line: per-display figure first (this is
                       // what one +/- press adds), per-unit after it. The
@@ -649,35 +671,18 @@ export default function CatalogPage() {
                       // name-parse stays as fallback. Flag off: name-parse only.
                       const dbCarton = ffQty ? Math.floor(Number(p.carton_qty) || 0) : 0;
                       const carton = dbCarton >= 2 ? dbCarton : cartonSize(p.name);
-                      if (qty === 0) {
-                        return (
-                          <>
-                            <div style={{ display: "flex", gap: "0.4rem" }}>
-                              {/* Flag on: one press adds one whole step (setQty
-                                  normalizes anyway). Flag off: step === 1. */}
-                              <button onClick={() => setQty(p, step)} style={{ ...solidBtn, flex: 1, padding: "0.55rem" }}>הוספה</button>
-                              {carton && (
-                                <button onClick={() => setQty(p, carton)} title={`הוספת קרטון של ${carton} יחידות`}
-                                  style={{ ...ghostBtn, flex: 1, padding: "0.55rem 0.4rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
-                                  📦 קרטון ({carton})
-                                </button>
-                              )}
-                            </div>
-                            {displaySold && (
-                              <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim, textAlign: "center" }}>
-                                +1 {packName}
-                              </div>
-                            )}
-                          </>
-                        );
-                      }
+                      // One layout in both states: the stepper is always on the
+                      // card (it used to appear only after "הוספה", so the pack
+                      // step was invisible until you had already committed).
                       return (
-                        <div style={{ display: "grid", gap: "0.35rem" }}>
-                          <Stepper qty={qty} onChange={(n) => setQty(p, n)} accent={accent} step={step}
+                        <div style={{ display: "grid", gap: "0.4rem", marginTop: "0.15rem" }}>
+                          <Stepper qty={qty} onChange={(n) => setQty(p, n)} accent={tokens.body} step={step}
                             onCommitTyped={ffQty ? (n) => setQty(p, n) : undefined} />
-                          {displaySold && (
-                            <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>
-                              סה״כ: {describeQuantity(p, qty)}
+                          {qty === 0 ? (
+                            <button onClick={() => setQty(p, step)} style={addBtn}>הוסף לסל</button>
+                          ) : (
+                            <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", color: "#12693F", background: "rgba(37,199,126,0.14)", border: "1px solid rgba(37,199,126,0.45)", borderRadius: 12, padding: "0.55rem 0.7rem", textAlign: "center" }}>
+                              ✓ בעגלה{displaySold ? `: ${describeQuantity(p, qty)}` : ""}
                             </div>
                           )}
                           {ffQty && qtyNotes[p.id] && (
@@ -687,7 +692,7 @@ export default function CatalogPage() {
                           )}
                           {carton && (
                             <button onClick={() => setQty(p, qty + carton)}
-                              style={{ ...ghostBtn, padding: "0.4rem", fontSize: "0.75rem" }}>
+                              style={{ ...ghostBtn, padding: "0.45rem", fontSize: "0.78rem", borderRadius: 12 }}>
                               📦 ‎+ קרטון ({carton})
                             </button>
                           )}
@@ -867,6 +872,84 @@ function ProductImg({ src, alt }: { src: string | null; alt: string }) {
   );
 }
 
+// Full-screen category sheet. Every category is a full-width row, so nothing
+// is hidden off the edge of a scroll strip the way the old chip row hid it.
+function FilterSheet({ categories, active, onPick, onClose }: {
+  categories: { category: string; n: number }[];
+  active: string;
+  onPick: (c: string) => void;
+  onClose: () => void;
+}) {
+  // Escape closes, and the page behind must not scroll while the sheet is open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="סינון וקטגוריות"
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(20,16,32,0.45)", display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "0 0 0 0" }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "#fff", width: "100%", maxWidth: 560, maxHeight: "100dvh", overflowY: "auto", borderRadius: "0 0 20px 20px", padding: "1.2rem clamp(1rem,4vw,1.6rem) 2rem" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", marginBottom: "1.2rem" }}>
+          <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.35rem", color: tokens.text, margin: 0 }}>
+            סינון וקטגוריות
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="סגירה"
+            style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, fontSize: "1.3rem", lineHeight: 1, cursor: "pointer" }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "0.6rem" }}>
+          קטגוריות
+        </div>
+        <div style={{ display: "grid", gap: "0.6rem" }}>
+          {categories.map((c) => {
+            const on = active === c.category;
+            return (
+              <button
+                key={c.category}
+                onClick={() => onPick(c.category)}
+                aria-pressed={on}
+                style={{
+                  width: "100%", minHeight: 54, textAlign: "center", cursor: "pointer",
+                  fontFamily: tokens.rubik, fontWeight: 700, fontSize: "1rem",
+                  padding: "0.9rem 1.1rem", borderRadius: 999,
+                  border: `1px solid ${on ? "transparent" : tokens.border}`,
+                  background: on ? tokens.accent : "#fff",
+                  color: on ? "#fff" : tokens.text,
+                }}
+              >
+                {c.category === "all" ? "הכל" : c.category}
+                {c.n > 0 && (
+                  <span style={{ fontWeight: 500, opacity: 0.75 }}> ({c.n.toLocaleString("he-IL")})</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped }: {
   qty: number; onChange: (q: number) => void; accent: string; compact?: boolean;
   /** Wave 3 (ff_display_quantities): +/- move by this many units. Default 1. */
@@ -905,4 +988,8 @@ function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped }: {
 
 const solidBtn: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.88rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.7rem 1.3rem", borderRadius: 999, cursor: "pointer" };
 const ghostBtn: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.88rem", color: tokens.accent, background: "#fff", border: `1px solid ${tokens.border}`, padding: "0.7rem 1.3rem", borderRadius: 999, cursor: "pointer" };
+// The one primary action on a product card. Flat green rather than the rainbow
+// gradient: on a grid of 20+ cards a single calm colour is what reads as a
+// shop; the gradient competes with the product photos.
+const addBtn: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: "#fff", background: "#25C77E", border: "none", padding: "0.65rem 1rem", borderRadius: 12, cursor: "pointer", width: "100%" };
 const miniInp: React.CSSProperties = { fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.6rem 0.75rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text, width: "100%" };
