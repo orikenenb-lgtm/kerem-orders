@@ -1,3 +1,9 @@
 
 # Scratch dir used by image-review agents (decoded contact sheets)
 imgscratch/
+
+# Jarvis: secrets, generated audio, TTS cache
+jarvis/.env
+jarvis/.audio_cache/
+jarvis/jarvis_brief.mp3
+jarvis/**/__pycache__/
