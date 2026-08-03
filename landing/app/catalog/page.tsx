@@ -518,23 +518,31 @@ export default function CatalogPage() {
           style={{
             position: "relative",
             overflow: "hidden",
-            borderRadius: 24,
-            background:
-              "linear-gradient(120deg, rgba(138,63,252,0.10), rgba(37,199,126,0.10) 55%, rgba(255,138,0,0.10))",
-            border: `1px solid ${tokens.border}`,
-            padding: "clamp(1.5rem,4vw,2.6rem)",
+            borderRadius: 28,
+            background: "linear-gradient(125deg, #8A3FFC 0%, #2E7DFF 26%, #25C77E 46%, #FFC400 62%, #FF8A00 80%, #FF2E93 100%)",
+            padding: "clamp(1.8rem,5vw,3.2rem)",
+            boxShadow: "0 16px 44px rgba(138,63,252,0.28)",
           }}
         >
-          <div aria-hidden style={{ position: "absolute", insetInlineEnd: -30, top: -40, fontSize: 170, opacity: 0.12, lineHeight: 1, pointerEvents: "none" }}>🧸</div>
-          <span style={{ display: "inline-block", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.72rem", letterSpacing: "0.12em", color: tokens.accent, background: "rgba(138,63,252,0.10)", border: "1px solid rgba(138,63,252,0.25)", borderRadius: 999, padding: "0.3rem 0.9rem", marginBottom: "0.9rem" }}>
-            הקטלוג הסיטונאי · כרם טויס
-          </span>
-          <h1 style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "clamp(1.8rem,4.5vw,3rem)", color: tokens.text, lineHeight: 1.1, maxWidth: 620 }}>
-            כל הצעצועים שילדים אוהבים — במחירי סיטונאות
-          </h1>
-          <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.7rem", fontSize: "1rem" }}>
-            {total.toLocaleString("he-IL")} מוצרים · מעודכן ישירות מהמלאי{vatLabel ? " · המחירים כוללים מע״מ" : ""}
-          </p>
+          {/* soft scrim keeps the white text crisp over the bright bands */}
+          <div aria-hidden style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.16)" }} />
+          <div aria-hidden style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+            <span style={{ position: "absolute", insetInlineEnd: "3%", top: "-12%", fontSize: 155, opacity: 0.25 }}>🧸</span>
+            <span style={{ position: "absolute", insetInlineEnd: "26%", bottom: "-22%", fontSize: 95, opacity: 0.2 }}>🎈</span>
+            <span style={{ position: "absolute", insetInlineStart: "4%", bottom: "-14%", fontSize: 82, opacity: 0.18 }}>🚗</span>
+            <span style={{ position: "absolute", insetInlineStart: "24%", top: "-6%", fontSize: 60, opacity: 0.16 }}>⭐</span>
+          </div>
+          <div style={{ position: "relative" }}>
+            <span style={{ display: "inline-block", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.72rem", letterSpacing: "0.12em", color: "#fff", background: "rgba(255,255,255,0.22)", border: "1px solid rgba(255,255,255,0.45)", borderRadius: 999, padding: "0.35rem 1rem", marginBottom: "1rem", backdropFilter: "blur(4px)" }}>
+              🎉 הקטלוג הסיטונאי · כרם טויס
+            </span>
+            <h1 style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "clamp(1.9rem,5vw,3.2rem)", color: "#fff", lineHeight: 1.08, maxWidth: 640, textShadow: "0 2px 14px rgba(0,0,0,0.22)" }}>
+              כל הצעצועים שילדים אוהבים — במחירי סיטונאות 🎈
+            </h1>
+            <p style={{ fontFamily: tokens.assistant, color: "rgba(255,255,255,0.96)", marginTop: "0.8rem", fontSize: "1.05rem", fontWeight: 500, textShadow: "0 1px 8px rgba(0,0,0,0.18)" }}>
+              {total.toLocaleString("he-IL")} מוצרים · מעודכן ישירות מהמלאי{vatLabel ? " · המחירים כוללים מע״מ" : ""}
+            </p>
+          </div>
         </section>
         {/* Wave 5 (ff_min_order_vat_ui): quiet reminder of the minimum while
             the cart is still under it — disappears once the minimum is met. */}
@@ -562,19 +570,25 @@ export default function CatalogPage() {
             <div style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
               {[{ category: "all", n: 0 }, ...orderedCats].map((c, i) => {
                 const active = activeCat === c.category;
-                const accent = c.category === "all" ? tokens.accent : tokens.rainbowColors[i % tokens.rainbowColors.length];
+                const isAll = c.category === "all";
+                const accent = isAll ? tokens.accent : tokens.rainbowColors[i % tokens.rainbowColors.length];
                 return (
                   <button
                     key={c.category}
                     onClick={() => setActiveCat(c.category)}
                     style={{
-                      whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem",
-                      padding: "0.45rem 1rem", borderRadius: 999, cursor: "pointer",
-                      border: `1px solid ${active ? "transparent" : tokens.border}`,
-                      background: active ? accent : "#fff", color: active ? "#fff" : tokens.body,
+                      whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.82rem",
+                      padding: "0.5rem 1.1rem", borderRadius: 999, cursor: "pointer",
+                      // categories carry their own rainbow tint; only literal hex
+                      // colors (rainbowColors) get the alpha suffix, never the
+                      // var()-based accent used for "all".
+                      border: `1.5px solid ${active ? "transparent" : isAll ? tokens.border : `${accent}55`}`,
+                      background: active ? accent : isAll ? "#fff" : `${accent}18`,
+                      color: active ? "#fff" : isAll ? tokens.body : accent,
+                      boxShadow: active ? `0 4px 12px ${isAll ? "rgba(138,63,252,0.30)" : `${accent}66`}` : "none",
                     }}
                   >
-                    {c.category === "all" ? "הכל" : `${c.category} (${c.n})`}
+                    {isAll ? "הכל" : `${c.category} (${c.n})`}
                   </button>
                 );
               })}
