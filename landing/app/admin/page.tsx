@@ -480,8 +480,17 @@ function ProductsTab() {
   let headColor: string = tokens.dim;
   if (latest) {
     if (latest.status === "done") {
-      headText = `✓ העדכון האחרון הצליח — ${heAgo(latest.finished_at ?? latest.created_at, now)}`;
-      headColor = "#1A7A4D";
+      // Staleness watchdog: the products cron runs every 15 min, so if the
+      // newest successful run is much older than that the sync itself has
+      // stopped — a plain green "succeeded 3h ago" would hide a real outage.
+      const ageMin = Math.floor(Math.max(0, now - new Date(latest.finished_at ?? latest.created_at).getTime()) / 60000);
+      if (ageMin > 40) {
+        headText = `⚠ הסנכרון לא רץ כבר ${heAgo(latest.finished_at ?? latest.created_at, now)} — אמור לרוץ כל 15 דקות. בדקו/לחצו "עדכן עכשיו".`;
+        headColor = "#C0143C";
+      } else {
+        headText = `✓ הסנכרון תקין — עודכן ${heAgo(latest.finished_at ?? latest.created_at, now)}`;
+        headColor = "#1A7A4D";
+      }
     } else if (latest.status === "error") {
       headText = `⚠ בעיה בעדכון האחרון — ${heAgo(latest.finished_at ?? latest.created_at, now)}`;
       headColor = "#C0143C";
