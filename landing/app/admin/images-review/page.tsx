@@ -41,6 +41,9 @@ export default function ImagesReviewPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState("");
   const [fixedCount, setFixedCount] = useState(0);
+  const [aiRunning, setAiRunning] = useState(false);
+  const [aiMsg, setAiMsg] = useState("");
+  const aiStopRef = useRef(false);
 
   useEffect(() => {
     if (loading) return;
@@ -114,6 +117,42 @@ export default function ImagesReviewPage() {
     loadFixedCount();
   };
 
+  const stopAiScan = () => { aiStopRef.current = true; };
+
+  // Drive the detect-orientation edge function in a loop until nothing is left
+  // to scan, showing live progress. Each round scans a small batch so the tab
+  // never blocks; the manager can stop anytime.
+  const runAiScan = useCallback(async () => {
+    aiStopRef.current = false;
+    setAiRunning(true);
+    setAiMsg("מתחיל סריקה…");
+    let checked = 0, flipped = 0;
+    try {
+      for (let round = 0; round < 300; round++) {
+        if (aiStopRef.current) { setAiMsg(`נעצר · נסרקו ${checked.toLocaleString("he-IL")}, סובבו ${flipped.toLocaleString("he-IL")}`); break; }
+        const { data, error } = await supabase.functions.invoke("detect-orientation", { body: { limit: 20 } });
+        if (error) {
+          let msg = "שגיאה בסריקה.";
+          try { const ctx = (error as { context?: Response }).context; if (ctx && typeof ctx.json === "function") { const b = await ctx.json(); if (b?.error) msg = b.error; } } catch { /* */ }
+          setAiMsg("נעצר: " + msg + (msg.includes("ANTHROPIC") ? " — יש להוסיף מפתח API בהגדרות." : ""));
+          break;
+        }
+        const d = (data ?? {}) as { checked?: number; flipped?: number; remaining?: number | null; error?: string };
+        if (d.error) { setAiMsg("נעצר: " + d.error); break; }
+        checked += d.checked ?? 0; flipped += d.flipped ?? 0;
+        setAiMsg(`נסרקו ${checked.toLocaleString("he-IL")} · סובבו ${flipped.toLocaleString("he-IL")} · נותרו ${(d.remaining ?? 0).toLocaleString("he-IL")}`);
+        loadFixedCount();
+        if (!d.remaining || d.remaining <= 0) { setAiMsg(`✓ הסריקה הושלמה — סובבו ${flipped.toLocaleString("he-IL")} תמונות מתוך ${checked.toLocaleString("he-IL")} שנבדקו.`); break; }
+        if ((d.checked ?? 0) === 0) { setAiMsg("נעצר: לא ניתן היה לעבד תמונות (בדקו מפתח API / מכסה) ונסו שוב."); break; }
+      }
+    } catch (e) {
+      setAiMsg("שגיאת רשת בסריקה: " + String((e as Error)?.message ?? e));
+    } finally {
+      setAiRunning(false);
+      load();
+    }
+  }, [loadFixedCount, load]);
+
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   if (loading || !session || !isManager) {
@@ -141,8 +180,30 @@ export default function ImagesReviewPage() {
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.5rem", lineHeight: 1.7, maxWidth: 720 }}>
           רוב התמונות מיושרות אוטומטית. כאן מסדרים תמונה שצולמה עקום — פשוט מסתכלים,
           ואם היא על הצד או הפוכה לוחצים על כפתור הסיבוב עד שהיא ישרה. השינוי נשמר מיד
-          ומופיע בכל האתר. <b>כבר תוקנו ידנית: {fixedCount.toLocaleString("he-IL")} תמונות.</b>
+          ומופיע בכל האתר. <b>כבר תוקנו: {fixedCount.toLocaleString("he-IL")} תמונות.</b>
         </p>
+
+        {/* AI auto-scan: goes over every not-yet-scanned image, detects
+            upside-down / rotated ones with a vision model, and fixes them. */}
+        <div style={{ marginTop: "1.1rem", background: "linear-gradient(120deg, rgba(138,63,252,0.08), rgba(37,199,126,0.08))", border: `1px solid ${tokens.border}`, borderRadius: 16, padding: "1rem 1.2rem", display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 260px" }}>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: tokens.text }}>🤖 סריקת AI אוטומטית</div>
+            <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: aiMsg.startsWith("נעצר") ? "#C0143C" : tokens.body, marginTop: "0.25rem", lineHeight: 1.5 }}>
+              {aiMsg || "המערכת תעבור על כל התמונות שעוד לא נסרקו, תזהה הפוכות/מסובבות ותסובב אותן אוטומטית. תמונות שכבר סובבו לא ייגעו. אפשר לעצור בכל רגע (השאירו את החלון פתוח)."}
+            </div>
+          </div>
+          <button
+            onClick={aiRunning ? stopAiScan : runAiScan}
+            style={{
+              fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", padding: "0.7rem 1.5rem", borderRadius: 999,
+              cursor: "pointer", whiteSpace: "nowrap",
+              background: aiRunning ? "#fff" : tokens.rainbow, color: aiRunning ? tokens.body : "#fff",
+              border: aiRunning ? `1px solid ${tokens.border}` : "none",
+            }}
+          >
+            {aiRunning ? "⏹ עצור" : "🤖 התחל סריקה"}
+          </button>
+        </div>
 
         <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap", alignItems: "center", margin: "1.2rem 0", position: "sticky", top: 64, zIndex: 10, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "0.6rem 0" }}>
           <input
