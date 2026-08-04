@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SiteHeader from "./SiteHeader";
+import SiteFooter from "./SiteFooter";
 import { supabase } from "../../lib/supabaseClient";
 import { rivhitImg } from "../../lib/images";
 import { tokens, ils } from "../../lib/ui";
@@ -303,6 +304,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
           </>
         )}
       </main>
+      <SiteFooter />
 
       {preview && (
         <ProductPreview

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import SiteHeader from "../components/SiteHeader";
+import SiteFooter from "../components/SiteFooter";
 import { tokens } from "../../lib/ui";
 
 export const metadata: Metadata = {
@@ -118,6 +119,7 @@ export default function AccessibilityPage() {
           <p style={para}>ההצהרה עודכנה לאחרונה: יולי 2026.</p>
         </article>
       </main>
+      <SiteFooter />
     </div>
   );
 }
