@@ -34,20 +34,12 @@ jobs:
           node-version: "20"
       - run: npm ci
       - run: npm run build
-      # Publish the CRPS presentation alongside the landing page at /crps/.
-      # The landing page output is left untouched.
-      #
-      # SECURITY: copy ONLY the two presentation files, never `docs/.` as a
-      # whole. The docs/ directory also holds INTERNAL project documents
-      # (AUDIT.md, HANDOVER.md, QA_CHECKLIST.md, ROLLBACK.md, …) that describe
-      # the system's internals and known weaknesses — the previous `cp -r
-      # ../docs/.` published all of them to the public internet at /crps/*.md.
-      # If a new public asset is ever needed here, add it by explicit filename.
-      - name: Add CRPS presentation at /crps
-        run: |
-          mkdir -p out/crps
-          cp ../docs/index.html out/crps/index.html
-          cp ../docs/crps-hilit.pdf out/crps/crps-hilit.pdf
+      # SECURITY / SCOPE: the Pages artifact contains ONLY the built Kerem
+      # Toys site (landing/out). Nothing from docs/ or any other directory is
+      # ever copied in — an earlier version of this workflow copied the whole
+      # docs/ directory (internal AUDIT/HANDOVER/QA/ROLLBACK documents
+      # included) to a public /crps path. The CRPS presentation source files
+      # remain in the repo but are NOT published.
       - uses: actions/upload-pages-artifact@v3
         with:
           path: landing/out
