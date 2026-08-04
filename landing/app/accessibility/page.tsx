@@ -65,24 +65,28 @@ export default function AccessibilityPage() {
             שהאתר יהיה נוח וזמין לכולם, ופועלים לשיפור מתמיד של חוויית השימוש.
           </p>
 
+          {/* Careful, accurate wording: the site AIMS at TI-5568/WCAG 2.1 AA
+              and implements the measures listed below, but no full
+              professional accessibility audit has been performed — so we do
+              not claim verified conformance. The floating widget was removed
+              at the owner's request and must not be mentioned here. */}
           <h2 style={sectionTitle}>תקן ורמת הנגישות</h2>
           <p style={para}>
-            האתר מונגש בהתאמה לתקן ישראלי (ת"י 5568) "קווים מנחים לנגישות תכנים
-            באינטרנט" ברמה AA, המבוסס על הנחיות WCAG 2.1 הבין-לאומיות. הנגשת
-            האתר היא מאמץ מתמשך, ואנו ממשיכים לבדוק ולשפר את הנגישות באופן
-            שוטף.
+            האתר פותח מתוך שאיפה לעמוד בעקרונות התקן הישראלי (ת"י 5568)
+            "קווים מנחים לנגישות תכנים באינטרנט" ברמה AA, המבוסס על הנחיות
+            WCAG 2.1 הבין-לאומיות. נכון למועד עדכון הצהרה זו טרם בוצעה בדיקת
+            נגישות מקצועית מלאה של האתר, ולכן איננו מצהירים על עמידה מלאה
+            ומאומתת בתקן. הנגשת האתר היא מאמץ מתמשך, ואנו ממשיכים לבדוק
+            ולשפר את הנגישות באופן שוטף.
           </p>
 
-          <h2 style={sectionTitle}>מה הונגש באתר</h2>
+          <h2 style={sectionTitle}>התאמות הנגישות שיושמו באתר</h2>
           <ul style={{ paddingInlineStart: "1.4rem", margin: "0 0 0.8rem" }}>
-            <li style={listItem}>ניווט מלא באמצעות מקלדת.</li>
-            <li style={listItem}>טקסטים חלופיים (alt) לתמונות.</li>
-            <li style={listItem}>ניגודיות צבעים תקינה בין טקסט לרקע.</li>
-            <li style={listItem}>תמיכה בסיסית בקוראי מסך.</li>
-            <li style={listItem}>
-              ווידג'ט נגישות ייעודי הכולל הגדלת טקסט, ניגודיות גבוהה, הדגשת
-              קישורים ועצירת אנימציות — נפתח מהכפתור העגול בתחתית המסך.
-            </li>
+            <li style={listItem}>ניווט באמצעות מקלדת, כולל קישור דילוג לתוכן הראשי.</li>
+            <li style={listItem}>טקסטים חלופיים (alt) לתמונות מוצרים.</li>
+            <li style={listItem}>הקפדה על ניגודיות צבעים בין טקסט לרקע.</li>
+            <li style={listItem}>תוויות ומאפייני ARIA לרכיבים אינטראקטיביים, לתמיכה בקוראי מסך.</li>
+            <li style={listItem}>תמיכה מלאה בכיווניות עברית (RTL) ובתצוגה במסכים קטנים.</li>
           </ul>
 
           <h2 style={sectionTitle}>חלקים שטרם הונגשו</h2>
@@ -116,7 +120,7 @@ export default function AccessibilityPage() {
           </p>
 
           <h2 style={sectionTitle}>תאריך עדכון ההצהרה</h2>
-          <p style={para}>ההצהרה עודכנה לאחרונה: יולי 2026.</p>
+          <p style={para}>ההצהרה עודכנה לאחרונה: אוגוסט 2026.</p>
         </article>
       </main>
       <SiteFooter />
