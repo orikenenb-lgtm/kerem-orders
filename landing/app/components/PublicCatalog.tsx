@@ -43,6 +43,20 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   const [activeCat, setActiveCat] = useState("all");
   const [vatLabel, setVatLabel] = useState(true);
 
+  // Product preview dialog. Holds the product being previewed plus the card
+  // element that opened it, so closing can hand focus back to that card.
+  const [preview, setPreview] = useState<PublicProduct | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const openPreview = (p: PublicProduct, opener: HTMLElement) => {
+    openerRef.current = opener;
+    setPreview(p);
+  };
+  const closePreview = useCallback(() => {
+    setPreview(null);
+    openerRef.current?.focus();
+    openerRef.current = null;
+  }, []);
+
   useEffect(() => {
     supabase.rpc("catalog_public_categories").then(({ data }) => {
       setCategories((data as { category: string; n: number }[]) ?? []);
@@ -226,7 +240,18 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
                 const img = rivhitImg(p.picture_link, 480, p.rotation_override ?? 0);
                 return (
-                  <div key={p.id} className="kt-card" style={{ border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                  // The whole card is one real <button>: reachable with Tab,
+                  // activated with Enter/Space, announced with the product
+                  // name — not a div with an onClick.
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="kt-card"
+                    onClick={(e) => openPreview(p, e.currentTarget)}
+                    aria-haspopup="dialog"
+                    aria-label={`תצוגה מקדימה: ${p.name}`}
+                    style={{ textAlign: "start", cursor: "pointer", font: "inherit", border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}
+                  >
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
@@ -234,10 +259,10 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                         not a fixed height), object-fit contain so no toy is
                         ever cropped or stretched, small inner padding, one
                         background for photographed-on-white images. */}
-                    <div style={{ position: "relative", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "2.6rem", padding: 8 }}>
+                    <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "2.6rem", padding: 8 }}>
                       <ProductImg src={img} alt={p.name} />
                     </div>
-                    <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em" }}>{p.name}</h3>
+                    <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", margin: 0 }}>{p.name}</h3>
                     {p.category && (
                       <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>{p.category}</div>
                     )}
@@ -246,7 +271,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                         {ils(Number(p.price) || 0)}
                       </div>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -274,7 +299,135 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
           </>
         )}
       </main>
+
+      {preview && (
+        <ProductPreview
+          product={preview}
+          showPrice={showPrices}
+          vatLabel={vatLabel}
+          onClose={closePreview}
+        />
+      )}
     </>
+  );
+}
+
+// Accessible product-preview dialog for the public catalogs.
+// Shows ONLY what the public RPCs already return (big image, name, category —
+// plus price on /prices): no SKU, no barcode, no stock counts.
+function ProductPreview({ product, showPrice, vatLabel, onClose }: {
+  product: PublicProduct;
+  showPrice: boolean;
+  vatLabel: boolean;
+  onClose: () => void;
+}) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  // Tap/click the image (or its button) to toggle a larger view. On phones the
+  // "zoom" state simply lets the image use the full panel height and native
+  // pinch-zoom keeps working — nothing is hijacked.
+  const [zoomed, setZoomed] = useState(false);
+
+  // Big image: request a wider variant for the dialog; zoom = the original.
+  const imgSmall = rivhitImg(product.picture_link, 480, product.rotation_override ?? 0);
+  const imgBig = rivhitImg(product.picture_link, 960, product.rotation_override ?? 0);
+
+  useEffect(() => {
+    closeBtnRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      // Focus trap: Tab cycles among the dialog's controls only.
+      if (e.key === "Tab" && panelRef.current) {
+        const focusables = panelRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href]'
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        } else if (!panelRef.current.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    // Scroll-lock the page behind the dialog.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(20,16,32,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={product.name}
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "#fff", width: "100%", maxWidth: 560, maxHeight: "92dvh", overflowY: "auto", borderRadius: 20, padding: "1rem 1rem 1.4rem", display: "flex", flexDirection: "column", gap: "0.8rem" }}
+      >
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            ref={closeBtnRef}
+            type="button"
+            onClick={onClose}
+            aria-label="סגירת התצוגה המקדימה"
+            style={{ width: 44, height: 44, borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, fontSize: "1.25rem", lineHeight: 1, cursor: "pointer" }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setZoomed((z) => !z)}
+          aria-pressed={zoomed}
+          aria-label={zoomed ? "הקטנת התמונה" : "הגדלת התמונה"}
+          style={{ border: `1px solid ${tokens.border}`, borderRadius: 14, background: "#fff", padding: 8, cursor: "zoom-in", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 220, maxHeight: zoomed ? "70dvh" : 340, overflow: "hidden", fontSize: "3rem" }}
+        >
+          <ProductImg src={zoomed ? imgBig : imgSmall} alt={product.name} />
+        </button>
+        <p style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim, textAlign: "center", margin: 0 }}>
+          {zoomed ? "לחיצה נוספת מקטינה חזרה" : "אפשר ללחוץ על התמונה להגדלה"}
+        </p>
+
+        <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", color: tokens.text, margin: 0, lineHeight: 1.3 }}>
+          {product.name}
+        </h2>
+        {product.category && (
+          <p style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.body, margin: 0 }}>
+            קטגוריה: {product.category}
+          </p>
+        )}
+        {showPrice && (
+          <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.35rem", color: tokens.text, margin: 0 }}>
+            {ils(Number(product.price) || 0)}
+            {vatLabel && (
+              <span style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.85rem", color: tokens.dim }}>
+                {" "}· כולל מע״מ
+              </span>
+            )}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
