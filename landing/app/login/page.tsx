@@ -141,7 +141,13 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "1.3rem", textAlign: "center" }}>
+          <p style={{ fontFamily: tokens.assistant, marginTop: "1rem", textAlign: "center" }}>
+            <Link href="/forgot" style={{ color: tokens.accent, fontWeight: 600, fontSize: "0.92rem" }}>
+              שכחתם סיסמה?
+            </Link>
+          </p>
+
+          <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.6rem", textAlign: "center" }}>
             עוד אין לכם חשבון?{" "}
             <Link href="/register" style={{ color: tokens.accent, fontWeight: 600 }}>
               פתיחת חשבון לקוח
