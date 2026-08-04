@@ -11,9 +11,19 @@
 //   2. rows whose name contains EVERY word of the query, in any order
 //   3. everything else, in the order the RPC sent it (fuzzy rank)
 //
-// The sort is stable and page-local: nothing is hidden, nothing is re-shuffled
-// after it is already on screen (each infinite-scroll page is ranked once,
-// before append).
+// SCOPE — read this before relying on the ordering:
+// The re-ranking is PAGE-LOCAL. Each infinite-scroll page (24 rows) is
+// re-ordered once, in isolation, before being appended. Consequences:
+//   • Within a page, exact matches always precede fuzzy ones.
+//   • ACROSS pages nothing moves: an exact match that the RPC ranked onto
+//     page 3 still appears after every row of pages 1-2, even fuzzy ones.
+//   • Rows already on screen are never reshuffled by later pages (by design —
+//     a grid that reorders under the user's finger is worse than imperfect
+//     ordering).
+// Making exact matches rank first GLOBALLY requires changing the
+// search_products / catalog_public* RPCs to boost literal-substring hits in
+// SQL — a Supabase change that is explicitly out of scope for this branch.
+// Nothing is hidden in any case.
 //
 // Normalization mirrors what a person considers "the same text": final letters
 // folded (ם→מ etc.), punctuation and doubled spaces dropped, case ignored.
