@@ -18,15 +18,24 @@ export const CONTACT = {
 
 const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
-// לוגו: הטקסט הצבעוני מוצג מיד; אם קיים /public/logo.png הוא מחליף אותו רק
-// אחרי שנטען בהצלחה. הסדר הזה (טקסט קודם, תמונה אחר-כך) הוא מה שמונע את
-// אייקון "תמונה שבורה" שהבהב כשה-<img> רונדר ראשון וה-onError הגיע באיחור.
-// אין קפיצת פריסה: שני המצבים חיים באותו קונטיינר בגובה 40px.
+// לוגו. אין כרגע קובץ לוגו בפרויקט (landing/public/logo.png לא קיים), ולכן
+// לא מנסים לטעון אותו בכלל — כל בקשה כזו היא 404 מיותר בכל טעינת עמוד.
+// כשיהיה קובץ אמיתי: מעלים אותו ל-landing/public/logo.png והופכים את
+// HAS_LOGO_FILE ל-true — ורק אז ה-<img> חוזר. עד אז: לוגו-טקסט בלבד,
+// באותו קונטיינר בגובה 40px (בלי שינוי פריסה בין המצבים).
+const HAS_LOGO_FILE = false;
+
 function Logo() {
-  const [imgReady, setImgReady] = useState(false);
   return (
     <span style={{ display: "flex", alignItems: "center", height: 40 }}>
-      {!imgReady && (
+      {HAS_LOGO_FILE ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`${base}/logo.png`}
+          alt="כרם טויס"
+          style={{ height: 40, width: "auto", objectFit: "contain", display: "block" }}
+        />
+      ) : (
         <span
           style={{
             fontFamily: tokens.rubik,
@@ -42,21 +51,6 @@ function Logo() {
           כרם טויס
         </span>
       )}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={`${base}/logo.png`}
-        alt={imgReady ? "כרם טויס" : ""}
-        aria-hidden={!imgReady}
-        onLoad={() => setImgReady(true)}
-        style={{
-          height: 40,
-          width: "auto",
-          objectFit: "contain",
-          // Hidden (not unmounted) until it loads, so a missing file shows
-          // nothing at all and a real file appears without re-requesting.
-          display: imgReady ? "block" : "none",
-        }}
-      />
     </span>
   );
 }
