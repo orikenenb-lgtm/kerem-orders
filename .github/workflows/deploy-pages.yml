@@ -1,13 +1,14 @@
 name: Deploy landing page to GitHub Pages
 
+# SAFETY: deploys run from main ONLY. A feature-branch push must never
+# overwrite the live site — the branch trigger that used to sit here did
+# exactly that (any push to it replaced production without a merge).
 on:
   push:
     branches:
       - main
-      - claude/kerem-toys-landing-fso0gm
     paths:
       - "landing/**"
-      - "docs/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -35,10 +36,18 @@ jobs:
       - run: npm run build
       # Publish the CRPS presentation alongside the landing page at /crps/.
       # The landing page output is left untouched.
+      #
+      # SECURITY: copy ONLY the two presentation files, never `docs/.` as a
+      # whole. The docs/ directory also holds INTERNAL project documents
+      # (AUDIT.md, HANDOVER.md, QA_CHECKLIST.md, ROLLBACK.md, …) that describe
+      # the system's internals and known weaknesses — the previous `cp -r
+      # ../docs/.` published all of them to the public internet at /crps/*.md.
+      # If a new public asset is ever needed here, add it by explicit filename.
       - name: Add CRPS presentation at /crps
         run: |
           mkdir -p out/crps
-          cp -r ../docs/. out/crps/
+          cp ../docs/index.html out/crps/index.html
+          cp ../docs/crps-hilit.pdf out/crps/crps-hilit.pdf
       - uses: actions/upload-pages-artifact@v3
         with:
           path: landing/out
