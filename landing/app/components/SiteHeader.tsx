@@ -18,35 +18,45 @@ export const CONTACT = {
 
 const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
-// לוגו: מציג את הקובץ /public/logo.png ; עד שמעלים אותו — נופל חזרה
-// אוטומטית ללוגו-טקסט הצבעוני, בלי תמונה שבורה.
+// לוגו: הטקסט הצבעוני מוצג מיד; אם קיים /public/logo.png הוא מחליף אותו רק
+// אחרי שנטען בהצלחה. הסדר הזה (טקסט קודם, תמונה אחר-כך) הוא מה שמונע את
+// אייקון "תמונה שבורה" שהבהב כשה-<img> רונדר ראשון וה-onError הגיע באיחור.
+// אין קפיצת פריסה: שני המצבים חיים באותו קונטיינר בגובה 40px.
 function Logo() {
-  const [err, setErr] = useState(false);
-  if (!err) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
+  const [imgReady, setImgReady] = useState(false);
+  return (
+    <span style={{ display: "flex", alignItems: "center", height: 40 }}>
+      {!imgReady && (
+        <span
+          style={{
+            fontFamily: tokens.rubik,
+            fontWeight: 900,
+            fontSize: "1.35rem",
+            backgroundImage: tokens.rainbow,
+            WebkitBackgroundClip: "text",
+            backgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            whiteSpace: "nowrap",
+          }}
+        >
+          כרם טויס
+        </span>
+      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={`${base}/logo.png`}
-        alt="כרם טויס"
-        onError={() => setErr(true)}
-        style={{ height: 40, width: "auto", display: "block", objectFit: "contain" }}
+        alt={imgReady ? "כרם טויס" : ""}
+        aria-hidden={!imgReady}
+        onLoad={() => setImgReady(true)}
+        style={{
+          height: 40,
+          width: "auto",
+          objectFit: "contain",
+          // Hidden (not unmounted) until it loads, so a missing file shows
+          // nothing at all and a real file appears without re-requesting.
+          display: imgReady ? "block" : "none",
+        }}
       />
-    );
-  }
-  return (
-    <span
-      style={{
-        fontFamily: tokens.rubik,
-        fontWeight: 900,
-        fontSize: "1.35rem",
-        backgroundImage: tokens.rainbow,
-        WebkitBackgroundClip: "text",
-        backgroundClip: "text",
-        WebkitTextFillColor: "transparent",
-        whiteSpace: "nowrap",
-      }}
-    >
-      כרם טויס
     </span>
   );
 }
