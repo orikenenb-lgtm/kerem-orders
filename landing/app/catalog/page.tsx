@@ -561,13 +561,17 @@ export default function CatalogPage() {
 
         <div style={{ position: "sticky", top: 92, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
           <input
+            type="search"
+            // A real programmatic name — placeholder alone is not a label
+            // (it vanishes on input and many screen readers skip it).
+            aria-label="חיפוש מוצר לפי שם, קוד פריט או ברקוד"
             placeholder="🔍 חיפוש לפי שם, קוד פריט או ברקוד…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
           />
           {categories.length > 0 && (
-            <div style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+            <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
               {[{ category: "all", n: 0 }, ...orderedCats].map((c, i) => {
                 const active = activeCat === c.category;
                 const isAll = c.category === "all";
@@ -576,6 +580,7 @@ export default function CatalogPage() {
                   <button
                     key={c.category}
                     onClick={() => setActiveCat(c.category)}
+                    aria-pressed={active}
                     style={{
                       whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.82rem",
                       padding: "0.5rem 1.1rem", borderRadius: 999, cursor: "pointer",

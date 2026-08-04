@@ -23,8 +23,13 @@ export const featureFlags = {
   ff_register_address: true,
   /** Wave 5: minimum-order progress bar + VAT breakdown in cart/checkout. */
   ff_min_order_vat_ui: true,
-  /** Wave 6: accessibility widget + statement page. */
-  ff_a11y_widget: false,
+  /** Wave 6: accessibility widget + statement page.
+   *  2026-08-04: re-enabled ON THIS WORK BRANCH so the accessibility
+   *  statement (which describes the widget) is truthful and the widget can be
+   *  QA'd. NOTE FOR MERGE: the owner previously asked for the floating button
+   *  to be removed from the live site — going live with `true` here is an
+   *  owner decision, not a technical one. */
+  ff_a11y_widget: true,
   /** Wave 7: new visual theme (tokens.css). */
   ff_new_theme: true,
 } as const;

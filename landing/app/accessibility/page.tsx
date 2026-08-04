@@ -95,6 +95,9 @@ export default function AccessibilityPage() {
           <p style={para}>
             רכז הנגישות מטעם האתר: <strong>צוות כרם טויס</strong>.
           </p>
+          {/* Contact channels: only details that actually exist. There is no
+              dedicated accessibility email yet — so no email line at all
+              rather than a placeholder or an invented address. */}
           <ul style={{ paddingInlineStart: "1.4rem", margin: "0 0 0.8rem" }}>
             <li style={listItem}>
               טלפון:{" "}
@@ -104,9 +107,6 @@ export default function AccessibilityPage() {
               >
                 050-852-4448
               </a>
-            </li>
-            <li style={listItem}>
-              דוא"ל: <strong>[להשלמה]</strong>
             </li>
           </ul>
           <p style={para}>

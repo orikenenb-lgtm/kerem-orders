@@ -100,7 +100,9 @@ export default function A11yWidget() {
   }, []);
 
   // While open: focus moves into the panel, Esc closes and returns focus to
-  // the launcher button, and clicking outside closes the panel.
+  // the launcher button, clicking outside closes, and Tab cycles WITHIN the
+  // panel (a dialog that lets Tab wander into the page behind it strands
+  // keyboard users — WCAG 2.1 §2.4.3).
   useEffect(() => {
     if (!open) return;
     firstControlRef.current?.focus();
@@ -108,6 +110,28 @@ export default function A11yWidget() {
       if (e.key === "Escape") {
         setOpen(false);
         btnRef.current?.focus();
+        return;
+      }
+      if (e.key === "Tab" && panelRef.current) {
+        const focusables = panelRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href]'
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        } else if (!panelRef.current.contains(active)) {
+          // Focus somehow left the dialog (e.g. it was on the launcher) —
+          // pull it back to the first control instead of the page behind.
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     const onPointerDown = (e: MouseEvent) => {
