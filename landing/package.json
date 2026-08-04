@@ -13,7 +13,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
     "framer-motion": "^11.3.0",
-    "next": "^15.1.0",
+    "next": "^15.5.22",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -22,5 +22,8 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "typescript": "^5.5.0"
+  },
+  "overrides": {
+    "postcss": "^8.5.23"
   }
 }
