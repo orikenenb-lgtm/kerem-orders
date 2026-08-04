@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
+import PasswordInput from "../components/PasswordInput";
 import { supabase } from "../../lib/supabaseClient";
 import { tokens, primaryBtn } from "../../lib/ui";
 
@@ -124,11 +125,11 @@ export default function ResetPage() {
               <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
                 <label style={{ display: "grid", gap: "0.35rem" }}>
                   <span style={lbl}>סיסמה חדשה</span>
-                  <input type="password" required value={pw} onChange={(e) => setPw(e.target.value)} style={inp} autoComplete="new-password" />
+                  <PasswordInput required minLength={6} value={pw} onChange={(e) => setPw(e.target.value)} style={inp} autoComplete="new-password" />
                 </label>
                 <label style={{ display: "grid", gap: "0.35rem" }}>
                   <span style={lbl}>אימות סיסמה</span>
-                  <input type="password" required value={pw2} onChange={(e) => setPw2(e.target.value)} style={inp} autoComplete="new-password" />
+                  <PasswordInput required value={pw2} onChange={(e) => setPw2(e.target.value)} style={inp} autoComplete="new-password" />
                 </label>
 
                 {error && (

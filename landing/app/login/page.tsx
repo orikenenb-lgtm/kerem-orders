@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
+import PasswordInput from "../components/PasswordInput";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
 import { tokens, primaryBtn } from "../../lib/ui";
@@ -102,6 +103,8 @@ export default function LoginPage() {
               <span style={lbl}>אימייל</span>
               <input
                 type="email"
+                autoComplete="email"
+                inputMode="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -110,8 +113,8 @@ export default function LoginPage() {
             </label>
             <label style={{ display: "grid", gap: "0.35rem" }}>
               <span style={lbl}>סיסמה</span>
-              <input
-                type="password"
+              <PasswordInput
+                autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

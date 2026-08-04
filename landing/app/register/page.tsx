@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
+import PasswordInput from "../components/PasswordInput";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
 import { featureFlags } from "../../lib/featureFlags";
@@ -104,6 +105,7 @@ const CITY_LIST = [
 
 const PHONE_ERROR = "מספר טלפון לא תקין — צריך 10 ספרות";
 const HOUSE_ERROR = "צריך למלא מספר בית";
+const PASSWORD_MATCH_ERROR = "הסיסמאות אינן תואמות — בדקו את שני השדות";
 
 // 10 digits starting with 0; spaces and dashes are fine ("050-123 4567").
 const isValidPhone = (v: string) => /^0\d{9}$/.test(v.replace(/[\s-]/g, ""));
@@ -127,10 +129,14 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Confirm-password lives outside `form`: it is never sent anywhere, never
+  // drafted to localStorage — it exists only to catch typos before submit.
+  const [password2, setPassword2] = useState("");
   // Per-field messages shown under the phone / house-number inputs (flag-on).
   const [fieldErrors, setFieldErrors] = useState<{
     phone?: string;
     house_number?: string;
+    password2?: string;
   }>({});
 
   // Already signed in → go to catalog.
@@ -274,6 +280,13 @@ export default function RegisterPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    // The two passwords must match before anything is sent — checked in every
+    // flag state (the confirm field renders in both branches of the form).
+    if (form.password !== password2) {
+      setFieldErrors((p) => ({ ...p, password2: PASSWORD_MATCH_ERROR }));
+      return;
+    }
+    setFieldErrors((p) => ({ ...p, password2: undefined }));
     if (ADDR) {
       // Same rules as the on-blur checks — one last look before sending.
       const errs = {
@@ -282,7 +295,7 @@ export default function RegisterPage() {
           form.house_number.trim() === "" ? HOUSE_ERROR : undefined,
       };
       if (errs.phone || errs.house_number) {
-        setFieldErrors(errs);
+        setFieldErrors((p) => ({ ...p, ...errs }));
         return;
       }
     }
@@ -381,8 +394,8 @@ export default function RegisterPage() {
           <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
             {ADDR ? (
               <>
-                <Field label="שם העסק / החנות" mark="req" value={form.business_name} onChange={set("business_name")} required />
-                <Field label="שם איש קשר" mark="req" value={form.full_name} onChange={set("full_name")} required />
+                <Field label="שם העסק / החנות" mark="req" value={form.business_name} onChange={set("business_name")} autoComplete="organization" required />
+                <Field label="שם איש קשר" mark="req" value={form.full_name} onChange={set("full_name")} autoComplete="name" required />
                 <Field
                   label="טלפון"
                   mark="req"
@@ -392,18 +405,21 @@ export default function RegisterPage() {
                   error={fieldErrors.phone}
                   type="tel"
                   inputMode="tel"
+                  autoComplete="tel"
                   required
                 />
                 {phoneHint}
-                <Field label="אימייל" mark="req" value={form.email} onChange={set("email")} type="email" required />
-                <Field label="עוסק מורשה / ח.פ" mark="req" value={form.vat_number} onChange={set("vat_number")} inputMode="numeric" required />
-                <Field label="עיר" mark="req" value={form.city} onChange={set("city")} list="kt-city-list" required />
+                <Field label="אימייל" mark="req" value={form.email} onChange={set("email")} type="email" inputMode="email" autoComplete="email" required />
+                {/* No autocomplete token exists for a VAT number — leave it off
+                    rather than teach the browser a wrong mapping. */}
+                <Field label="עוסק מורשה / ח.פ" mark="req" value={form.vat_number} onChange={set("vat_number")} inputMode="numeric" autoComplete="off" required />
+                <Field label="עיר" mark="req" value={form.city} onChange={set("city")} list="kt-city-list" autoComplete="address-level2" required />
                 <datalist id="kt-city-list">
                   {CITY_LIST.map((c) => (
                     <option key={c} value={c} />
                   ))}
                 </datalist>
-                <Field label="רחוב" mark="req" value={form.street} onChange={set("street")} required />
+                <Field label="רחוב" mark="req" value={form.street} onChange={set("street")} autoComplete="address-line1" required />
                 <Field
                   label="מספר בית"
                   mark="req"
@@ -411,9 +427,10 @@ export default function RegisterPage() {
                   onChange={set("house_number")}
                   onBlur={onHouseBlur}
                   error={fieldErrors.house_number}
+                  autoComplete="address-line2"
                   required
                 />
-                <Field label="מיקוד" mark="opt" value={form.zip_code} onChange={set("zip_code")} inputMode="numeric" />
+                <Field label="מיקוד" mark="opt" value={form.zip_code} onChange={set("zip_code")} inputMode="numeric" autoComplete="postal-code" />
                 <AreaField
                   label="הערות למשלוח"
                   mark="opt"
@@ -421,17 +438,34 @@ export default function RegisterPage() {
                   onChange={set("delivery_notes")}
                   placeholder="לדוגמה: להשאיר במחסן, לתאם טלפונית לפני הגעה…"
                 />
-                <Field label="סיסמה (לפחות 6 תווים)" mark="req" value={form.password} onChange={set("password")} type="password" required />
+                <PasswordField label="סיסמה (לפחות 6 תווים)" mark="req" value={form.password} onChange={set("password")} autoComplete="new-password" minLength={6} required />
+                <PasswordField
+                  label="אימות סיסמה"
+                  mark="req"
+                  value={password2}
+                  onChange={(e) => setPassword2(e.target.value)}
+                  error={fieldErrors.password2}
+                  autoComplete="new-password"
+                  required
+                />
               </>
             ) : (
               <>
-                <Field label="שם העסק / החנות" value={form.business_name} onChange={set("business_name")} required />
-                <Field label="שם איש קשר" value={form.full_name} onChange={set("full_name")} required />
-                <Field label="עוסק מורשה / ח.פ" value={form.vat_number} onChange={set("vat_number")} inputMode="numeric" required />
-                <Field label="טלפון" value={form.phone} onChange={set("phone")} type="tel" inputMode="tel" />
+                <Field label="שם העסק / החנות" value={form.business_name} onChange={set("business_name")} autoComplete="organization" required />
+                <Field label="שם איש קשר" value={form.full_name} onChange={set("full_name")} autoComplete="name" required />
+                <Field label="עוסק מורשה / ח.פ" value={form.vat_number} onChange={set("vat_number")} inputMode="numeric" autoComplete="off" required />
+                <Field label="טלפון" value={form.phone} onChange={set("phone")} type="tel" inputMode="tel" autoComplete="tel" />
                 {phoneHint}
-                <Field label="אימייל" value={form.email} onChange={set("email")} type="email" required />
-                <Field label="סיסמה (לפחות 6 תווים)" value={form.password} onChange={set("password")} type="password" required />
+                <Field label="אימייל" value={form.email} onChange={set("email")} type="email" inputMode="email" autoComplete="email" required />
+                <PasswordField label="סיסמה (לפחות 6 תווים)" value={form.password} onChange={set("password")} autoComplete="new-password" minLength={6} required />
+                <PasswordField
+                  label="אימות סיסמה"
+                  value={password2}
+                  onChange={(e) => setPassword2(e.target.value)}
+                  error={fieldErrors.password2}
+                  autoComplete="new-password"
+                  required
+                />
               </>
             )}
 
@@ -521,6 +555,46 @@ function Field({
       />
       {error && (
         <span style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C" }}>
+          {error}
+        </span>
+      )}
+    </label>
+  );
+}
+
+// Same look as Field, with the shared show/hide password input inside.
+function PasswordField({
+  label,
+  mark,
+  error,
+  ...props
+}: {
+  label: string;
+  mark?: "req" | "opt";
+  error?: string;
+} & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <label style={{ display: "grid", gap: "0.35rem" }}>
+      <span style={{ fontFamily: tokens.rubik, fontWeight: 600, fontSize: "0.85rem", color: tokens.text }}>
+        {label}
+        <LabelMark mark={mark} />
+      </span>
+      <PasswordInput
+        {...props}
+        aria-invalid={error ? true : undefined}
+        style={{
+          fontFamily: tokens.assistant,
+          fontSize: "1rem",
+          padding: "0.75rem 0.9rem",
+          borderRadius: 12,
+          border: `1px solid ${tokens.border}`,
+          background: tokens.surface,
+          color: tokens.text,
+          outlineColor: tokens.accent,
+        }}
+      />
+      {error && (
+        <span role="alert" style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C" }}>
           {error}
         </span>
       )}
