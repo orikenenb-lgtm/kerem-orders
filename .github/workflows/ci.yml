@@ -1,0 +1,37 @@
+# PR checks for the store front end. Runs the full verification battery and
+# NOTHING else — this workflow must never deploy, publish, or touch Pages.
+# (Deploys happen only in deploy-pages.yml, only from main.)
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: landing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+      - name: Install (clean)
+        run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Production build (static export)
+        run: npm run build
