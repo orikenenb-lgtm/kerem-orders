@@ -5,6 +5,7 @@ import SiteHeader from "./SiteHeader";
 import { supabase } from "../../lib/supabaseClient";
 import { rivhitImg } from "../../lib/images";
 import { tokens, ils } from "../../lib/ui";
+import { orderExactFirst } from "../../lib/searchRank";
 
 // Shared public, read-only catalog (no login, no ordering) behind both
 // public links:
@@ -130,14 +131,17 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
     // not append — restart cleanly from the first page instead.
     if (page > 0 && gen !== gridGen.current) { setPage(0); return; }
     setLoadErr(false);
-    const rows = (data as PublicProduct[]) ?? [];
+    // Exact/whole-word matches float above fuzzy ones within each page —
+    // nothing is hidden, already-rendered pages are never reshuffled.
+    const rows = orderExactFirst(((data as PublicProduct[]) ?? []), s);
     applyRows(rows, page > 0);
     gridGen.current = gen;
     setEndReached(rows.length < PAGE_SIZE);
     // An empty overflow page carries no window count — keep the known total.
     if (page === 0 || rows.length > 0) setTotal(Number(rows[0]?.total ?? 0));
     // no exact match but similar ones found → "did you mean" mode
-    if (page === 0) setFuzzyNote(s.length >= 2 && rows.length > 0 && (rows[0]?.rank ?? 0) < 0.55);
+    // (rank comes from the RPC row set — unaffected by the client re-order).
+    if (page === 0) setFuzzyNote(s.length >= 2 && rows.length > 0 && !rows.some((r) => (r.rank ?? 0) >= 0.55));
     setLoadingProducts(false);
   }, [rpcName, query, page, activeCat]);
 

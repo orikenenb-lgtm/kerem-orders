@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "frames": "python3 scripts/generate_frames.py",
-    "test": "node tests/quantity.test.mjs"
+    "test": "node tests/quantity.test.mjs && node tests/searchRank.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

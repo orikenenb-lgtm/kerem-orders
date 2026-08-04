@@ -11,6 +11,7 @@ import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
 import { featureFlags } from "../../lib/featureFlags";
 import { VAT_RATE } from "../../lib/config";
 import { resolveQuantity, stepOf, describeQuantity } from "../../lib/quantity";
+import { orderExactFirst } from "../../lib/searchRank";
 
 type Product = {
   id: string;
@@ -212,14 +213,17 @@ export default function CatalogPage() {
       // not append — restart cleanly from the first page instead.
       if (page > 0 && gen !== gridGen.current) { setPage(0); return; }
       setLoadErr(false);
-      const rows = (data as Product[]) ?? [];
+      // Exact/whole-word matches float above fuzzy ones within each page —
+      // nothing is hidden, already-rendered pages are never reshuffled.
+      const rows = orderExactFirst(((data as Product[]) ?? []), s);
       applyRows(rows, page > 0);
       gridGen.current = gen;
       setEndReached(rows.length < PAGE_SIZE);
       // An empty overflow page carries no window count — keep the known total.
       if (page === 0 || rows.length > 0) setTotal(Number(rows[0]?.total ?? 0));
       // no exact match but similar ones found → "did you mean" mode
-      if (page === 0) setFuzzyNote(rows.length > 0 && (rows[0]?.rank ?? 0) < 0.55);
+      // (rank comes from the RPC row set — unaffected by the client re-order).
+      if (page === 0) setFuzzyNote(rows.length > 0 && !rows.some((r) => (r.rank ?? 0) >= 0.55));
       setLoadingProducts(false);
       return;
     }
