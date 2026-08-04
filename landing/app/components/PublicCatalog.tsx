@@ -230,7 +230,11 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
-                    <div style={{ position: "relative", height: 150, borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "2.6rem" }}>
+                    {/* Uniform frame: square in every column width (aspectRatio,
+                        not a fixed height), object-fit contain so no toy is
+                        ever cropped or stretched, small inner padding, one
+                        background for photographed-on-white images. */}
+                    <div style={{ position: "relative", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "2.6rem", padding: 8 }}>
                       <ProductImg src={img} alt={p.name} />
                     </div>
                     <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em" }}>{p.name}</h3>

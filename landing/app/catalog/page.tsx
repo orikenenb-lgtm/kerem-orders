@@ -652,8 +652,11 @@ export default function CatalogPage() {
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
-                    <Link href={`/product/?id=${p.id}`} aria-label={`פרטים על ${p.name}`} style={{ display: "block", position: "relative", height: 150, borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, overflow: "hidden" }}>
-                      <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>
+                    {/* Uniform frame: square in every column width (aspectRatio,
+                        not a fixed height), contain (no cropping/stretching),
+                        small inner padding, one white background. */}
+                    <Link href={`/product/?id=${p.id}`} aria-label={`פרטים על ${p.name}`} style={{ display: "block", position: "relative", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, overflow: "hidden" }}>
+                      <span style={{ position: "absolute", inset: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>
                         <ProductImg src={img} alt={p.name} />
                       </span>
                     </Link>

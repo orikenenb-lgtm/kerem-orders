@@ -227,7 +227,9 @@ function ProductDetail() {
               const rPrice = applyDiscount(r.price, discount);
               return (
                 <Link key={r.id} href={`/product/?id=${r.id}`} className="kt-card" style={{ textDecoration: "none", border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.8rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                  <div style={{ height: 130, borderRadius: 12, border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                  {/* Same uniform frame as the catalog cards: square, contain,
+                      inner padding, white background. */}
+                  <div style={{ aspectRatio: "1 / 1", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
                     <ProductImg src={rImg} alt={r.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                   </div>
                   <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.2em" }}>{r.name}</div>
