@@ -23,10 +23,8 @@ const eslintConfig = [
       "react-hooks/preserve-manual-memoization": "warn",
       // Deliberate plain <img>: static export with images.unoptimized, all
       // product images already resized/cached by the rivhit-img edge proxy —
-      // next/image adds nothing here. Both namespaces covered: the flat
-      // preset registers the rule as next/*, legacy per-line disables used
-      // @next/next/*.
-      "next/no-img-element": "off",
+      // next/image adds nothing here. The flat preset registers the plugin
+      // as @next/next, so that is the only valid rule key.
       "@next/next/no-img-element": "off",
     },
   },
