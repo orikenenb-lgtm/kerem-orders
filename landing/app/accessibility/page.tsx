@@ -4,7 +4,8 @@ import SiteFooter from "../components/SiteFooter";
 import { tokens } from "../../lib/ui";
 
 export const metadata: Metadata = {
-  title: "הצהרת נגישות — כרם טויס",
+  // The root layout's title template appends "— כרם טויס".
+  title: "הצהרת נגישות",
   description: "הצהרת הנגישות של אתר כרם טויס — התאמות, מגבלות ודרכי פנייה.",
 };
 
