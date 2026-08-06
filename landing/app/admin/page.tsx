@@ -271,12 +271,19 @@ function OrdersTab() {
 }
 
 /* ---------------- Catalog (Rivhit-synced) ---------------- */
+// Shape of the summary jsonb a sync run stores — only the numbers the log
+// line renders. Anything else in the blob is ignored.
+type SyncSummary = {
+  products?: { synced?: number | null; from_rivhit?: number | null } | null;
+  customers?: { synced?: number | null } | null;
+} | null;
+
 type SyncRun = {
   id: string;
   status: string;
   mode: string | null;
   what: string | null;
-  summary: any;
+  summary: SyncSummary;
   error: string | null;
   created_at: string;
   finished_at: string | null;
@@ -311,7 +318,7 @@ const syncModeHe = (m: string | null) => (m ? SYNC_MODE_HE[m] ?? m : "עדכון
 const syncWhatHe = (w: string | null) => (w ? SYNC_WHAT_HE[w] ?? w : "");
 
 // "עודכנו 915 מוצרים (מתוך 8,790 ברווחית) · 12 לקוחות" from the summary jsonb.
-function syncNumbers(summary: any): string {
+function syncNumbers(summary: SyncSummary): string {
   const parts: string[] = [];
   const p = summary?.products;
   if (p?.synced != null) {
@@ -332,7 +339,6 @@ function CatalogImg({ link, name }: { link: string; name: string }) {
   const [err, setErr] = useState(false);
   useEffect(() => { setErr(false); }, [img]);
   if (!img || err) return <span>🧸</span>;
-  // eslint-disable-next-line @next/next/no-img-element
   return <img src={img} alt={name} loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />;
 }
 
@@ -444,7 +450,7 @@ function ProductsTab() {
     try {
       const { data, error } = await supabase.functions.invoke("rivhit-sync", { body: { mode: "sync", what: "both" } });
       if (error) throw error;
-      const runId = (data as any)?.run_id;
+      const runId = (data as { run_id?: string } | null)?.run_id;
       // Show the fresh "running" row right away (headline flips to
       // "מתעדכן עכשיו…"), then poll every ~3s up to ~60s. Each poll reloads
       // the runs list, so the headline and the log update live.
@@ -467,8 +473,8 @@ function ProductsTab() {
         setMsg("העדכון נמשך ברקע — הכותרת למעלה תתעדכן לבד כשהוא יסתיים.");
       }
       await load();
-    } catch (e: any) {
-      setMsg("העדכון נכשל: " + (e?.message ?? e));
+    } catch (e) {
+      setMsg("העדכון נכשל: " + String((e as Error)?.message ?? e));
     } finally {
       setSyncing(false);
     }

@@ -29,6 +29,8 @@ jobs:
           cache-dependency-path: landing/package-lock.json
       - name: Install (clean)
         run: npm ci
+      - name: Lint
+        run: npm run lint
       - name: Unit tests
         run: npm test
       - name: Type check

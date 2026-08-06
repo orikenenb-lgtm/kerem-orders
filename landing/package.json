@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "lint": "eslint .",
     "frames": "python3 scripts/generate_frames.py",
     "test": "node tests/quantity.test.mjs && node tests/searchRank.test.mjs"
   },
@@ -17,9 +18,12 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
     "@types/node": "^20.14.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.0",
     "typescript": "^5.5.0"
   },
   "overrides": {

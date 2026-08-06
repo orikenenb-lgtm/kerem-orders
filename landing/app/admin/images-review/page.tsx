@@ -270,7 +270,6 @@ function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRot
     <div style={{ border: `1px solid ${dirty ? tokens.accent : tokens.border}`, borderRadius: 16, background: "#fff", padding: "0.8rem", display: "flex", flexDirection: "column", gap: "0.6rem", boxShadow: "0 6px 18px rgba(26,23,48,0.05)" }}>
       <div style={{ aspectRatio: "1 / 1", borderRadius: 12, border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#fff", fontSize: "2.4rem", padding: 8 }}>
         {imgErr ? <span role="img" aria-label="התמונה לא נטענה">🧸</span> : (
-          // eslint-disable-next-line @next/next/no-img-element
           <img src={src} alt={row.name} loading="lazy" onError={() => setImgErr(true)} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
         )}
       </div>

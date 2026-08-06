@@ -41,7 +41,6 @@ function ProductImg({ src, alt, style }: { src: string; alt: string; style?: Rea
   const [err, setErr] = useState(false);
   useEffect(() => { setErr(false); }, [src]);
   if (!src || err) return <span style={{ fontSize: "4rem" }}>🧸</span>;
-  // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} style={style} />;
 }
 

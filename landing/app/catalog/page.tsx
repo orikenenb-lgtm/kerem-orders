@@ -308,6 +308,9 @@ export default function CatalogPage() {
       // The floating cart button unmounts while the drawer is open and only
       // remounts after this cleanup — hand focus back on the next tick, once
       // the fresh button is in the DOM. No-op when it isn't (e.g. order sent).
+      // Reading the ref LATE is the point here: the usual "copy ref.current
+      // into the effect" fix would capture the unmounted node.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       setTimeout(() => cartOpenerRef.current?.focus(), 0);
     };
   }, [cartOpen]);
@@ -968,7 +971,6 @@ function ProductImg({ src, alt }: { src: string | null; alt: string }) {
   useEffect(() => { setErr(false); }, [src]);
   if (!src || err) return <span>🧸</span>;
   return (
-    // eslint-disable-next-line @next/next/no-img-element
     <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
   );
 }
