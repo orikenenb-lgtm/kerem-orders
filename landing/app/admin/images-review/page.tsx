@@ -179,8 +179,9 @@ export default function ImagesReviewPage() {
 
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.5rem", lineHeight: 1.7, maxWidth: 720 }}>
           רוב התמונות מיושרות אוטומטית. כאן מסדרים תמונה שצולמה עקום — פשוט מסתכלים,
-          ואם היא על הצד או הפוכה לוחצים על כפתור הסיבוב עד שהיא ישרה. השינוי נשמר מיד
-          ומופיע בכל האתר. <b>כבר תוקנו: {fixedCount.toLocaleString("he-IL")} תמונות.</b>
+          ואם היא על הצד או הפוכה לוחצים על כפתורי הסיבוב עד שהיא ישרה בתצוגה
+          המקדימה, ואז לוחצים <b>שמירה</b>. שום דבר לא משתנה באתר לפני השמירה;
+          ביטול מחזיר את התמונה למצב השמור. <b>כבר תוקנו: {fixedCount.toLocaleString("he-IL")} תמונות.</b>
         </p>
 
         {/* AI auto-scan: goes over every not-yet-scanned image, detects

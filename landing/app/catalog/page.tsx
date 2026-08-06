@@ -281,7 +281,7 @@ export default function CatalogPage() {
       }
       if (e.key === "Tab" && drawerRef.current) {
         const focusables = drawerRef.current.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), a[href], input, textarea, select'
+          'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled])'
         );
         if (focusables.length === 0) return;
         const first = focusables[0];
@@ -780,7 +780,7 @@ export default function CatalogPage() {
                       }
                       return (
                         <div style={{ display: "grid", gap: "0.35rem" }}>
-                          <Stepper qty={qty} onChange={(n) => setQty(p, n)} accent={accent} step={step}
+                          <Stepper qty={qty} onChange={(n) => setQty(p, n)} accent={accent} step={step} label={p.name}
                             onCommitTyped={ffQty ? (n) => setQty(p, n) : undefined} />
                           {displaySold && (
                             <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>
@@ -880,7 +880,7 @@ export default function CatalogPage() {
                             <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>{describeQuantity(lp, l.qty)}</div>
                           )}
                         </div>
-                        <Stepper qty={l.qty} accent={tokens.accent} compact step={lineStep}
+                        <Stepper qty={l.qty} accent={tokens.accent} compact step={lineStep} label={l.name}
                           onCommitTyped={ffQty ? changeLineQty : undefined}
                           onChange={changeLineQty} />
                       </div>
@@ -975,7 +975,7 @@ function ProductImg({ src, alt }: { src: string | null; alt: string }) {
   );
 }
 
-function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped }: {
+function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped, label }: {
   qty: number; onChange: (q: number) => void; accent: string; compact?: boolean;
   /** Wave 3 (ff_display_quantities): +/- move by this many units. Default 1. */
   step?: number;
@@ -983,13 +983,18 @@ function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped }: {
    *  (so a normalizer can't fight each keystroke); +/- commit immediately.
    *  When absent (flag off) typing calls onChange per keystroke, as today. */
   onCommitTyped?: (q: number) => void;
+  /** Product name for the accessible names — a grid renders dozens of
+   *  steppers, and bare "כמות"/"פחות"/"עוד" are indistinguishable in a
+   *  screen reader's form-controls list. */
+  label?: string;
 }) {
   const sz = compact ? 30 : 34;
   const [draft, setDraft] = useState<string | null>(null);
+  const suffix = label ? ` — ${label}` : "";
   const btn: React.CSSProperties = { width: sz, height: sz, borderRadius: 9, border: `1px solid ${accent}`, background: "#fff", color: accent, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", cursor: "pointer", flexShrink: 0 };
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.4rem" }}>
-      <button aria-label="פחות" style={btn} onClick={() => onChange(qty - step)}>−</button>
+      <button aria-label={`פחות${suffix}`} style={btn} onClick={() => onChange(qty - step)}>−</button>
       <input
         value={draft ?? qty}
         onChange={(e) => {
@@ -1005,9 +1010,9 @@ function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped }: {
           onCommitTyped(Number.isFinite(n) ? n : 0);
         } : undefined}
         onKeyDown={onCommitTyped ? (e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); } : undefined}
-        aria-label="כמות"
+        aria-label={`כמות${suffix}`}
         style={{ width: compact ? 44 : 52, textAlign: "center", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", border: `1px solid ${tokens.border}`, borderRadius: 9, padding: "0.4rem 0" }} inputMode="numeric" />
-      <button aria-label="עוד" style={btn} onClick={() => onChange(qty + step)}>+</button>
+      <button aria-label={`עוד${suffix}`} style={btn} onClick={() => onChange(qty + step)}>+</button>
     </div>
   );
 }
