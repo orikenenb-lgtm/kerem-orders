@@ -195,7 +195,7 @@ function ProductDetail() {
             <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
               <button aria-label="פחות" onClick={() => setQty((n) => Math.max(step, n - step))}
                 style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${tokens.accent}`, background: "#fff", color: tokens.accent, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", cursor: "pointer" }}>−</button>
-              <input value={qty} onChange={(e) => { const n = parseInt(e.target.value.replace(/\D/g, ""), 10); setQty(Number.isFinite(n) && n > 0 ? n : step); }} inputMode="numeric"
+              <input value={qty} aria-label="כמות" onChange={(e) => { const n = parseInt(e.target.value.replace(/\D/g, ""), 10); setQty(Number.isFinite(n) && n > 0 ? n : step); }} inputMode="numeric"
                 style={{ width: 72, textAlign: "center", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "1rem", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.5rem 0" }} />
               <button aria-label="עוד" onClick={() => setQty((n) => n + step)}
                 style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${tokens.accent}`, background: "#fff", color: tokens.accent, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", cursor: "pointer" }}>+</button>
