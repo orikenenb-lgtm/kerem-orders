@@ -207,6 +207,7 @@ export default function ImagesReviewPage() {
 
         <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap", alignItems: "center", margin: "1.2rem 0", position: "sticky", top: 64, zIndex: 10, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "0.6rem 0" }}>
           <input
+            aria-label="חיפוש מוצר לפי שם"
             placeholder="🔍 חיפוש מוצר לפי שם"
             value={input}
             onChange={(e) => setInput(e.target.value)}

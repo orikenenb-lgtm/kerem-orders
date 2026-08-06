@@ -179,7 +179,7 @@ function OrdersTab() {
           {orders.length} הזמנות · {newCount} חדשות
         </span>
         <span style={{ flex: 1 }} />
-        <select value={filter} onChange={(e) => setFilter(e.target.value)} style={selStyle}>
+        <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="סינון הזמנות לפי סטטוס" style={selStyle}>
           <option value="all">הכול</option>
           {STATUSES.map((s) => (
             <option key={s} value={s}>{STATUS_HE[s]}</option>
@@ -220,7 +220,7 @@ function OrdersTab() {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.5rem" }}>
                   <StatusBadge status={o.status} />
-                  <select value={o.status} onChange={(e) => updateStatus(o.id, e.target.value)} style={selStyle}>
+                  <select value={o.status} onChange={(e) => updateStatus(o.id, e.target.value)} aria-label={`סטטוס הזמנה ${o.id.slice(0, 8)}`} style={selStyle}>
                     {STATUSES.map((s) => (
                       <option key={s} value={s}>{STATUS_HE[s]}</option>
                     ))}
@@ -568,7 +568,7 @@ function ProductsTab() {
         </p>
       )}
 
-      <input placeholder="🔍 חיפוש מוצר / קוד…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.6rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, marginBottom: "0.5rem" }} />
+      <input aria-label="חיפוש מוצר לפי שם או קוד" placeholder="🔍 חיפוש מוצר / קוד…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.6rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, marginBottom: "0.5rem" }} />
       <p style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, marginBottom: "0.8rem" }}>
         לחצו על מוצר כדי לערוך את המארז שלו · סמנו ✓ כמה מוצרים יחד לעדכון קבוצתי
       </p>
@@ -756,7 +756,7 @@ function PackagingEditor({ p, onSaved }: { p: ProductRow; onSaved: (patch: Parti
 
         <label style={{ display: "grid", gap: "0.3rem", alignContent: "start" }}>
           <span style={fieldLabel}>איך קוראים למארז?</span>
-          <select value={nameChoice} onChange={(e) => setNameChoice(e.target.value)} disabled={saving} style={{ ...selStyle, width: "100%" }}>
+          <select value={nameChoice} onChange={(e) => setNameChoice(e.target.value)} disabled={saving} aria-label="שם המארז" style={{ ...selStyle, width: "100%" }}>
             {PACK_NAMES.map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
@@ -1076,7 +1076,7 @@ function LinkPicker({ rivhit, suggestion, saving, onPick }: {
           💡 הצעה: {suggestion.name} ({suggestion.city || "—"}) — לחצו לקישור
         </button>
       )}
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 חיפוש לקוח רווחית לפי שם/טלפון…"
+      <input value={q} onChange={(e) => setQ(e.target.value)} aria-label="חיפוש לקוח רווחית לפי שם או טלפון" placeholder="🔍 חיפוש לקוח רווחית לפי שם/טלפון…"
         style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", padding: "0.45rem 0.7rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text }} />
       {matches.map((c) => (
         <button key={c.rivhit_id} onClick={() => onPick(c.rivhit_id)} disabled={saving}
