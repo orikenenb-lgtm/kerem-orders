@@ -151,7 +151,12 @@ export default function SiteHeader() {
           </Link>
 
           <nav style={{ display: "flex", alignItems: "center", gap: "clamp(0.8rem, 2.5vw, 1.6rem)", flexWrap: "wrap" }}>
-            {session && <Link href="/catalog" style={navLink}>קטלוג</Link>}
+            {/* Logged-in customers go to the orderable catalog; logged-out
+                visitors still get a link to the public (browse-only) catalog
+                so it isn't a dead end from every inner page. */}
+            {session
+              ? <Link href="/catalog" style={navLink}>קטלוג</Link>
+              : <Link href="/view" style={navLink}>קטלוג</Link>}
             {session && <Link href="/account" style={navLink}>ההזמנות שלי</Link>}
             {session && isManager && <Link href="/admin" style={{ ...navLink, color: tokens.accent }}>ניהול</Link>}
 

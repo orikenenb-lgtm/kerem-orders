@@ -27,16 +27,3 @@ export type Profile = {
   // Optional: the column may not exist in the DB yet; missing/null means 0.
   discount_percent?: number | null;
 };
-
-export type Product = {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  image_url: string;
-  emoji: string;
-  category: string;
-  sku: string;
-  in_stock: boolean;
-  sort_order: number;
-};

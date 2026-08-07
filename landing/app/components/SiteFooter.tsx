@@ -100,9 +100,6 @@ export default function SiteFooter() {
           {CONTACT.email ? (
             <a href={`mailto:${CONTACT.email}`} dir="ltr" style={{ ...link, textAlign: "right" }}>✉️ {CONTACT.email}</a>
           ) : null}
-          {!CONTACT.whatsapp && !CONTACT.phone && !CONTACT.email ? (
-            <span style={{ ...link, color: tokens.dim }}>דברו איתנו דרך הצ׳אט או פתחו חשבון</span>
-          ) : null}
         </div>
       </div>
 

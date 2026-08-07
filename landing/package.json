@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "serve": "npx serve out",
     "lint": "eslint .",
     "frames": "python3 scripts/generate_frames.py",
     "test": "node tests/quantity.test.mjs && node tests/searchRank.test.mjs"
