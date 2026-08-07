@@ -12,6 +12,7 @@ import { featureFlags } from "../../lib/featureFlags";
 import { VAT_RATE } from "../../lib/config";
 import { resolveQuantity, stepOf, describeQuantity } from "../../lib/quantity";
 import { orderExactFirst } from "../../lib/searchRank";
+import { readCart } from "../../lib/cart";
 
 type Product = {
   id: string;
@@ -133,10 +134,7 @@ export default function CatalogPage() {
 
   // cart persistence
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(CART_KEY);
-      if (raw) setCart(JSON.parse(raw));
-    } catch { /* */ }
+    setCart(readCart<CartLine>(localStorage.getItem(CART_KEY)));
   }, []);
   useEffect(() => {
     try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch { /* */ }
@@ -1005,6 +1003,11 @@ function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped, labe
         }}
         onBlur={onCommitTyped ? () => {
           if (draft === null) return;
+          // An empty field means "I cleared it to retype", not "remove this
+          // line" — restore the current qty instead of committing 0 (which
+          // would delete the cart line the moment focus leaves). A typed 0
+          // still removes, as documented.
+          if (draft === "") { setDraft(null); return; }
           const n = parseInt(draft, 10);
           setDraft(null);
           onCommitTyped(Number.isFinite(n) ? n : 0);

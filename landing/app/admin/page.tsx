@@ -103,7 +103,13 @@ function OrdersTab() {
       .from("orders")
       .select("*, order_items(*)")
       .order("created_at", { ascending: false });
-    if (error) setErr("טעינת ההזמנות נכשלה.");
+    if (error) {
+      // Keep whatever orders are already on screen — a failed refresh must not
+      // blank the list (matches ProductsTab / CustomersTab behaviour).
+      setErr("טעינת ההזמנות נכשלה.");
+      setBusy(false);
+      return;
+    }
     setOrders((data as Order[]) ?? []);
     setBusy(false);
   }, []);

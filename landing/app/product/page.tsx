@@ -11,6 +11,7 @@ import { rivhitImg } from "../../lib/images";
 import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
 import { featureFlags } from "../../lib/featureFlags";
 import { resolveQuantity, stepOf } from "../../lib/quantity";
+import { readCart } from "../../lib/cart";
 
 const ffQty = featureFlags.ff_display_quantities;
 const CART_KEY = "kt_cart_v2";
@@ -48,11 +49,9 @@ function ProductImg({ src, alt, style }: { src: string; alt: string; style?: Rea
 // SAME shared resolver — so a line added here is byte-identical to one added
 // from the catalog, and the checkout reconcile never flags it.
 function addToCart(p: Product, addUnits: number, discount: number) {
-  let cart: Record<string, { qty: number; name: string; price: number; sku: string | null; picture_link: string; display_qty?: number | null; display_name?: string | null }> = {};
-  try {
-    const raw = localStorage.getItem(CART_KEY);
-    if (raw) cart = JSON.parse(raw);
-  } catch { /* ignore */ }
+  const cart = readCart<{ qty: number; name: string; price: number; sku: string | null; picture_link: string; display_qty?: number | null; display_name?: string | null }>(
+    localStorage.getItem(CART_KEY)
+  );
   const existing = Number(cart[p.id]?.qty) || 0;
   const requested = existing + addUnits;
   const q = ffQty ? resolveQuantity(p, Math.min(requested, 9999)).units : Math.min(requested, 9999);
