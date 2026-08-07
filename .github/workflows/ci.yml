@@ -21,14 +21,17 @@ jobs:
       run:
         working-directory: landing
     steps:
-      - uses: actions/checkout@v4
+      # Third-party actions are pinned to full commit SHAs so a moved tag can
+      # never swap the code this workflow runs (the comment tracks the version).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # npm ci can run dependency lifecycle scripts; nothing after checkout
           # needs Git auth, so don't leave the token in the local git config.
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          # Node 20 reached end-of-life in April 2026 — build on the active LTS.
+          node-version: "24"
           cache: npm
           cache-dependency-path: landing/package-lock.json
       - name: Install (clean)
