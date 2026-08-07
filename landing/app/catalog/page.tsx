@@ -615,6 +615,8 @@ export default function CatalogPage() {
         <div style={{ position: "sticky", top: 92, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
           <input
             type="search"
+            id="kt-catalog-search"
+            name="catalog-search"
             // A real programmatic name — placeholder alone is not a label
             // (it vanishes on input and many screen readers skip it).
             aria-label="חיפוש מוצר לפי שם, קוד פריט או ברקוד"
@@ -623,7 +625,11 @@ export default function CatalogPage() {
             onChange={(e) => setInput(e.target.value)}
             style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
           />
-          {categories.length > 0 && (
+          {/* Category chips apply while browsing. A text search runs across ALL
+              categories (search_products takes no category argument), so the
+              chips are hidden during search — leaving them visible and
+              highlighted would falsely imply the results are filtered. */}
+          {categories.length > 0 && query.trim().length < 2 && (
             <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
               {[{ category: "all", n: 0 }, ...orderedCats].map((c, i) => {
                 const active = activeCat === c.category;
