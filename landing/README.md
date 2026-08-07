@@ -38,8 +38,11 @@ npm run dev      # http://localhost:3000
 npm test         # unit tests (quantity + search ranking)
 npm run lint     # eslint (flat config)
 npm run build    # static export to ./out
-npm run serve    # serve the built ./out locally
+npm run serve    # preview ./out at http://localhost:8735/kerem-orders/
 ```
+
+`npm run serve` mounts the export under the `/kerem-orders` basePath (as
+GitHub Pages does), so asset URLs resolve exactly like production.
 
 ## Legacy hero assets (`hero.mp4` + `frames/`)
 

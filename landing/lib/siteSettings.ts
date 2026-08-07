@@ -14,11 +14,15 @@ export function getMinOrderTotal(): Promise<number> {
   if (cached) return cached;
   const p = (async () => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("site_settings")
         .select("value")
         .eq("key", "min_order_total")
         .maybeSingle();
+      // maybeSingle reports failures via `error`, not a thrown exception —
+      // surface it so the catch clears the cache instead of caching the
+      // fallback and blocking retries for the rest of the session.
+      if (error) throw error;
       const n = Number((data as { value: string } | null)?.value);
       return Number.isFinite(n) && n > 0 ? n : MIN_ORDER_FALLBACK;
     } catch {
