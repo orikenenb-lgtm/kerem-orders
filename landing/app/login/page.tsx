@@ -8,6 +8,7 @@ import SiteFooter from "../components/SiteFooter";
 import PasswordInput from "../components/PasswordInput";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
+import { authErrorHe } from "../../lib/authErrors";
 import { tokens, primaryBtn } from "../../lib/ui";
 
 export default function LoginPage() {
@@ -45,11 +46,7 @@ export default function LoginPage() {
         password,
       });
       if (err) {
-        setError(
-          /invalid/i.test(err.message)
-            ? "אימייל או סיסמה שגויים. נסו שוב."
-            : "ההתחברות נכשלה: " + err.message
-        );
+        setError(authErrorHe(err.message));
         setBusy(false);
         return;
       }

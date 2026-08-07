@@ -189,6 +189,8 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
         <div style={{ position: "sticky", top: 64, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
           <input
             type="search"
+            id="kt-public-search"
+            name="public-search"
             // A real programmatic name — placeholder alone is not a label
             // (it vanishes on input and many screen readers skip it).
             aria-label="חיפוש מוצר לפי שם"

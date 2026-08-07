@@ -12,6 +12,7 @@ import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
 import PasswordInput from "../components/PasswordInput";
 import { supabase } from "../../lib/supabaseClient";
+import { authErrorHe } from "../../lib/authErrors";
 import { tokens, primaryBtn } from "../../lib/ui";
 
 type Phase = "checking" | "ready" | "invalid" | "done";
@@ -23,7 +24,6 @@ export default function ResetPage() {
   const [pw2, setPw2] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [linkError, setLinkError] = useState("");
 
   const establish = useCallback(async () => {
     try {
@@ -34,7 +34,6 @@ export default function ResetPage() {
       // Supabase reports expired/used links via error params.
       const errDesc = hp.get("error_description") || qp.get("error_description");
       if (errDesc) {
-        setLinkError(decodeURIComponent(errDesc));
         setPhase("invalid");
         return;
       }
@@ -45,7 +44,7 @@ export default function ResetPage() {
 
       if (access_token && refresh_token) {
         const { error: e } = await supabase.auth.setSession({ access_token, refresh_token });
-        if (e) { setLinkError(e.message); setPhase("invalid"); return; }
+        if (e) { setPhase("invalid"); return; }
         // Strip the tokens from the address bar.
         window.history.replaceState({}, "", window.location.pathname);
         setPhase("ready");
@@ -54,7 +53,7 @@ export default function ResetPage() {
 
       if (code) {
         const { error: e } = await supabase.auth.exchangeCodeForSession(code);
-        if (e) { setLinkError(e.message); setPhase("invalid"); return; }
+        if (e) { setPhase("invalid"); return; }
         window.history.replaceState({}, "", window.location.pathname);
         setPhase("ready");
         return;
@@ -64,8 +63,7 @@ export default function ResetPage() {
       // (e.g. the user is signed in and wants to change their password).
       const { data } = await supabase.auth.getSession();
       setPhase(data.session ? "ready" : "invalid");
-    } catch (e) {
-      setLinkError(String((e as Error)?.message ?? e));
+    } catch {
       setPhase("invalid");
     }
   }, []);
@@ -81,7 +79,7 @@ export default function ResetPage() {
     try {
       const { error: err } = await supabase.auth.updateUser({ password: pw });
       if (err) {
-        setError("עדכון הסיסמה נכשל: " + err.message);
+        setError(authErrorHe(err.message));
         setBusy(false);
         return;
       }
@@ -109,7 +107,7 @@ export default function ResetPage() {
           {phase === "invalid" && (
             <>
               <p style={{ fontFamily: tokens.assistant, color: "#C0143C", lineHeight: 1.7, marginBottom: "1rem" }}>
-                הקישור אינו תקף או שפג תוקפו{linkError ? ` (${linkError})` : ""}. בקשו קישור חדש.
+                הקישור אינו תקף או שפג תוקפו. בקשו קישור חדש.
               </p>
               <Link href="/forgot" style={{ fontFamily: tokens.rubik, fontWeight: 700, color: tokens.accent }}>
                 ← שליחת קישור חדש
