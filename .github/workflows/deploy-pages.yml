@@ -31,10 +31,17 @@ jobs:
       run:
         working-directory: landing
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Third-party actions are pinned to full commit SHAs so a moved tag can
+      # never swap the code this workflow runs (the comment tracks the version).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: "20"
+          # The build needs no Git auth after the clone — keep the token out of
+          # the local git config.
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Node 20 reached end-of-life in April 2026 — build on the active LTS.
+          node-version: "24"
       - run: npm ci
       - run: npm run build
       # SECURITY / SCOPE: the Pages artifact contains ONLY the built Kerem
@@ -43,7 +50,10 @@ jobs:
       # docs/ directory (internal AUDIT/HANDOVER/QA/ROLLBACK documents
       # included) to a public /crps path. The CRPS presentation source files
       # remain in the repo but are NOT published.
-      - uses: actions/upload-pages-artifact@v3
+      # NOTE: since v4 hidden files (dotfiles) are excluded from the artifact
+      # by default — verified that landing/out contains none, so nothing is
+      # lost by the upgrade.
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: landing/out
 
@@ -56,4 +66,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
