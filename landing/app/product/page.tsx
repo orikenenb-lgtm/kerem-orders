@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
@@ -95,12 +95,18 @@ function ProductDetail() {
     });
   }, [session]);
 
+  // Drop superseded responses: clicking through "מוצרים דומים" fires a new
+  // load before the previous one resolves, so an earlier product's response
+  // could otherwise overwrite a later one (same guard the catalog uses).
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
     if (!session) return;
     if (!id) { setBusy(false); setNotFound(true); return; }
+    const seq = ++loadSeq.current;
     setBusy(true);
     setNotFound(false);
     const { data, error } = await supabase.from("products").select(PROD_COLS).eq("id", id).eq("is_active", true).maybeSingle();
+    if (seq !== loadSeq.current) return;
     if (error) { setBusy(false); setNotFound(true); return; }
     if (!data) { setBusy(false); setNotFound(true); return; }
     const p = data as Product;
@@ -117,6 +123,7 @@ function ProductDetail() {
         .neq("id", p.id)
         .order("name")
         .limit(8);
+      if (seq !== loadSeq.current) return;
       setRelated((rel as Product[]) ?? []);
     } else {
       setRelated([]);
@@ -162,8 +169,11 @@ function ProductDetail() {
 
       <div style={{ display: "grid", gap: "clamp(1.5rem,4vw,3rem)", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", alignItems: "start" }}>
         {/* image */}
-        <div style={{ background: "#fff", border: `1px solid ${tokens.border}`, borderRadius: 20, padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 340, boxShadow: tokens.shadowCard }}>
-          <ProductImg src={img} alt={p.name} style={{ maxWidth: "100%", maxHeight: 440, width: "auto", height: "auto", objectFit: "contain" }} />
+        {/* Fixed 1:1 box reserves the space before the async image loads, so
+            the details below don't jump when it arrives (matches the grid
+            cards' aspect-ratio approach — no CLS). */}
+        <div style={{ background: "#fff", border: `1px solid ${tokens.border}`, borderRadius: 20, padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center", aspectRatio: "1 / 1", maxHeight: 480, boxShadow: tokens.shadowCard }}>
+          <ProductImg src={img} alt={p.name} style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain" }} />
         </div>
 
         {/* details */}
