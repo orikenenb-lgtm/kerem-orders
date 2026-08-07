@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../lib/auth";
 import { tokens } from "../../lib/ui";
-import { supabase } from "../../lib/supabaseClient";
+import { getMinOrderTotal } from "../../lib/siteSettings";
 import { MIN_ORDER_FALLBACK, PHONE_DISPLAY } from "../../lib/config";
 
 // פרטי קשר של כרם טויס. הטלפון מגיע מ-lib/config (מקור אמת אחד).
@@ -66,15 +66,7 @@ export default function SiteHeader() {
   const [minOrder, setMinOrder] = useState(MIN_ORDER_FALLBACK);
 
   useEffect(() => {
-    supabase
-      .from("site_settings")
-      .select("value")
-      .eq("key", "min_order_total")
-      .maybeSingle()
-      .then(({ data }) => {
-        const n = Number((data as { value: string } | null)?.value);
-        if (Number.isFinite(n) && n > 0) setMinOrder(n);
-      });
+    getMinOrderTotal().then(setMinOrder);
   }, []);
 
   const navLink = {

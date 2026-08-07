@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { tokens } from "../../lib/ui";
-import { supabase } from "../../lib/supabaseClient";
+import { getMinOrderTotal } from "../../lib/siteSettings";
 import { MIN_ORDER_FALLBACK } from "../../lib/config";
 import { CONTACT } from "./SiteHeader";
 
@@ -14,15 +14,7 @@ export default function SiteFooter() {
   const [minOrder, setMinOrder] = useState(MIN_ORDER_FALLBACK);
 
   useEffect(() => {
-    supabase
-      .from("site_settings")
-      .select("value")
-      .eq("key", "min_order_total")
-      .maybeSingle()
-      .then(({ data }) => {
-        const n = Number((data as { value: string } | null)?.value);
-        if (Number.isFinite(n) && n > 0) setMinOrder(n);
-      });
+    getMinOrderTotal().then(setMinOrder);
   }, []);
 
   const col: React.CSSProperties = { display: "flex", flexDirection: "column", gap: "0.55rem" };
