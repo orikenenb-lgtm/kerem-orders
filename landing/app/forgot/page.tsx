@@ -7,6 +7,7 @@ import Link from "next/link";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
 import { supabase } from "../../lib/supabaseClient";
+import { authErrorHe } from "../../lib/authErrors";
 import { tokens, primaryBtn } from "../../lib/ui";
 
 export default function ForgotPage() {
@@ -28,7 +29,7 @@ export default function ForgotPage() {
         { redirectTo }
       );
       if (err) {
-        setError("שליחת המייל נכשלה: " + err.message);
+        setError(authErrorHe(err.message));
         setBusy(false);
         return;
       }
