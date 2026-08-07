@@ -19,7 +19,10 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # Don't cancel an in-flight deploy: a rapid second push to main should queue
+  # behind the running production deployment rather than abort it mid-publish
+  # (matches GitHub's own Pages workflow template).
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -42,6 +45,10 @@ jobs:
         with:
           # Node 20 reached end-of-life in April 2026 — build on the active LTS.
           node-version: "24"
+          # Cache npm downloads across deploys (CI already does this) — faster
+          # `npm ci`, no behavioural change.
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
       - run: npm ci
       - run: npm run build
       # SECURITY / SCOPE: the Pages artifact contains ONLY the built Kerem
