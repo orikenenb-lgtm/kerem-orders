@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
+import PasswordInput from "../components/PasswordInput";
 import { supabase } from "../../lib/supabaseClient";
 import { tokens, primaryBtn } from "../../lib/ui";
 
@@ -122,14 +123,16 @@ export default function ResetPage() {
                 בחרו סיסמה חדשה (לפחות 6 תווים).
               </p>
               <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
-                <label style={{ display: "grid", gap: "0.35rem" }}>
-                  <span style={lbl}>סיסמה חדשה</span>
-                  <input type="password" required value={pw} onChange={(e) => setPw(e.target.value)} style={inp} autoComplete="new-password" />
-                </label>
-                <label style={{ display: "grid", gap: "0.35rem" }}>
-                  <span style={lbl}>אימות סיסמה</span>
-                  <input type="password" required value={pw2} onChange={(e) => setPw2(e.target.value)} style={inp} autoComplete="new-password" />
-                </label>
+                {/* Explicit htmlFor labels: PasswordInput also renders the
+                    show/hide button, and an implicit label must not wrap it. */}
+                <div style={{ display: "grid", gap: "0.35rem" }}>
+                  <label htmlFor="reset-password" style={lbl}>סיסמה חדשה</label>
+                  <PasswordInput id="reset-password" required minLength={6} value={pw} onChange={(e) => setPw(e.target.value)} style={inp} autoComplete="new-password" />
+                </div>
+                <div style={{ display: "grid", gap: "0.35rem" }}>
+                  <label htmlFor="reset-password-confirm" style={lbl}>אימות סיסמה</label>
+                  <PasswordInput id="reset-password-confirm" required value={pw2} onChange={(e) => setPw2(e.target.value)} style={inp} autoComplete="new-password" />
+                </div>
 
                 {error && (
                   <div role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C", background: "rgba(255,46,147,0.08)", border: "1px solid rgba(255,46,147,0.25)", borderRadius: 12, padding: "0.7rem 0.9rem", fontSize: "0.92rem" }}>

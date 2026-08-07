@@ -1,13 +1,14 @@
 name: Deploy landing page to GitHub Pages
 
+# SAFETY: deploys run from main ONLY. A feature-branch push must never
+# overwrite the live site — the branch trigger that used to sit here did
+# exactly that (any push to it replaced production without a merge).
 on:
   push:
     branches:
       - main
-      - claude/kerem-toys-landing-fso0gm
     paths:
       - "landing/**"
-      - "docs/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -22,6 +23,9 @@ concurrency:
 
 jobs:
   build:
+    # Belt-and-braces for workflow_dispatch: even a manual run can only ever
+    # build/deploy main — dispatching from any other ref is a no-op.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,17 +37,18 @@ jobs:
           node-version: "20"
       - run: npm ci
       - run: npm run build
-      # Publish the CRPS presentation alongside the landing page at /crps/.
-      # The landing page output is left untouched.
-      - name: Add CRPS presentation at /crps
-        run: |
-          mkdir -p out/crps
-          cp -r ../docs/. out/crps/
+      # SECURITY / SCOPE: the Pages artifact contains ONLY the built Kerem
+      # Toys site (landing/out). Nothing from docs/ or any other directory is
+      # ever copied in — an earlier version of this workflow copied the whole
+      # docs/ directory (internal AUDIT/HANDOVER/QA/ROLLBACK documents
+      # included) to a public /crps path. The CRPS presentation source files
+      # remain in the repo but are NOT published.
       - uses: actions/upload-pages-artifact@v3
         with:
           path: landing/out
 
   deploy:
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:

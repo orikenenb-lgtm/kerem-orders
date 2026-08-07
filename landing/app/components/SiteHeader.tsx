@@ -18,35 +18,38 @@ export const CONTACT = {
 
 const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
-// לוגו: מציג את הקובץ /public/logo.png ; עד שמעלים אותו — נופל חזרה
-// אוטומטית ללוגו-טקסט הצבעוני, בלי תמונה שבורה.
+// לוגו. אין כרגע קובץ לוגו בפרויקט (landing/public/logo.png לא קיים), ולכן
+// לא מנסים לטעון אותו בכלל — כל בקשה כזו היא 404 מיותר בכל טעינת עמוד.
+// כשיהיה קובץ אמיתי: מעלים אותו ל-landing/public/logo.png והופכים את
+// HAS_LOGO_FILE ל-true — ורק אז ה-<img> חוזר. עד אז: לוגו-טקסט בלבד,
+// באותו קונטיינר בגובה 40px (בלי שינוי פריסה בין המצבים).
+const HAS_LOGO_FILE = false;
+
 function Logo() {
-  const [err, setErr] = useState(false);
-  if (!err) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={`${base}/logo.png`}
-        alt="כרם טויס"
-        onError={() => setErr(true)}
-        style={{ height: 40, width: "auto", display: "block", objectFit: "contain" }}
-      />
-    );
-  }
   return (
-    <span
-      style={{
-        fontFamily: tokens.rubik,
-        fontWeight: 900,
-        fontSize: "1.35rem",
-        backgroundImage: tokens.rainbow,
-        WebkitBackgroundClip: "text",
-        backgroundClip: "text",
-        WebkitTextFillColor: "transparent",
-        whiteSpace: "nowrap",
-      }}
-    >
-      כרם טויס
+    <span style={{ display: "flex", alignItems: "center", height: 40 }}>
+      {HAS_LOGO_FILE ? (
+        <img
+          src={`${base}/logo.png`}
+          alt="כרם טויס"
+          style={{ height: 40, width: "auto", objectFit: "contain", display: "block" }}
+        />
+      ) : (
+        <span
+          style={{
+            fontFamily: tokens.rubik,
+            fontWeight: 900,
+            fontSize: "1.35rem",
+            backgroundImage: tokens.rainbow,
+            WebkitBackgroundClip: "text",
+            backgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            whiteSpace: "nowrap",
+          }}
+        >
+          כרם טויס
+        </span>
+      )}
     </span>
   );
 }

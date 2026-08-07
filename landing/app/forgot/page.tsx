@@ -68,7 +68,7 @@ export default function ForgotPage() {
               <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
                 <label style={{ display: "grid", gap: "0.35rem" }}>
                   <span style={lbl}>אימייל</span>
-                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} style={inp} />
+                  <input type="email" autoComplete="email" inputMode="email" required value={email} onChange={(e) => setEmail(e.target.value)} style={inp} />
                 </label>
 
                 {error && (

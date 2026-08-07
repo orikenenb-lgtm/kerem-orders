@@ -22,14 +22,33 @@ const assistant = Assistant({
 
 const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
+const SITE_DESCRIPTION =
+  "אלפי צעצועים צבעוניים, מותגים מובילים ומחירי סיטונאות — הכול במקום אחד.";
+
 export const metadata: Metadata = {
-  title: "כרם טויס — יבוא ושיווק צעצועים",
-  description:
-    "אלפי צעצועים צבעוניים, מותגים מובילים ומחירי סיטונאות — הכול במקום אחד.",
+  // Absolute base for canonical/OG URL resolution on GitHub Pages.
+  metadataBase: new URL("https://orikenenb-lgtm.github.io/kerem-orders/"),
+  // Route layouts set a short page name; the template appends the brand —
+  // so every tab/bookmark/share reads "X — כרם טויס" instead of one generic
+  // title everywhere.
+  title: {
+    default: "כרם טויס — יבוא ושיווק צעצועים",
+    template: "%s — כרם טויס",
+  },
+  description: SITE_DESCRIPTION,
   manifest: `${base}/manifest.json`,
   icons: {
     icon: `${base}/icons/icon-192.png`,
     apple: `${base}/icons/apple-touch-icon.png`,
+  },
+  // Open Graph without an image on purpose: there is no real logo/brand
+  // asset in the project yet, and a made-up one is worse than none.
+  openGraph: {
+    type: "website",
+    siteName: "כרם טויס",
+    title: "כרם טויס — יבוא ושיווק צעצועים",
+    description: SITE_DESCRIPTION,
+    locale: "he_IL",
   },
   appleWebApp: {
     capable: true,

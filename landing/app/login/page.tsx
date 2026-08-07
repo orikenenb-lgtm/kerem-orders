@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
+import SiteFooter from "../components/SiteFooter";
+import PasswordInput from "../components/PasswordInput";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
 import { tokens, primaryBtn } from "../../lib/ui";
@@ -102,22 +104,27 @@ export default function LoginPage() {
               <span style={lbl}>אימייל</span>
               <input
                 type="email"
+                autoComplete="email"
+                inputMode="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 style={inp}
               />
             </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span style={lbl}>סיסמה</span>
-              <input
-                type="password"
+            {/* Explicit htmlFor label: PasswordInput also renders the show/hide
+                button, and an implicit label must not wrap that second control. */}
+            <div style={{ display: "grid", gap: "0.35rem" }}>
+              <label htmlFor="login-password" style={lbl}>סיסמה</label>
+              <PasswordInput
+                id="login-password"
+                autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 style={inp}
               />
-            </label>
+            </div>
 
             {error && (
               <div
@@ -155,6 +162,7 @@ export default function LoginPage() {
           </p>
         </div>
       </main>
+      <SiteFooter />
     </>
   );
 }

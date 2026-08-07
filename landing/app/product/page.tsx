@@ -41,7 +41,6 @@ function ProductImg({ src, alt, style }: { src: string; alt: string; style?: Rea
   const [err, setErr] = useState(false);
   useEffect(() => { setErr(false); }, [src]);
   if (!src || err) return <span style={{ fontSize: "4rem" }}>🧸</span>;
-  // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} style={style} />;
 }
 
@@ -195,7 +194,7 @@ function ProductDetail() {
             <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
               <button aria-label="פחות" onClick={() => setQty((n) => Math.max(step, n - step))}
                 style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${tokens.accent}`, background: "#fff", color: tokens.accent, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", cursor: "pointer" }}>−</button>
-              <input value={qty} onChange={(e) => { const n = parseInt(e.target.value.replace(/\D/g, ""), 10); setQty(Number.isFinite(n) && n > 0 ? n : step); }} inputMode="numeric"
+              <input value={qty} aria-label="כמות" onChange={(e) => { const n = parseInt(e.target.value.replace(/\D/g, ""), 10); setQty(Number.isFinite(n) && n > 0 ? n : step); }} inputMode="numeric"
                 style={{ width: 72, textAlign: "center", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "1rem", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.5rem 0" }} />
               <button aria-label="עוד" onClick={() => setQty((n) => n + step)}
                 style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${tokens.accent}`, background: "#fff", color: tokens.accent, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", cursor: "pointer" }}>+</button>
@@ -227,7 +226,9 @@ function ProductDetail() {
               const rPrice = applyDiscount(r.price, discount);
               return (
                 <Link key={r.id} href={`/product/?id=${r.id}`} className="kt-card" style={{ textDecoration: "none", border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.8rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                  <div style={{ height: 130, borderRadius: 12, border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                  {/* Same uniform frame as the catalog cards: square, contain,
+                      inner padding, white background. */}
+                  <div style={{ aspectRatio: "1 / 1", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
                     <ProductImg src={rImg} alt={r.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                   </div>
                   <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.2em" }}>{r.name}</div>
