@@ -10,7 +10,7 @@ import { rivhitImg } from "../../lib/images";
 import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
 import { featureFlags } from "../../lib/featureFlags";
 import { VAT_RATE } from "../../lib/config";
-import { resolveQuantity, stepOf, describeQuantity } from "../../lib/quantity";
+import { resolveQuantity, stepOf, describeQuantity, pluralPack } from "../../lib/quantity";
 import { orderExactFirst } from "../../lib/searchRank";
 import { readCart } from "../../lib/cart";
 
@@ -348,7 +348,7 @@ export default function CatalogPage() {
         const show = r.wasAdjusted && q > 0 && dq > 1;
         if (!show && !(p.id in notes)) return notes;
         const next = { ...notes };
-        if (show) next[p.id] = `עיגלנו ל־${q.toLocaleString("he-IL")} יחידות (${describeQuantity(p, q)}) — המוצר נמכר ב${packName}ים שלמים`;
+        if (show) next[p.id] = `עיגלנו ל־${q.toLocaleString("he-IL")} יחידות (${describeQuantity(p, q)}) — המוצר נמכר ב${pluralPack(packName, 2)} שלמים`;
         else delete next[p.id];
         return next;
       });

@@ -77,4 +77,13 @@ t("final-letter difference still matches exactly", () => {
   assert.equal(out[0], "בלונים ארוזים");
 });
 
+t("Latin brand search is case-insensitive", () => {
+  // normalizeHe lowercases; the header claims "case ignored" but no Latin
+  // test covered it. Mixed HE/EN catalog names (brand lines) are plausible.
+  assert.equal(normalizeHe("AirPods!!"), "airpods");
+  const rows = [{ name: "פאזל 100 חלקים" }, { name: "LEGO City 60380" }];
+  const out = orderExactFirst(rows, "lego").map((r) => r.name);
+  assert.equal(out[0], "LEGO City 60380");
+});
+
 console.log(`\n${n} searchRank tests passed`);
