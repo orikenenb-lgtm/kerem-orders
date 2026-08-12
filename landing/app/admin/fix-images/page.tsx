@@ -1,15 +1,16 @@
 "use client";
 
-// מסך תיקון תמונות — סיבוב חופשי בכל זווית.
-//
-// עובד כמו תור עבודה: מציג רק את מה שעוד לא בדקת, ויש פס התקדמות, כך
-// שאפשר לעבור על כל הקטלוג בלי לראות שוב את אותן תמונות.
+// מסך תיקון תמונות — סיבוב חופשי בכל זווית, בגלילה אינסופית.
 //
 // הסיבוב חופשי לגמרי (0-359°): בזמן גרירת הסרגל התצוגה מסתובבת מיד בדפדפן
 // (CSS) כדי שיהיה מיידי, ואחרי שמירה מוצגת התמונה האמיתית כפי שהשרת מייצר
 // אותה — אותה זווית בדיוק, כולל רקע לבן בזוויות שאינן כפולה של 90.
+//
+// דפדוף: cursor לפי id ולא offset. כשמסמנים תמונה כ"נבדקה" היא יוצאת מתנאי
+// הסינון, ואז offset היה מזיז את החלון ו*מדלג* על תמונות שלא נבדקו. cursor
+// לפי מפתח ייחודי ויציב לא מושפע מכך — שום תמונה לא נופלת בין הכיסאות.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
@@ -26,7 +27,7 @@ type Row = {
   orient_human_ok: boolean | null;
 };
 
-const BATCH = 12;
+const BATCH = 24;
 
 export default function FixImagesPage() {
   const router = useRouter();
@@ -35,6 +36,7 @@ export default function FixImagesPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(true);
   const [loadErr, setLoadErr] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [onlyTodo, setOnlyTodo] = useState(true);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -42,6 +44,12 @@ export default function FixImagesPage() {
   const [saveErr, setSaveErr] = useState("");
   const [done, setDone] = useState(0);
   const [totalAll, setTotalAll] = useState(0);
+
+  // Guards so overlapping scroll-triggered loads can't duplicate or interleave.
+  const cursorRef = useRef<string | null>(null);
+  const loadingRef = useRef(false);
+  const genRef = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (loading) return;
@@ -66,9 +74,15 @@ export default function FixImagesPage() {
     setDone(reviewed ?? 0);
   }, []);
 
-  const load = useCallback(async () => {
+  // reset=true starts a fresh list (filter/search changed); otherwise append.
+  const fetchPage = useCallback(async (reset: boolean) => {
     if (!isManager) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    const gen = reset ? ++genRef.current : genRef.current;
+    if (reset) { cursorRef.current = null; setHasMore(true); }
     setBusy(true);
+
     let q = supabase
       .from("products")
       .select("id,name,picture_link,rotation_override,orient_human_ok")
@@ -77,15 +91,43 @@ export default function FixImagesPage() {
     if (onlyTodo) q = q.eq("orient_human_ok", false);
     const s = query.trim().replace(/[,()%]/g, " ").trim();
     if (s) q = q.ilike("name", `%${s}%`);
-    const { data, error } = await q.order("name").limit(BATCH);
-    if (error) { setLoadErr(true); setBusy(false); return; }
+    if (cursorRef.current) q = q.gt("id", cursorRef.current);
+
+    const { data, error } = await q.order("id", { ascending: true }).limit(BATCH);
+
+    // A newer filter/search superseded this request — drop the stale result.
+    if (gen !== genRef.current) { loadingRef.current = false; return; }
+
+    if (error) { setLoadErr(true); setBusy(false); loadingRef.current = false; return; }
     setLoadErr(false);
-    setRows((data as Row[]) ?? []);
+    const batch = (data as Row[]) ?? [];
+    if (batch.length > 0) cursorRef.current = batch[batch.length - 1].id;
+    setHasMore(batch.length === BATCH);
+    setRows((prev) => {
+      if (reset) return batch;
+      const seen = new Set(prev.map((r) => r.id));
+      return [...prev, ...batch.filter((r) => !seen.has(r.id))];
+    });
     setBusy(false);
+    loadingRef.current = false;
     loadProgress();
   }, [isManager, onlyTodo, query, loadProgress]);
 
-  useEffect(() => { load(); }, [load]);
+  // restart the list whenever the filter or the search changes
+  useEffect(() => { fetchPage(true); }, [fetchPage]);
+
+  // infinite scroll: load the next batch when the sentinel nears the viewport
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting) && hasMore && !loadingRef.current) {
+        fetchPage(false);
+      }
+    }, { rootMargin: "600px" });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [fetchPage, hasMore]);
 
   // Save any angle (0-359) and mark the photo as reviewed by a human.
   const save = async (id: string, angle: number) => {
@@ -135,11 +177,12 @@ export default function FixImagesPage() {
 
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.5rem", lineHeight: 1.7 }}>
           גוררים את הסרגל עד שהתמונה ישרה — <b>כל זווית שרוצים</b>. אפשר גם כפתורי
-          קפיצה מהירים, ו־<b>±1°</b> לכיוונון עדין. בסוף לוחצים <b>שמירה</b>.
+          קפיצה מהירים, ו־<b>±1°</b> לכיוונון עדין. הכול בדף אחד — פשוט <b>ממשיכים לגלול</b>
+          והתמונות הבאות נטענות לבד.
         </p>
 
-        {/* progress */}
-        <div style={{ margin: "1rem 0 1rem" }}>
+        {/* progress — sticky so it stays visible while scrolling */}
+        <div style={{ position: "sticky", top: 0, zIndex: 20, background: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)", padding: "0.8rem 0 0.6rem", margin: "0.6rem 0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: tokens.body, marginBottom: "0.4rem" }}>
             <span>בדקת {done.toLocaleString("he-IL")} מתוך {totalAll.toLocaleString("he-IL")}</span>
             <span style={{ color: remaining === 0 ? "#1A7A4D" : tokens.accent }}>
@@ -162,17 +205,19 @@ export default function FixImagesPage() {
             <input type="checkbox" checked={onlyTodo} onChange={(e) => setOnlyTodo(e.target.checked)} style={{ width: 18, height: 18 }} />
             רק מה שלא בדקתי
           </label>
-          <button onClick={load} style={ghostBtn}>{busy ? "טוען…" : "טען עוד ↻"}</button>
+          <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>
+            {rows.length.toLocaleString("he-IL")} מוצגים
+          </span>
         </div>
 
         {saveErr && <p role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C" }}>{saveErr}</p>}
 
         {busy && rows.length === 0 ? (
           <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>טוען תמונות…</p>
-        ) : loadErr ? (
+        ) : loadErr && rows.length === 0 ? (
           <div style={{ textAlign: "center", marginTop: "2rem" }}>
             <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת התמונות נכשלה.</p>
-            <button onClick={load} style={ghostBtn}>נסו שוב</button>
+            <button onClick={() => fetchPage(true)} style={ghostBtn}>נסו שוב</button>
           </div>
         ) : rows.length === 0 ? (
           <div style={{ textAlign: "center", padding: "3rem 1rem", border: `1px dashed ${tokens.border}`, borderRadius: 18 }}>
@@ -189,11 +234,23 @@ export default function FixImagesPage() {
           </div>
         )}
 
+        {/* auto-load sentinel */}
+        <div ref={sentinelRef} aria-hidden="true" style={{ height: 1 }} />
+
         {rows.length > 0 && (
-          <div style={{ textAlign: "center", marginTop: "2rem" }}>
-            <button onClick={load} style={{ ...ghostBtn, padding: "0.9rem 2rem", fontSize: "1rem" }}>
-              {busy ? "טוען…" : "טען את הקבוצה הבאה ←"}
-            </button>
+          <div style={{ textAlign: "center", marginTop: "1.5rem" }}>
+            {loadErr ? (
+              <>
+                <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.6rem" }}>טעינת ההמשך נכשלה.</p>
+                <button onClick={() => fetchPage(false)} style={ghostBtn}>נסו שוב</button>
+              </>
+            ) : busy ? (
+              <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>טוען עוד תמונות…</p>
+            ) : hasMore ? (
+              <button onClick={() => fetchPage(false)} style={ghostBtn}>טען עוד</button>
+            ) : (
+              <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>זהו — אלה כל התמונות ✔</p>
+            )}
           </div>
         )}
       </main>
