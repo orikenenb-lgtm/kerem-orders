@@ -1,10 +1,13 @@
 "use client";
 
-// מסך מהיר לתיקון תמונות עקומות/הפוכות.
+// מסך תיקון תמונות — סיבוב חופשי בכל זווית.
 //
-// עובד כמו תור עבודה: מציג רק את מה שעוד לא בדקת, לחיצה אחת מסובבת ומסמנת
-// כ"נבדק", ויש פס התקדמות — כך שאפשר לעבור על כל הקטלוג בלי לראות שוב את
-// אותן תמונות. מותאם לנייד (תמונות גדולות, כפתורים גדולים).
+// עובד כמו תור עבודה: מציג רק את מה שעוד לא בדקת, ויש פס התקדמות, כך
+// שאפשר לעבור על כל הקטלוג בלי לראות שוב את אותן תמונות.
+//
+// הסיבוב חופשי לגמרי (0-359°): בזמן גרירת הסרגל התצוגה מסתובבת מיד בדפדפן
+// (CSS) כדי שיהיה מיידי, ואחרי שמירה מוצגת התמונה האמיתית כפי שהשרת מייצר
+// אותה — אותה זווית בדיוק, כולל רקע לבן בזוויות שאינן כפולה של 90.
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -23,7 +26,7 @@ type Row = {
   orient_human_ok: boolean | null;
 };
 
-const BATCH = 24;
+const BATCH = 12;
 
 export default function FixImagesPage() {
   const router = useRouter();
@@ -33,6 +36,8 @@ export default function FixImagesPage() {
   const [busy, setBusy] = useState(true);
   const [loadErr, setLoadErr] = useState(false);
   const [onlyTodo, setOnlyTodo] = useState(true);
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState("");
   const [done, setDone] = useState(0);
@@ -44,7 +49,11 @@ export default function FixImagesPage() {
     else if (!isManager) router.replace("/catalog");
   }, [loading, session, isManager, router]);
 
-  // overall progress (independent of the current batch)
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(search), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const loadProgress = useCallback(async () => {
     const base = () =>
       supabase.from("products").select("id", { count: "exact", head: true })
@@ -66,25 +75,28 @@ export default function FixImagesPage() {
       .eq("is_active", true)
       .neq("picture_link", "");
     if (onlyTodo) q = q.eq("orient_human_ok", false);
+    const s = query.trim().replace(/[,()%]/g, " ").trim();
+    if (s) q = q.ilike("name", `%${s}%`);
     const { data, error } = await q.order("name").limit(BATCH);
     if (error) { setLoadErr(true); setBusy(false); return; }
     setLoadErr(false);
     setRows((data as Row[]) ?? []);
     setBusy(false);
     loadProgress();
-  }, [isManager, onlyTodo, loadProgress]);
+  }, [isManager, onlyTodo, query, loadProgress]);
 
   useEffect(() => { load(); }, [load]);
 
-  // One tap: store the rotation AND mark the photo as reviewed by a human.
-  const apply = async (id: string, rot: number) => {
+  // Save any angle (0-359) and mark the photo as reviewed by a human.
+  const save = async (id: string, angle: number) => {
+    const norm = ((Math.round(angle) % 360) + 360) % 360;
     const prev = rows.find((r) => r.id === id);
     setSaveErr("");
     setSavingId(id);
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, rotation_override: rot === 0 ? null : rot, orient_human_ok: true } : r)));
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, rotation_override: norm === 0 ? null : norm, orient_human_ok: true } : r)));
     const { data, error } = await supabase
       .from("products")
-      .update({ rotation_override: rot === 0 ? null : rot, orient_human_ok: true })
+      .update({ rotation_override: norm === 0 ? null : norm, orient_human_ok: true })
       .eq("id", id)
       .select("id");
     setSavingId(null);
@@ -113,7 +125,7 @@ export default function FixImagesPage() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1rem,3vw,2rem) clamp(0.8rem,3vw,2rem) 4rem" }}>
+      <main id="main-content" style={{ maxWidth: 1200, margin: "0 auto", padding: "clamp(1rem,3vw,2rem) clamp(0.8rem,3vw,2rem) 4rem" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: "1rem", flexWrap: "wrap" }}>
           <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.5rem,4vw,2.2rem)", color: tokens.text }}>
             תיקון תמונות
@@ -122,12 +134,12 @@ export default function FixImagesPage() {
         </div>
 
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.5rem", lineHeight: 1.7 }}>
-          רואים תמונה הפוכה או על הצד? לוחצים על כפתור הסיבוב עד שהיא ישרה.
-          אם היא כבר תקינה — לוחצים <b>✓ תקין</b>. השינוי נשמר מיד ומופיע באתר.
+          גוררים את הסרגל עד שהתמונה ישרה — <b>כל זווית שרוצים</b>. אפשר גם כפתורי
+          קפיצה מהירים, ו־<b>±1°</b> לכיוונון עדין. בסוף לוחצים <b>שמירה</b>.
         </p>
 
         {/* progress */}
-        <div style={{ margin: "1rem 0 1.2rem" }}>
+        <div style={{ margin: "1rem 0 1rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: tokens.body, marginBottom: "0.4rem" }}>
             <span>בדקת {done.toLocaleString("he-IL")} מתוך {totalAll.toLocaleString("he-IL")}</span>
             <span style={{ color: remaining === 0 ? "#1A7A4D" : tokens.accent }}>
@@ -140,9 +152,15 @@ export default function FixImagesPage() {
         </div>
 
         <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap", alignItems: "center", marginBottom: "1rem" }}>
+          <input
+            placeholder="🔍 חיפוש מוצר לפי שם"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ flex: "1 1 220px", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.7rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text }}
+          />
           <label style={{ display: "flex", alignItems: "center", gap: "0.45rem", fontFamily: tokens.assistant, fontSize: "0.95rem", color: tokens.body, cursor: "pointer" }}>
             <input type="checkbox" checked={onlyTodo} onChange={(e) => setOnlyTodo(e.target.checked)} style={{ width: 18, height: 18 }} />
-            הצג רק מה שעוד לא בדקתי
+            רק מה שלא בדקתי
           </label>
           <button onClick={load} style={ghostBtn}>{busy ? "טוען…" : "טען עוד ↻"}</button>
         </div>
@@ -160,16 +178,13 @@ export default function FixImagesPage() {
           <div style={{ textAlign: "center", padding: "3rem 1rem", border: `1px dashed ${tokens.border}`, borderRadius: 18 }}>
             <div style={{ fontSize: "3rem", marginBottom: "0.6rem" }}>🎉</div>
             <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", color: "#1A7A4D" }}>
-              סיימת! עברת על כל התמונות.
-            </p>
-            <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.5rem" }}>
-              אפשר לבטל את הסימון למעלה כדי לעבור שוב על הכול.
+              {query ? "לא נמצאו תמונות לחיפוש הזה." : "סיימת! עברת על כל התמונות."}
             </p>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "0.9rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem" }}>
             {rows.map((r) => (
-              <FixCard key={r.id} row={r} saving={savingId === r.id} onApply={(deg) => apply(r.id, deg)} />
+              <FixCard key={r.id} row={r} saving={savingId === r.id} onSave={(deg) => save(r.id, deg)} />
             ))}
           </div>
         )}
@@ -186,65 +201,102 @@ export default function FixImagesPage() {
   );
 }
 
-function FixCard({ row, saving, onApply }: { row: Row; saving: boolean; onApply: (deg: number) => void }) {
-  const current = row.rotation_override ?? 0;
+function FixCard({ row, saving, onSave }: { row: Row; saving: boolean; onSave: (deg: number) => void }) {
+  const saved = row.rotation_override ?? 0;
+  const [angle, setAngle] = useState(saved);
   const [imgErr, setImgErr] = useState(false);
-  useEffect(() => { setImgErr(false); }, [current]);
-  const src = rivhitImg(row.picture_link, 360, current);
-  const reviewed = !!row.orient_human_ok;
+  useEffect(() => { setAngle(row.rotation_override ?? 0); }, [row.rotation_override]);
 
-  const btn = (active: boolean, strong?: boolean): React.CSSProperties => ({
-    flex: 1,
-    fontFamily: tokens.rubik,
-    fontWeight: 800,
-    fontSize: "0.8rem",
-    padding: "0.5rem 0.2rem",
-    borderRadius: 10,
-    cursor: saving ? "default" : "pointer",
-    border: `1px solid ${active ? "transparent" : tokens.border}`,
-    background: active ? (strong ? "#1A7A4D" : tokens.accent) : "#fff",
-    color: active ? "#fff" : tokens.body,
-    opacity: saving ? 0.6 : 1,
-    minHeight: 38,
-  });
+  const dirty = angle !== saved;
+  const reviewed = !!row.orient_human_ok;
+  // While editing: show the un-rotated photo and spin it live with CSS.
+  // When clean: show the real server-rendered result for the saved angle.
+  const src = rivhitImg(row.picture_link, 420, dirty ? 0 : saved);
+  // A rotated rectangle needs to shrink to stay inside the frame.
+  const previewScale = !dirty || angle % 180 === 0 ? 1 : angle % 90 === 0 ? 0.78 : 0.68;
+
+  const nudge = (d: number) => setAngle((a) => (((Math.round(a + d) % 360) + 360) % 360));
 
   return (
     <div style={{
-      border: `2px solid ${reviewed ? "rgba(37,199,126,0.55)" : tokens.border}`,
-      borderRadius: 16, background: "#fff", padding: "0.6rem",
-      display: "flex", flexDirection: "column", gap: "0.5rem",
+      border: `2px solid ${dirty ? tokens.accent : reviewed ? "rgba(37,199,126,0.55)" : tokens.border}`,
+      borderRadius: 16, background: "#fff", padding: "0.7rem",
+      display: "flex", flexDirection: "column", gap: "0.55rem",
       boxShadow: "0 6px 18px rgba(26,23,48,0.05)",
     }}>
-      <div style={{ position: "relative", height: 165, borderRadius: 12, border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: tokens.surface, fontSize: "2.4rem" }}>
+      <div style={{ position: "relative", height: 210, borderRadius: 12, border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#fff", fontSize: "2.4rem" }}>
         {imgErr ? <span>🧸</span> : (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt={row.name} loading="lazy" onError={() => setImgErr(true)} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+          <img
+            src={src}
+            alt={row.name}
+            loading="lazy"
+            onError={() => setImgErr(true)}
+            style={{
+              maxWidth: "100%", maxHeight: "100%", objectFit: "contain",
+              transform: dirty ? `rotate(${angle}deg) scale(${previewScale})` : undefined,
+              transition: "transform 0.08s linear",
+            }}
+          />
         )}
-        {reviewed && (
+        {reviewed && !dirty && (
           <span style={{ position: "absolute", top: 6, insetInlineEnd: 6, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.65rem", color: "#fff", background: "#25C77E", padding: "0.15rem 0.5rem", borderRadius: 999 }}>
             ✓ נבדק
           </span>
         )}
+        <span style={{ position: "absolute", bottom: 6, insetInlineStart: 6, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.75rem", color: "#fff", background: "rgba(26,23,48,0.72)", padding: "0.15rem 0.6rem", borderRadius: 999 }} dir="ltr">
+          {angle}°
+        </span>
       </div>
 
-      <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.text, minHeight: "2.4em", lineHeight: 1.3 }}>
+      <div style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.text, minHeight: "2.4em", lineHeight: 1.3 }}>
         {row.name}
       </div>
 
-      {/* the common case first: upside-down */}
-      <button onClick={() => onApply(current === 180 ? 0 : 180)} disabled={saving}
-        style={{ ...btn(current === 180), fontSize: "0.85rem", padding: "0.6rem" }}>
-        🔄 הפוך (180°)
-      </button>
+      {/* free-angle slider */}
+      <input
+        type="range" min={0} max={359} step={1} value={angle}
+        onChange={(e) => setAngle(Number(e.target.value))}
+        aria-label={`זווית סיבוב עבור ${row.name}`}
+        style={{ width: "100%", accentColor: "#8A3FFC" }}
+      />
 
+      {/* fine tuning */}
       <div style={{ display: "flex", gap: "0.3rem" }}>
-        <button onClick={() => onApply(90)} disabled={saving} style={btn(current === 90)} title="סובב 90° עם כיוון השעון">↻ 90°</button>
-        <button onClick={() => onApply(270)} disabled={saving} style={btn(current === 270)} title="סובב 270° עם כיוון השעון">↺ 90°</button>
-        <button onClick={() => onApply(0)} disabled={saving} style={btn(current === 0 && reviewed, true)} title="התמונה תקינה">✓ תקין</button>
+        <button onClick={() => nudge(-5)} disabled={saving} style={miniBtn}>−5°</button>
+        <button onClick={() => nudge(-1)} disabled={saving} style={miniBtn}>−1°</button>
+        <button onClick={() => nudge(1)} disabled={saving} style={miniBtn}>+1°</button>
+        <button onClick={() => nudge(5)} disabled={saving} style={miniBtn}>+5°</button>
       </div>
+
+      {/* quick jumps */}
+      <div style={{ display: "flex", gap: "0.3rem" }}>
+        <button onClick={() => setAngle(90)} disabled={saving} style={miniBtn}>↻90</button>
+        <button onClick={() => setAngle(180)} disabled={saving} style={miniBtn}>180</button>
+        <button onClick={() => setAngle(270)} disabled={saving} style={miniBtn}>↺90</button>
+        <button onClick={() => setAngle(0)} disabled={saving} style={miniBtn}>איפוס</button>
+      </div>
+
+      {dirty ? (
+        <button onClick={() => onSave(angle)} disabled={saving}
+          style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.7rem", borderRadius: 999, cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "שומר…" : `שמירה (${angle}°)`}
+        </button>
+      ) : (
+        <button onClick={() => onSave(angle)} disabled={saving || reviewed}
+          style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", color: reviewed ? "#1A7A4D" : "#fff", background: reviewed ? "rgba(37,199,126,0.14)" : "#1A7A4D", border: "none", padding: "0.7rem", borderRadius: 999, cursor: reviewed ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>
+          {reviewed ? "✓ נבדק" : "✓ תקין — סמן כנבדק"}
+        </button>
+      )}
     </div>
   );
 }
+
+const miniBtn: React.CSSProperties = {
+  flex: 1, fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.78rem",
+  padding: "0.45rem 0.2rem", borderRadius: 9, border: `1px solid ${tokens.border}`,
+  background: "#fff", color: tokens.body, cursor: "pointer", minHeight: 34,
+};
 
 const ghostBtn: React.CSSProperties = {
   fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: tokens.text,
