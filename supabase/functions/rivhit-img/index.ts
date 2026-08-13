@@ -79,7 +79,10 @@ function errorBaked(code: ProxyErrorCode, reason: string): Baked {
 
 async function fetchUpstream(
   url: string,
-  maxBytes: number
+  maxBytes: number,
+  /** true = a body larger than maxBytes is TRUNCATED and returned as success
+   *  (meta mode reads only the EXIF-bearing head); false = it is an error. */
+  truncateAtCap = false
 ): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; code: ProxyErrorCode; reason: string }> {
   let current = url;
   for (let hop = 0; hop <= LIMITS.maxRedirects; hop++) {
@@ -106,7 +109,8 @@ async function fetchUpstream(
     }
 
     const cls = classifyUpstream(res.status, res.headers.get("content-type"), Number(res.headers.get("content-length")) || null);
-    if (!cls.ok) {
+    // In truncate mode a large Content-Length is fine — only the head is read.
+    if (!cls.ok && !(truncateAtCap && cls.code === "source_too_large")) {
       await res.body?.cancel();
       return cls;
     }
@@ -123,13 +127,23 @@ async function fetchUpstream(
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel();
-        return { ok: false, code: "source_too_large", reason: `body exceeds ${maxBytes} bytes` };
+        if (!truncateAtCap) {
+          return { ok: false, code: "source_too_large", reason: `body exceeds ${maxBytes} bytes` };
+        }
+        chunks.push(value);
+        total = maxBytes; // keep exactly the head; drop the overflow below
+        break;
       }
       chunks.push(value);
     }
     const bytes = new Uint8Array(total);
     let off = 0;
-    for (const c of chunks) { bytes.set(c, off); off += c.byteLength; }
+    for (const c of chunks) {
+      const take = Math.min(c.byteLength, total - off);
+      if (take <= 0) break;
+      bytes.set(take === c.byteLength ? c : c.subarray(0, take), off);
+      off += take;
+    }
     return { ok: true, bytes };
   }
   return { ok: false, code: "upstream_status", reason: "too many redirects" };
@@ -145,15 +159,15 @@ async function process(req: ProxyRequest): Promise<Baked> {
     logEvent({ outcome, stage, ms: Date.now() - started, w: req.width, rot: req.rotation, src: pathHash(req.url), ...extra });
 
   // meta probe: EXIF orientation from the first ~256KB, no decode at all.
+  // The capped read is EXPECTED here — a larger body is truncated, not an
+  // error (matches the deployed size=262400 behavior on big originals).
   if (req.meta) {
-    const fetched = await fetchUpstream(req.url, LIMITS.metaReadBytes);
-    // A capped read is EXPECTED for meta mode — treat the cap as success.
-    const bytes = fetched.ok ? fetched.bytes : null;
-    if (!bytes && fetched.ok === false && fetched.code !== "source_too_large") {
+    const fetched = await fetchUpstream(req.url, LIMITS.metaReadBytes, true);
+    if (!fetched.ok) {
       log("error", "meta-fetch", { code: fetched.code });
       return errorBaked(fetched.code, fetched.reason);
     }
-    const head = bytes ?? new Uint8Array();
+    const head = fetched.bytes;
     const body = JSON.stringify({ size: head.byteLength, orientation: parseExifOrientation(head) });
     log("ok", "meta");
     return {
