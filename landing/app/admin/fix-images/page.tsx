@@ -2,9 +2,8 @@
 
 // מסך תיקון תמונות — סיבוב חופשי בכל זווית, בגלילה אינסופית.
 //
-// הסיבוב חופשי לגמרי (0-359°): בזמן גרירת הסרגל התצוגה מסתובבת מיד בדפדפן
-// (CSS) כדי שיהיה מיידי, ואחרי שמירה מוצגת התמונה האמיתית כפי שהשרת מייצר
-// אותה — אותה זווית בדיוק, כולל רקע לבן בזוויות שאינן כפולה של 90.
+// התצוגה מסתובבת בדפדפן (CSS) מעל התמונה הרגילה — ללא שום עבודה בשרת.
+// הסיבוב האמיתי נשמר במסד ומופעל בכל מקום שהלקוחות רואים את המוצר.
 //
 // דפדוף: cursor לפי id ולא offset. כשמסמנים תמונה כ"נבדקה" היא יוצאת מתנאי
 // הסינון, ואז offset היה מזיז את החלון ו*מדלג* על תמונות שלא נבדקו. cursor
@@ -27,7 +26,7 @@ type Row = {
   orient_human_ok: boolean | null;
 };
 
-const BATCH = 24;
+const BATCH = 12;
 
 export default function FixImagesPage() {
   const router = useRouter();
@@ -262,22 +261,34 @@ function FixCard({ row, saving, onSave }: { row: Row; saving: boolean; onSave: (
   const saved = row.rotation_override ?? 0;
   const [angle, setAngle] = useState(saved);
   const [imgErr, setImgErr] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => { setAngle(row.rotation_override ?? 0); }, [row.rotation_override]);
-  // Clear a previous failure whenever the photo/angle changes, otherwise one
-  // transient error would leave the emoji fallback stuck there for good.
-  useEffect(() => { setImgErr(false); }, [row.picture_link, row.rotation_override]);
+  useEffect(() => { setImgErr(false); setAttempt(0); }, [row.picture_link]);
 
   const dirty = angle !== saved;
   const reviewed = !!row.orient_human_ok;
-  // While editing: show the un-rotated photo and spin it live with CSS.
-  // When clean: show the real server-rendered result for the saved angle.
+
+  // ALWAYS request the plain, un-rotated variant (w=480, no rot) and do the
+  // rotation here in the browser with CSS.
   //
-  // w MUST stay 480 — the width every other screen uses. A one-off width is a
-  // brand-new cache key, so all ~1000 photos would have to be regenerated from
-  // their ~3MB originals at once and the grid would sit there loading forever.
-  const src = rivhitImg(row.picture_link, 480, dirty ? 0 : saved);
-  // A rotated rectangle needs to shrink to stay inside the frame.
-  const previewScale = !dirty || angle % 180 === 0 ? 1 : angle % 90 === 0 ? 0.78 : 0.68;
+  // Why: asking the proxy for a rotated variant makes it decode the ~3MB
+  // original and re-encode it — per photo, per angle. A grid firing that for
+  // a screenful at once overwhelmed the edge worker and every image failed.
+  // The plain w=480 variant is the one the catalog already uses, so it is
+  // already cached for every product and comes straight off the CDN. The
+  // server-side rotation still applies everywhere customers see the photo;
+  // this screen only needs an accurate preview, and CSS gives that for free.
+  const src = rivhitImg(row.picture_link, 480, 0);
+  // A rotated rectangle has to shrink to stay inside its frame.
+  const previewScale = angle % 180 === 0 ? 1 : angle % 90 === 0 ? 0.78 : 0.68;
+
+  // One transient failure shouldn't strand the card on the emoji: retry the
+  // same (cacheable) URL a couple of times, backing off, before giving up.
+  const onImgError = () => {
+    if (attempt >= 2) { setImgErr(true); return; }
+    const next = attempt + 1;
+    setTimeout(() => setAttempt(next), 1200 * next);
+  };
 
   const nudge = (d: number) => setAngle((a) => (((Math.round(a + d) % 360) + 360) % 360));
 
@@ -292,13 +303,14 @@ function FixCard({ row, saving, onSave }: { row: Row; saving: boolean; onSave: (
         {imgErr ? <span>🧸</span> : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
+            key={attempt}
             src={src}
             alt={row.name}
             loading="lazy"
-            onError={() => setImgErr(true)}
+            onError={onImgError}
             style={{
               maxWidth: "100%", maxHeight: "100%", objectFit: "contain",
-              transform: dirty ? `rotate(${angle}deg) scale(${previewScale})` : undefined,
+              transform: `rotate(${angle}deg) scale(${previewScale})`,
               transition: "transform 0.08s linear",
             }}
           />
