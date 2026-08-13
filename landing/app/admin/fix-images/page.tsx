@@ -263,12 +263,19 @@ function FixCard({ row, saving, onSave }: { row: Row; saving: boolean; onSave: (
   const [angle, setAngle] = useState(saved);
   const [imgErr, setImgErr] = useState(false);
   useEffect(() => { setAngle(row.rotation_override ?? 0); }, [row.rotation_override]);
+  // Clear a previous failure whenever the photo/angle changes, otherwise one
+  // transient error would leave the emoji fallback stuck there for good.
+  useEffect(() => { setImgErr(false); }, [row.picture_link, row.rotation_override]);
 
   const dirty = angle !== saved;
   const reviewed = !!row.orient_human_ok;
   // While editing: show the un-rotated photo and spin it live with CSS.
   // When clean: show the real server-rendered result for the saved angle.
-  const src = rivhitImg(row.picture_link, 420, dirty ? 0 : saved);
+  //
+  // w MUST stay 480 — the width every other screen uses. A one-off width is a
+  // brand-new cache key, so all ~1000 photos would have to be regenerated from
+  // their ~3MB originals at once and the grid would sit there loading forever.
+  const src = rivhitImg(row.picture_link, 480, dirty ? 0 : saved);
   // A rotated rectangle needs to shrink to stay inside the frame.
   const previewScale = !dirty || angle % 180 === 0 ? 1 : angle % 90 === 0 ? 0.78 : 0.68;
 
