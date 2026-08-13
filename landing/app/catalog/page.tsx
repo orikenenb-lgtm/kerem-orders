@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
+import ProductImage from "../components/ProductImage";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
-import { rivhitImg } from "../../lib/images";
 import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
 import { featureFlags } from "../../lib/featureFlags";
 import { VAT_RATE } from "../../lib/config";
@@ -699,7 +699,6 @@ export default function CatalogPage() {
               {products.map((p, i) => {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
                 const qty = cart[p.id]?.qty ?? 0;
-                const img = rivhitImg(p.picture_link, 480, p.rotation_override ?? 0);
                 // Wave 3 (flag on): pack-aware card. RPC rows lack the quantity
                 // columns → step 1 (unit product), so nothing changes for them.
                 const step = ffQty ? stepOf(p) : 1;
@@ -716,7 +715,7 @@ export default function CatalogPage() {
                         small inner padding, one white background. */}
                     <Link href={`/product/?id=${p.id}`} aria-label={`פרטים על ${p.name}`} style={{ display: "block", position: "relative", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, overflow: "hidden" }}>
                       <span style={{ position: "absolute", inset: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>
-                        <ProductImg src={img} alt={p.name} />
+                        <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} />
                       </span>
                     </Link>
                     <Link href={`/product/?id=${p.id}`} style={{ textDecoration: "none" }}>
@@ -857,7 +856,6 @@ export default function CatalogPage() {
               <>
                 <div style={{ display: "grid", gap: "0.8rem", marginBottom: "1rem" }}>
                   {lines.map((l) => {
-                    const img = rivhitImg(l.picture_link);
                     // Wave 3: the drawer is a path into the cart too — when the
                     // flag is on its stepper moves by the pack size and every
                     // change is normalized. Lines without pack fields (old
@@ -875,7 +873,7 @@ export default function CatalogPage() {
                     return (
                       <div key={l.id} style={{ display: "flex", gap: "0.6rem", alignItems: "center", borderBottom: `1px solid ${tokens.border}`, paddingBottom: "0.6rem" }}>
                         <div style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>
-                          <ProductImg src={img} alt={l.name} />
+                          <ProductImage pictureLink={l.picture_link} name={l.name} />
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.88rem", color: tokens.text }}>{l.name}</div>
@@ -965,17 +963,6 @@ export default function CatalogPage() {
         </div>
       )}
     </>
-  );
-}
-
-// Product image with a graceful fallback: if the (proxied) image fails to load,
-// show the toy emoji instead of a broken-image icon.
-function ProductImg({ src, alt }: { src: string | null; alt: string }) {
-  const [err, setErr] = useState(false);
-  useEffect(() => { setErr(false); }, [src]);
-  if (!src || err) return <span>🧸</span>;
-  return (
-    <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
   );
 }
 

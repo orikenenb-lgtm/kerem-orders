@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../components/SiteHeader";
+import ProductImage from "../components/ProductImage";
 import { StatusBadge } from "../components/StatusBadge";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
-import { rivhitImg } from "../../lib/images";
 import { tokens, ils, discountPct } from "../../lib/ui";
 import { featureFlags } from "../../lib/featureFlags";
 import { stepOf } from "../../lib/quantity";
@@ -340,14 +340,6 @@ function syncNumbers(summary: SyncSummary): string {
   return parts.join(" · ");
 }
 
-function CatalogImg({ link, name }: { link: string; name: string }) {
-  const img = rivhitImg(link);
-  const [err, setErr] = useState(false);
-  useEffect(() => { setErr(false); }, [img]);
-  if (!img || err) return <span>🧸</span>;
-  return <img src={img} alt={name} loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />;
-}
-
 // Wave 3: the packaging (מארז/מגש) fields a manager can edit per product.
 // Only the columns the editor actually shows/saves are selected — plus
 // min_order_qty/order_step which feed the live preview via stepOf().
@@ -615,7 +607,7 @@ function ProductsTab() {
                     style={{ width: 16, height: 16, flexShrink: 0, accentColor: tokens.accent, cursor: "pointer" }}
                   />
                   <span style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem" }}>
-                    <CatalogImg link={p.picture_link ?? ""} name={p.name} />
+                    <ProductImage pictureLink={p.picture_link} name={p.name} />
                   </span>
                   <span style={{ flex: 1, minWidth: 160 }}>
                     <span style={{ display: "block", fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.text }}>{p.name}</span>

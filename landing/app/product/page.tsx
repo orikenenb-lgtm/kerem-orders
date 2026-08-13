@@ -5,9 +5,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
+import ProductImage from "../components/ProductImage";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
-import { rivhitImg } from "../../lib/images";
 import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
 import { featureFlags } from "../../lib/featureFlags";
 import { resolveQuantity, stepOf } from "../../lib/quantity";
@@ -36,14 +36,6 @@ type Product = {
   sell_by?: string | null;
   is_active?: boolean;
 };
-
-// Image with graceful emoji fallback (same behavior as the catalog).
-function ProductImg({ src, alt, style }: { src: string; alt: string; style?: React.CSSProperties }) {
-  const [err, setErr] = useState(false);
-  useEffect(() => { setErr(false); }, [src]);
-  if (!src || err) return <span style={{ fontSize: "4rem" }}>🧸</span>;
-  return <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} style={style} />;
-}
 
 // Add `addUnits` to the SAME localStorage cart the catalog uses, through the
 // SAME shared resolver — so a line added here is byte-identical to one added
@@ -151,7 +143,6 @@ function ProductDetail() {
   }
 
   const p = product;
-  const img = rivhitImg(p.picture_link, 900, p.rotation_override ?? 0);
   const step = ffQty ? stepOf(p) : 1;
   const unitPrice = applyDiscount(p.price, discount);
   // The button total reflects the quantity that will ACTUALLY be added: for
@@ -173,7 +164,9 @@ function ProductDetail() {
             the details below don't jump when it arrives (matches the grid
             cards' aspect-ratio approach — no CLS). */}
         <div style={{ background: "#fff", border: `1px solid ${tokens.border}`, borderRadius: 20, padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center", aspectRatio: "1 / 1", maxHeight: 480, boxShadow: tokens.shadowCard }}>
-          <ProductImg src={img} alt={p.name} style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain" }} />
+          <ProductImage pictureLink={p.picture_link} name={p.name} width={900} rotation={p.rotation_override ?? 0}
+            imgStyle={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto" }}
+            placeholderStyle={{ fontSize: "4rem" }} />
         </div>
 
         {/* details */}
@@ -231,14 +224,13 @@ function ProductDetail() {
           <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.3rem", color: tokens.text, marginBottom: "1.2rem" }}>מוצרים דומים</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "1rem" }}>
             {related.map((r) => {
-              const rImg = rivhitImg(r.picture_link, 480, r.rotation_override ?? 0);
               const rPrice = applyDiscount(r.price, discount);
               return (
                 <Link key={r.id} href={`/product/?id=${r.id}`} className="kt-card" style={{ textDecoration: "none", border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.8rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                   {/* Same uniform frame as the catalog cards: square, contain,
                       inner padding, white background. */}
                   <div style={{ aspectRatio: "1 / 1", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
-                    <ProductImg src={rImg} alt={r.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                    <ProductImage pictureLink={r.picture_link} name={r.name} rotation={r.rotation_override ?? 0} placeholderStyle={{ fontSize: "2.6rem" }} />
                   </div>
                   <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.2em" }}>{r.name}</div>
                   <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: discount > 0 ? "#1A7A4D" : tokens.text }}>{ils(rPrice)}</div>
