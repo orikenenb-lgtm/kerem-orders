@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  ATTEMPT_DIRECT,
   ATTEMPT_PROXY,
   nextAttempt,
   srcForAttempt,
@@ -91,7 +92,9 @@ export default function ProductImage({
       return;
     }
     if (!srcForAttempt(link, next.attempt, width, rot)) {
-      // The next stage has nothing to load (e.g. non-HTTPS source) — give up now.
+      // The next stage has nothing to load (e.g. non-HTTPS source) — give up
+      // now, and record the terminal attempt so onStatus reports "exhausted".
+      setAttempt(next.attempt);
       setPhase("failed");
       return;
     }
@@ -114,6 +117,16 @@ export default function ProductImage({
     );
   }
 
+  // The proxy bakes the saved rotation into the pixels; the direct original
+  // does not — so on the direct fallback the same rotation is applied in CSS
+  // (composed BEFORE any caller transform; quarter/odd turns shrink to stay
+  // inside the frame, like the admin preview does).
+  const directRotate =
+    attempt === ATTEMPT_DIRECT && rot
+      ? `rotate(${rot}deg) scale(${rot % 180 === 0 ? 1 : rot % 90 === 0 ? 0.78 : 0.68})`
+      : "";
+  const transform = [directRotate, imgStyle?.transform].filter(Boolean).join(" ") || undefined;
+
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -124,7 +137,7 @@ export default function ProductImage({
       decoding="async"
       onLoad={() => setPhase("loaded")}
       onError={onError}
-      style={{ width: "100%", height: "100%", objectFit: "contain", ...imgStyle }}
+      style={{ width: "100%", height: "100%", objectFit: "contain", ...imgStyle, transform }}
     />
   );
 }

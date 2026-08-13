@@ -122,7 +122,10 @@ export default function ImagesReviewPage() {
 
   // Leaving the screen must stop the AI scan too — otherwise the loop keeps
   // writing rotations and calling setState long after the component is gone.
-  useEffect(() => () => { aiStopRef.current = true; }, []);
+  // mountedRef also guards the continuation that resumes AFTER an in-flight
+  // invoke() resolves post-unmount.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; aiStopRef.current = true; }, []);
 
   // Drive the detect-orientation edge function in a loop until nothing is left
   // to scan, showing live progress. Each round scans a small batch so the tab
@@ -136,6 +139,7 @@ export default function ImagesReviewPage() {
       for (let round = 0; round < 300; round++) {
         if (aiStopRef.current) { setAiMsg(`נעצר · נסרקו ${checked.toLocaleString("he-IL")}, סובבו ${flipped.toLocaleString("he-IL")}`); break; }
         const { data, error } = await supabase.functions.invoke("detect-orientation", { body: { limit: 20 } });
+        if (!mountedRef.current) return;
         if (error) {
           let msg = "שגיאה בסריקה.";
           try { const ctx = (error as { context?: Response }).context; if (ctx && typeof ctx.json === "function") { const b = await ctx.json(); if (b?.error) msg = b.error; } } catch { /* */ }
@@ -151,10 +155,12 @@ export default function ImagesReviewPage() {
         if ((d.checked ?? 0) === 0) { setAiMsg("נעצר: לא ניתן היה לעבד תמונות (בדקו מפתח API / מכסה) ונסו שוב."); break; }
       }
     } catch (e) {
-      setAiMsg("שגיאת רשת בסריקה: " + String((e as Error)?.message ?? e));
+      if (mountedRef.current) setAiMsg("שגיאת רשת בסריקה: " + String((e as Error)?.message ?? e));
     } finally {
-      setAiRunning(false);
-      load();
+      if (mountedRef.current) {
+        setAiRunning(false);
+        load();
+      }
     }
   }, [loadFixedCount, load]);
 
@@ -288,12 +294,14 @@ function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRot
           rotation={0}
           retryKey={retryKey}
           onStatus={setStatus}
-          imgStyle={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", transform: draft ? `rotate(${draft}deg) scale(0.78)` : undefined, transition: "transform 0.12s ease" }}
+          imgStyle={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", transform: draft ? `rotate(${draft}deg) scale(${draft % 180 === 0 ? 1 : 0.78})` : undefined, transition: "transform 0.12s ease" }}
         />
       </div>
       <div style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.text, minHeight: "2.4em", lineHeight: 1.3 }}>{row.name}</div>
       {failed && (
-        <div role="alert" style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C", background: "rgba(192,20,60,0.07)", border: "1px solid rgba(192,20,60,0.25)", borderRadius: 10, padding: "0.5rem 0.6rem", lineHeight: 1.45 }}>
+        // role="status" (polite) — see fix-images: a mass failure must not
+        // fire a screenful of assertive alerts.
+        <div role="status" style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C", background: "rgba(192,20,60,0.07)", border: "1px solid rgba(192,20,60,0.25)", borderRadius: 10, padding: "0.5rem 0.6rem", lineHeight: 1.45 }}>
           <b>לא ניתן לבדוק את התמונה כי היא לא נטענה.</b>
           <div style={{ display: "flex", gap: "0.3rem", marginTop: "0.45rem", flexWrap: "wrap" }}>
             <button onClick={() => setRetryKey((k) => k + 1)} style={smallBtn}>↻ נסה שוב</button>

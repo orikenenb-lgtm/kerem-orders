@@ -7,7 +7,8 @@ client-side fix implemented on this branch.** No Supabase change, no write to
 ## 0. Measured diagnosis (read-only, full catalog)
 
 Probed **all 980 active products** exposed by the public `catalog_public` RPC
-(anon key, GET-only), through the proxy (`w=480`, saved `rot`) and directly:
+(anon key; read-only — image GETs plus the read-only catalog RPC), through
+the proxy (`w=480`, saved `rot`) and directly:
 
 | bucket                          | count | share |
 |---------------------------------|------:|------:|
@@ -100,7 +101,9 @@ inventing numbers, so it was not done.
 ## 4. Ready-to-run diagnosis
 
 `scripts/diagnose-images.mjs` produces exactly the requested evidence. It is
-**read-only** (GET requests and one `SELECT`); it never writes.
+**read-only** (image GETs plus one read-only product query — a REST `SELECT`,
+or the public `catalog_public` RPC when only the anon key is available); it
+never writes.
 
 ```bash
 SUPABASE_URL=https://mcdchalyzeqjkkgfeznd.supabase.co \

@@ -31,18 +31,22 @@ export function isDirectFallbackAllowed(pictureLink: string): boolean {
 
 /** Human-readable stage (manager diagnostics only — customers never see it). */
 export function stageOf(attempt: number, pictureLink: string): FallbackStage {
-  if (!pictureLink) return "no-url";
+  // Empty AND syntactically-invalid links are never attempted at all.
+  if (!isDirectFallbackAllowed(pictureLink)) return "no-url";
   if (attempt <= ATTEMPT_PROXY) return "proxy";
   if (attempt === ATTEMPT_PROXY_RETRY) return "proxy-retry";
   if (attempt === ATTEMPT_DIRECT) return "direct";
   return "exhausted";
 }
 
-/** The URL to load for a given attempt; "" means "render the placeholder". */
+/** The URL to load for a given attempt; "" means "render the placeholder".
+ *  A source that is not real HTTPS (http:, data:, javascript:, junk) is
+ *  rejected up front — it never reaches the proxy, so an invalid link costs
+ *  zero network attempts. */
 export function srcForAttempt(pictureLink: string, attempt: number, w = 480, rot = 0): string {
-  if (!pictureLink) return "";
+  if (!isDirectFallbackAllowed(pictureLink)) return "";
   if (attempt <= ATTEMPT_PROXY_RETRY) return rivhitImg(pictureLink, w, rot);
-  if (attempt === ATTEMPT_DIRECT && isDirectFallbackAllowed(pictureLink)) return pictureLink;
+  if (attempt === ATTEMPT_DIRECT) return pictureLink;
   return "";
 }
 

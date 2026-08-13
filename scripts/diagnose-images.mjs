@@ -6,8 +6,10 @@
 //   (2) rivhit-img only fails under concurrency (worker exhaustion), or
 //   (3) some products.picture_link values are themselves dead/invalid.
 //
-// It performs GET requests ONLY. It never writes to the database, never
-// touches rotation_override / orient_human_ok, and never deploys anything.
+// It is strictly READ-ONLY: image GETs plus one read-only product query (a
+// REST SELECT, or with an anon key a POST to the read-only catalog_public
+// RPC). It never writes to the database, never touches rotation_override /
+// orient_human_ok, and never deploys anything.
 //
 // Usage:
 //   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/diagnose-images.mjs [--limit 60] [--burst 12]
@@ -128,7 +130,10 @@ async function main() {
   for (const p of products) {
     const link = p.picture_link || "";
     const validHttps = /^https:\/\//i.test(link);
-    const proxy = validHttps ? await probe(proxyUrl(link, 480, 0)) : { ok: false, status: 0, ctype: "", contentLength: 0, ms: 0, kind: "skipped-invalid-url", https: false };
+    // Probe the exact variant the site requests for this product (saved rot
+    // included) — a rotated variant is a distinct cache entry with its own
+    // cold-decode risk.
+    const proxy = validHttps ? await probe(proxyUrl(link, 480, p.rotation_override ?? 0)) : { ok: false, status: 0, ctype: "", contentLength: 0, ms: 0, kind: "skipped-invalid-url", https: false };
     const direct = validHttps ? await probe(link) : { ok: false, status: 0, ctype: "", contentLength: 0, ms: 0, kind: "skipped-invalid-url", https: false };
     const bucket = classify(proxy, direct, link);
     rows.push({
@@ -145,7 +150,7 @@ async function main() {
   // ---- PASS 2: burst. Proves/refutes the concurrency (worker-exhaustion) theory. ----
   const burstSample = rows.filter((r) => r.https).slice(0, BURST);
   console.log(`PASS 2 — burst of ${burstSample.length} simultaneous proxy requests: tests the concurrency theory`);
-  const burst = await Promise.all(burstSample.map((r) => probe(proxyUrl(r.picture_link, 480, 0))));
+  const burst = await Promise.all(burstSample.map((r) => probe(proxyUrl(r.picture_link, 480, r.rotation_override ?? 0))));
   const burstOk = burst.filter((b) => b.ok).length;
   const burstFail = burst.length - burstOk;
   // Same URLs succeeded sequentially?
@@ -168,7 +173,8 @@ async function main() {
   console.log(
     burstFail > 0 && seqOkForSame > burstOk
       ? "  => CONCURRENCY is a real factor: the same URLs pass alone and fail in a burst."
-      : "  => concurrency is NOT the differentiator here; failures are per-image."
+      : "  => no concurrency failure observed — but note pass 1 already WARMED these variants," +
+        "\n     so this only proves cached variants survive a burst; it cannot clear cold-decode concurrency."
   );
 
   const failKinds = {};

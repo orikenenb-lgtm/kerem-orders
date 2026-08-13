@@ -9,7 +9,7 @@
 // הסינון, ואז offset היה מזיז את החלון ו*מדלג* על תמונות שלא נבדקו. cursor
 // לפי מפתח ייחודי ויציב לא מושפע מכך — שום תמונה לא נופלת בין הכיסאות.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
@@ -150,6 +150,8 @@ export default function FixImagesPage() {
 
   // Save any angle (0-359) and mark the photo as reviewed by a human.
   // Guarded in FixCard: unreachable while the image has not actually loaded.
+  // Handed to the memoized cards through a ref so its identity is stable and
+  // one card's status change doesn't re-render the whole grid.
   const save = async (id: string, angle: number) => {
     const norm = ((Math.round(angle) % 360) + 360) % 360;
     const prev = rows.find((r) => r.id === id);
@@ -169,6 +171,9 @@ export default function FixImagesPage() {
     }
     loadProgress();
   };
+  const saveRef = useRef(save);
+  useEffect(() => { saveRef.current = save; });
+  const onSave = useCallback((id: string, deg: number) => { saveRef.current(id, deg); }, []);
 
   if (loading || !session || !isManager) {
     return (
@@ -184,9 +189,11 @@ export default function FixImagesPage() {
   const pct = totalAll > 0 ? Math.round((done / totalAll) * 100) : 0;
   const remaining = Math.max(0, totalAll - done);
   const failedCount = rows.filter((r) => imgStatus[r.id]?.phase === "failed").length;
-  // The "unloaded only" view filters what is already on screen; the sentinel
-  // keeps loading more rows underneath so more can be inspected.
-  const shownRows = onlyUnloaded ? rows.filter((r) => imgStatus[r.id]?.phase === "failed") : rows;
+  // "Unloaded only" hides rows once their photo has ACTUALLY loaded, but keeps
+  // unknown/loading rows mounted — a card must render for its image to be
+  // probed at all, so new rows arriving from the infinite scroll still get
+  // checked and join the list if they fail.
+  const shownRows = onlyUnloaded ? rows.filter((r) => imgStatus[r.id]?.phase !== "loaded") : rows;
 
   return (
     <>
@@ -256,13 +263,12 @@ export default function FixImagesPage() {
           </div>
         ) : shownRows.length === 0 ? (
           <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
-            כל התמונות שנטענו עד כה תקינות. הסינון מציג רק כשלים שכבר התגלו —
-            כבו אותו, גללו כדי לטעון תמונות נוספות, והדליקו שוב כדי לרכז את מה שנכשל.
+            כל התמונות שנטענו עד כה תקינות — גללו כדי לטעון ולבדוק תמונות נוספות.
           </p>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem" }}>
             {shownRows.map((r) => (
-              <FixCard key={r.id} row={r} saving={savingId === r.id} status={imgStatus[r.id]} onStatus={onImgStatus} onSave={(deg) => save(r.id, deg)} />
+              <FixCard key={r.id} row={r} saving={savingId === r.id} status={imgStatus[r.id]} onStatus={onImgStatus} onSave={onSave} />
             ))}
           </div>
         )}
@@ -291,12 +297,15 @@ export default function FixImagesPage() {
   );
 }
 
-function FixCard({ row, saving, status, onStatus, onSave }: {
+// memo: the page lifts every card's image status into one map, so each status
+// transition re-renders the page — without memo that's O(cards²) work as the
+// infinite scroll grows.
+const FixCard = memo(function FixCard({ row, saving, status, onStatus, onSave }: {
   row: Row;
   saving: boolean;
   status: ProductImageStatus | undefined;
   onStatus: (id: string, s: ProductImageStatus) => void;
-  onSave: (deg: number) => void;
+  onSave: (id: string, deg: number) => void;
 }) {
   const saved = row.rotation_override ?? 0;
   const [angle, setAngle] = useState(saved);
@@ -325,11 +334,11 @@ function FixCard({ row, saving, status, onStatus, onSave }: {
   // A rotated rectangle has to shrink to stay inside its frame.
   const previewScale = angle % 180 === 0 ? 1 : angle % 90 === 0 ? 0.78 : 0.68;
 
+  // Terminal failures report either "no-url" (nothing was ever attempted) or
+  // "exhausted" (proxy, retry AND the direct original all failed).
   const stageText =
-    status?.stage === "no-url" ? "למוצר אין כתובת תמונה ברווחית" :
-    status?.stage === "exhausted" && isDirectFallbackAllowed(row.picture_link) ? "גם שרת התמונות וגם המקור מרווחית נכשלו" :
-    status?.stage === "exhausted" ? "שרת התמונות נכשל ולמקור אין כתובת HTTPS תקינה" :
-    status?.stage === "direct" ? "שרת התמונות נכשל — נטען המקור המלא מרווחית" :
+    status?.stage === "no-url" ? "למוצר אין כתובת תמונה תקינה ברווחית" :
+    status?.stage === "exhausted" ? "גם שרת התמונות וגם המקור מרווחית נכשלו" :
     "";
 
   const copyLink = async () => {
@@ -378,7 +387,10 @@ function FixCard({ row, saving, status, onStatus, onSave }: {
       </div>
 
       {failed && (
-        <div role="alert" style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C", background: "rgba(192,20,60,0.07)", border: "1px solid rgba(192,20,60,0.25)", borderRadius: 10, padding: "0.5rem 0.6rem", lineHeight: 1.45 }}>
+        // role="status" (polite), NOT alert — a proxy outage flips a whole
+        // screenful of cards at once and dozens of assertive announcements
+        // would drown a screen-reader user.
+        <div role="status" style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C", background: "rgba(192,20,60,0.07)", border: "1px solid rgba(192,20,60,0.25)", borderRadius: 10, padding: "0.5rem 0.6rem", lineHeight: 1.45 }}>
           <b>לא ניתן לבדוק את התמונה כי היא לא נטענה.</b>
           {stageText && <div style={{ color: tokens.body, marginTop: "0.2rem" }}>{stageText}</div>}
           <div style={{ display: "flex", gap: "0.3rem", marginTop: "0.45rem", flexWrap: "wrap" }}>
@@ -422,19 +434,19 @@ function FixCard({ row, saving, status, onStatus, onSave }: {
       </div>
 
       {dirty ? (
-        <button onClick={() => onSave(angle)} disabled={controlsDisabled}
+        <button onClick={() => onSave(row.id, angle)} disabled={controlsDisabled}
           style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.7rem", borderRadius: 999, cursor: controlsDisabled ? "default" : "pointer", opacity: controlsDisabled ? 0.6 : 1 }}>
           {saving ? "שומר…" : `שמירה (${angle}°)`}
         </button>
       ) : (
-        <button onClick={() => onSave(angle)} disabled={controlsDisabled || reviewed}
+        <button onClick={() => onSave(row.id, angle)} disabled={controlsDisabled || reviewed}
           style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", color: reviewed ? "#1A7A4D" : "#fff", background: reviewed ? "rgba(37,199,126,0.14)" : "#1A7A4D", border: "none", padding: "0.7rem", borderRadius: 999, cursor: controlsDisabled || reviewed ? "default" : "pointer", opacity: saving || (!loaded && !reviewed) ? 0.6 : 1 }}>
           {reviewed ? "✓ נבדק" : "✓ תקין — סמן כנבדק"}
         </button>
       )}
     </div>
   );
-}
+});
 
 const miniBtn: React.CSSProperties = {
   flex: 1, fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.78rem",

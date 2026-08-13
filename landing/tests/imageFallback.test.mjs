@@ -68,6 +68,13 @@ t("direct fallback refuses non-HTTPS sources", () => {
 t("empty / invalid URL renders the placeholder from the very first attempt", () => {
   assert.equal(srcForAttempt("", ATTEMPT_PROXY), "");
   assert.equal(srcForAttempt("", ATTEMPT_DIRECT), "");
+  // Non-HTTPS junk never reaches the proxy either — zero network attempts.
+  assert.equal(srcForAttempt("http://insecure/img.jpg", ATTEMPT_PROXY), "");
+  assert.equal(srcForAttempt("not a url", ATTEMPT_PROXY), "");
+});
+t("invalid links report the no-url stage at every attempt", () => {
+  assert.equal(stageOf(ATTEMPT_PROXY, "http://x/img.jpg"), "no-url");
+  assert.equal(stageOf(ATTEMPT_PROXY, "not a url"), "no-url");
 });
 t("exhausted attempt renders the placeholder", () => {
   assert.equal(srcForAttempt(LINK, ATTEMPT_EXHAUSTED), "");
@@ -117,18 +124,20 @@ t("a full walk of the chain makes at most 3 network attempts", () => {
   }
   assert.equal(requests, 3, "proxy + retry + direct, nothing more");
 });
-t("a full walk with an empty link makes ZERO network attempts", () => {
-  let attempt = ATTEMPT_PROXY;
-  let requests = 0;
-  for (let guard = 0; guard < 10; guard++) {
-    const src = srcForAttempt("", attempt, 480, 0);
-    if (!src) break;
-    requests++;
-    const next = nextAttempt(attempt, "");
-    if (!next) break;
-    attempt = next.attempt;
+t("a full walk with an empty or non-HTTPS link makes ZERO network attempts", () => {
+  for (const link of ["", "http://x/img.jpg", "data:image/png;base64,x"]) {
+    let attempt = ATTEMPT_PROXY;
+    let requests = 0;
+    for (let guard = 0; guard < 10; guard++) {
+      const src = srcForAttempt(link, attempt, 480, 0);
+      if (!src) break;
+      requests++;
+      const next = nextAttempt(attempt, link);
+      if (!next) break;
+      attempt = next.attempt;
+    }
+    assert.equal(requests, 0, `link "${link}" must never be requested`);
   }
-  assert.equal(requests, 0);
 });
 
 // ---- stage names (manager-facing diagnostics) ----
