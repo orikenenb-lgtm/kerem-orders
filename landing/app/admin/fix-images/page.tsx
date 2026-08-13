@@ -13,9 +13,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
+import ProductImage, { type ProductImageStatus } from "../../components/ProductImage";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
-import { rivhitImg } from "../../../lib/images";
+import { isDirectFallbackAllowed } from "../../../lib/imageFallback";
 import { tokens } from "../../../lib/ui";
 
 type Row = {
@@ -37,6 +38,13 @@ export default function FixImagesPage() {
   const [loadErr, setLoadErr] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [onlyTodo, setOnlyTodo] = useState(true);
+  // Client-side filter: show only cards whose image FAILED to load (so the
+  // manager can collect them, retry, or open the Rivhit source). It filters
+  // what is already on screen — scrolling keeps loading more to inspect.
+  const [onlyUnloaded, setOnlyUnloaded] = useState(false);
+  // Per-product image state reported by ProductImage — drives the guards:
+  // a card whose photo did not really load must not be reviewable.
+  const [imgStatus, setImgStatus] = useState<Record<string, ProductImageStatus>>({});
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -76,7 +84,10 @@ export default function FixImagesPage() {
   // reset=true starts a fresh list (filter/search changed); otherwise append.
   const fetchPage = useCallback(async (reset: boolean) => {
     if (!isManager) return;
-    if (loadingRef.current) return;
+    // Only APPENDS are dropped while a load is in flight. A reset must always
+    // go through — it bumps the generation, so the stale in-flight response is
+    // discarded by the gen check below instead of the new filter being lost.
+    if (!reset && loadingRef.current) return;
     loadingRef.current = true;
     const gen = reset ? ++genRef.current : genRef.current;
     if (reset) { cursorRef.current = null; setHasMore(true); }
@@ -94,8 +105,9 @@ export default function FixImagesPage() {
 
     const { data, error } = await q.order("id", { ascending: true }).limit(BATCH);
 
-    // A newer filter/search superseded this request — drop the stale result.
-    if (gen !== genRef.current) { loadingRef.current = false; return; }
+    // A newer filter/search superseded this request — drop the stale result
+    // WITHOUT touching loadingRef: it now belongs to the newer request.
+    if (gen !== genRef.current) { return; }
 
     if (error) { setLoadErr(true); setBusy(false); loadingRef.current = false; return; }
     setLoadErr(false);
@@ -128,7 +140,16 @@ export default function FixImagesPage() {
     return () => obs.disconnect();
   }, [fetchPage, hasMore]);
 
+  const onImgStatus = useCallback((id: string, s: ProductImageStatus) => {
+    setImgStatus((prev) => {
+      const cur = prev[id];
+      if (cur && cur.phase === s.phase && cur.stage === s.stage) return prev;
+      return { ...prev, [id]: s };
+    });
+  }, []);
+
   // Save any angle (0-359) and mark the photo as reviewed by a human.
+  // Guarded in FixCard: unreachable while the image has not actually loaded.
   const save = async (id: string, angle: number) => {
     const norm = ((Math.round(angle) % 360) + 360) % 360;
     const prev = rows.find((r) => r.id === id);
@@ -162,6 +183,10 @@ export default function FixImagesPage() {
 
   const pct = totalAll > 0 ? Math.round((done / totalAll) * 100) : 0;
   const remaining = Math.max(0, totalAll - done);
+  const failedCount = rows.filter((r) => imgStatus[r.id]?.phase === "failed").length;
+  // The "unloaded only" view filters what is already on screen; the sentinel
+  // keeps loading more rows underneath so more can be inspected.
+  const shownRows = onlyUnloaded ? rows.filter((r) => imgStatus[r.id]?.phase === "failed") : rows;
 
   return (
     <>
@@ -204,8 +229,12 @@ export default function FixImagesPage() {
             <input type="checkbox" checked={onlyTodo} onChange={(e) => setOnlyTodo(e.target.checked)} style={{ width: 18, height: 18 }} />
             רק מה שלא בדקתי
           </label>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.45rem", fontFamily: tokens.assistant, fontSize: "0.95rem", color: tokens.body, cursor: "pointer" }}>
+            <input type="checkbox" checked={onlyUnloaded} onChange={(e) => setOnlyUnloaded(e.target.checked)} style={{ width: 18, height: 18 }} />
+            רק תמונות שלא נטענו{failedCount > 0 ? ` (${failedCount.toLocaleString("he-IL")})` : ""}
+          </label>
           <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>
-            {rows.length.toLocaleString("he-IL")} מוצגים
+            {shownRows.length.toLocaleString("he-IL")} מוצגים
           </span>
         </div>
 
@@ -225,10 +254,15 @@ export default function FixImagesPage() {
               {query ? "לא נמצאו תמונות לחיפוש הזה." : "סיימת! עברת על כל התמונות."}
             </p>
           </div>
+        ) : shownRows.length === 0 ? (
+          <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
+            כל התמונות שנטענו עד כה תקינות. הסינון מציג רק כשלים שכבר התגלו —
+            כבו אותו, גללו כדי לטעון תמונות נוספות, והדליקו שוב כדי לרכז את מה שנכשל.
+          </p>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "1rem" }}>
-            {rows.map((r) => (
-              <FixCard key={r.id} row={r} saving={savingId === r.id} onSave={(deg) => save(r.id, deg)} />
+            {shownRows.map((r) => (
+              <FixCard key={r.id} row={r} saving={savingId === r.id} status={imgStatus[r.id]} onStatus={onImgStatus} onSave={(deg) => save(r.id, deg)} />
             ))}
           </div>
         )}
@@ -257,71 +291,78 @@ export default function FixImagesPage() {
   );
 }
 
-function FixCard({ row, saving, onSave }: { row: Row; saving: boolean; onSave: (deg: number) => void }) {
+function FixCard({ row, saving, status, onStatus, onSave }: {
+  row: Row;
+  saving: boolean;
+  status: ProductImageStatus | undefined;
+  onStatus: (id: string, s: ProductImageStatus) => void;
+  onSave: (deg: number) => void;
+}) {
   const saved = row.rotation_override ?? 0;
   const [angle, setAngle] = useState(saved);
-  const [imgErr, setImgErr] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  // 0,1 = our image proxy · 2 = straight from Rivhit · 3 = give up
+  // Bumping restarts the fallback chain from the proxy ("נסה שוב").
+  const [retryKey, setRetryKey] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => { setAngle(row.rotation_override ?? 0); }, [row.rotation_override]);
-  useEffect(() => { setImgErr(false); setAttempt(0); }, [row.picture_link]);
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
 
   const dirty = angle !== saved;
   const reviewed = !!row.orient_human_ok;
 
-  // ALWAYS request the plain, un-rotated variant (w=480, no rot) and do the
-  // rotation here in the browser with CSS.
-  //
-  // Why: asking the proxy for a rotated variant makes it decode the ~3MB
-  // original and re-encode it — per photo, per angle. A grid firing that for
-  // a screenful at once overwhelmed the edge worker and every image failed.
-  // The plain w=480 variant is the one the catalog already uses, so it is
-  // already cached for every product and comes straight off the CDN. The
-  // server-side rotation still applies everywhere customers see the photo;
-  // this screen only needs an accurate preview, and CSS gives that for free.
-  //
-  // FALLBACK: the proxy can still fail on individual photos (it decodes the
-  // full-size original, and the biggest ones exhaust the edge worker). Rather
-  // than strand the card on an emoji, the last attempt loads the photo
-  // STRAIGHT from Rivhit — no resizing, but it renders, which is the whole
-  // point of this screen.
-  const src = attempt >= 2 ? row.picture_link : rivhitImg(row.picture_link, 480, 0);
+  // A photo that did not ACTUALLY load must not be reviewable: no slider, no
+  // rotation, no save, no "תקין" — and it must not advance the progress bar.
+  // The manager approves only what their own eyes have seen.
+  const loaded = status?.phase === "loaded";
+  const failed = status?.phase === "failed";
+  const controlsDisabled = saving || !loaded;
+
+  // The preview ALWAYS requests the plain, un-rotated w=480 variant (the one
+  // the catalog already caches) and rotates in the browser with CSS — asking
+  // the proxy for per-angle variants is what used to overwhelm the edge
+  // worker. ProductImage adds the shared fallback chain on top:
+  // proxy → retry → direct Rivhit original → accessible placeholder.
   // A rotated rectangle has to shrink to stay inside its frame.
   const previewScale = angle % 180 === 0 ? 1 : angle % 90 === 0 ? 0.78 : 0.68;
 
-  // attempt 0 -> proxy, 1 -> proxy retry (it may be warm by now),
-  // 2 -> direct from Rivhit, 3 -> emoji.
-  const onImgError = () => {
-    if (attempt >= 3) { setImgErr(true); return; }
-    const next = attempt + 1;
-    setTimeout(() => setAttempt(next), next === 1 ? 1200 : 300);
+  const stageText =
+    status?.stage === "no-url" ? "למוצר אין כתובת תמונה ברווחית" :
+    status?.stage === "exhausted" && isDirectFallbackAllowed(row.picture_link) ? "גם שרת התמונות וגם המקור מרווחית נכשלו" :
+    status?.stage === "exhausted" ? "שרת התמונות נכשל ולמקור אין כתובת HTTPS תקינה" :
+    status?.stage === "direct" ? "שרת התמונות נכשל — נטען המקור המלא מרווחית" :
+    "";
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(row.picture_link);
+      setCopied(true);
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable — the link is still visible in Rivhit */ }
   };
 
   const nudge = (d: number) => setAngle((a) => (((Math.round(a + d) % 360) + 360) % 360));
 
   return (
     <div style={{
-      border: `2px solid ${dirty ? tokens.accent : reviewed ? "rgba(37,199,126,0.55)" : tokens.border}`,
+      border: `2px solid ${failed ? "rgba(192,20,60,0.45)" : dirty ? tokens.accent : reviewed ? "rgba(37,199,126,0.55)" : tokens.border}`,
       borderRadius: 16, background: "#fff", padding: "0.7rem",
       display: "flex", flexDirection: "column", gap: "0.55rem",
       boxShadow: "0 6px 18px rgba(26,23,48,0.05)",
     }}>
       <div style={{ position: "relative", height: 210, borderRadius: 12, border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#fff", fontSize: "2.4rem" }}>
-        {imgErr ? <span>🧸</span> : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            key={attempt}
-            src={src}
-            alt={row.name}
-            loading="lazy"
-            onError={onImgError}
-            style={{
-              maxWidth: "100%", maxHeight: "100%", objectFit: "contain",
-              transform: `rotate(${angle}deg) scale(${previewScale})`,
-              transition: "transform 0.08s linear",
-            }}
-          />
-        )}
+        <ProductImage
+          pictureLink={row.picture_link}
+          name={row.name}
+          rotation={0}
+          retryKey={retryKey}
+          onStatus={(s) => onStatus(row.id, s)}
+          imgStyle={{
+            maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto",
+            transform: `rotate(${angle}deg) scale(${previewScale})`,
+            transition: "transform 0.08s linear",
+          }}
+        />
         {reviewed && !dirty && (
           <span style={{ position: "absolute", top: 6, insetInlineEnd: 6, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.65rem", color: "#fff", background: "#25C77E", padding: "0.15rem 0.5rem", borderRadius: 999 }}>
             ✓ נבדק
@@ -336,38 +377,58 @@ function FixCard({ row, saving, onSave }: { row: Row; saving: boolean; onSave: (
         {row.name}
       </div>
 
-      {/* free-angle slider */}
+      {failed && (
+        <div role="alert" style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C", background: "rgba(192,20,60,0.07)", border: "1px solid rgba(192,20,60,0.25)", borderRadius: 10, padding: "0.5rem 0.6rem", lineHeight: 1.45 }}>
+          <b>לא ניתן לבדוק את התמונה כי היא לא נטענה.</b>
+          {stageText && <div style={{ color: tokens.body, marginTop: "0.2rem" }}>{stageText}</div>}
+          <div style={{ display: "flex", gap: "0.3rem", marginTop: "0.45rem", flexWrap: "wrap" }}>
+            <button onClick={() => setRetryKey((k) => k + 1)} style={miniBtn}>↻ נסה שוב</button>
+            {isDirectFallbackAllowed(row.picture_link) && (
+              <a href={row.picture_link} target="_blank" rel="noopener noreferrer"
+                style={{ ...miniBtn, textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                פתח מקור מרווחית ↗
+              </a>
+            )}
+            {row.picture_link && (
+              <button onClick={copyLink} style={miniBtn}>{copied ? "✓ הועתק" : "העתק קישור"}</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* free-angle slider — locked until the photo has really loaded */}
       <input
         type="range" min={0} max={359} step={1} value={angle}
         onChange={(e) => setAngle(Number(e.target.value))}
+        disabled={controlsDisabled}
         aria-label={`זווית סיבוב עבור ${row.name}`}
-        style={{ width: "100%", accentColor: "#8A3FFC" }}
+        style={{ width: "100%", accentColor: "#8A3FFC", opacity: controlsDisabled ? 0.4 : 1 }}
       />
 
       {/* fine tuning */}
       <div style={{ display: "flex", gap: "0.3rem" }}>
-        <button onClick={() => nudge(-5)} disabled={saving} style={miniBtn}>−5°</button>
-        <button onClick={() => nudge(-1)} disabled={saving} style={miniBtn}>−1°</button>
-        <button onClick={() => nudge(1)} disabled={saving} style={miniBtn}>+1°</button>
-        <button onClick={() => nudge(5)} disabled={saving} style={miniBtn}>+5°</button>
+        <button onClick={() => nudge(-5)} disabled={controlsDisabled} style={miniBtn}>−5°</button>
+        <button onClick={() => nudge(-1)} disabled={controlsDisabled} style={miniBtn}>−1°</button>
+        <button onClick={() => nudge(1)} disabled={controlsDisabled} style={miniBtn}>+1°</button>
+        <button onClick={() => nudge(5)} disabled={controlsDisabled} style={miniBtn}>+5°</button>
       </div>
 
       {/* quick jumps */}
       <div style={{ display: "flex", gap: "0.3rem" }}>
-        <button onClick={() => setAngle(90)} disabled={saving} style={miniBtn}>↻90</button>
-        <button onClick={() => setAngle(180)} disabled={saving} style={miniBtn}>180</button>
-        <button onClick={() => setAngle(270)} disabled={saving} style={miniBtn}>↺90</button>
-        <button onClick={() => setAngle(0)} disabled={saving} style={miniBtn}>איפוס</button>
+        <button onClick={() => setAngle(90)} disabled={controlsDisabled} style={miniBtn}>↻90</button>
+        <button onClick={() => setAngle(180)} disabled={controlsDisabled} style={miniBtn}>180</button>
+        <button onClick={() => setAngle(270)} disabled={controlsDisabled} style={miniBtn}>↺90</button>
+        <button onClick={() => setAngle(0)} disabled={controlsDisabled} style={miniBtn}>איפוס</button>
       </div>
 
       {dirty ? (
-        <button onClick={() => onSave(angle)} disabled={saving}
-          style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.7rem", borderRadius: 999, cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>
+        <button onClick={() => onSave(angle)} disabled={controlsDisabled}
+          style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.7rem", borderRadius: 999, cursor: controlsDisabled ? "default" : "pointer", opacity: controlsDisabled ? 0.6 : 1 }}>
           {saving ? "שומר…" : `שמירה (${angle}°)`}
         </button>
       ) : (
-        <button onClick={() => onSave(angle)} disabled={saving || reviewed}
-          style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", color: reviewed ? "#1A7A4D" : "#fff", background: reviewed ? "rgba(37,199,126,0.14)" : "#1A7A4D", border: "none", padding: "0.7rem", borderRadius: 999, cursor: reviewed ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>
+        <button onClick={() => onSave(angle)} disabled={controlsDisabled || reviewed}
+          style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", color: reviewed ? "#1A7A4D" : "#fff", background: reviewed ? "rgba(37,199,126,0.14)" : "#1A7A4D", border: "none", padding: "0.7rem", borderRadius: 999, cursor: controlsDisabled || reviewed ? "default" : "pointer", opacity: saving || (!loaded && !reviewed) ? 0.6 : 1 }}>
           {reviewed ? "✓ נבדק" : "✓ תקין — סמן כנבדק"}
         </button>
       )}
