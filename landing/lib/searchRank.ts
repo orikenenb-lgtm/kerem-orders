@@ -2,7 +2,7 @@
 //
 // The search_products / catalog_public* RPCs return trigram-ranked rows, which
 // is what makes typo-tolerant search work — but trigram similarity sometimes
-// scores an unrelated product close to a真 match (the reported case: searching
+// scores an unrelated product close to a real match (the reported case: searching
 // "איירפודס" surfaced products that merely share letter runs). Fixing the
 // ordering server-side means changing the RPCs, which is out of bounds for
 // this branch — so the front end re-orders each received page instead:

@@ -112,16 +112,19 @@ export default function LoginPage() {
                 style={inp}
               />
             </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span style={lbl}>סיסמה</span>
+            {/* Explicit htmlFor label: PasswordInput also renders the show/hide
+                button, and an implicit label must not wrap that second control. */}
+            <div style={{ display: "grid", gap: "0.35rem" }}>
+              <label htmlFor="login-password" style={lbl}>סיסמה</label>
               <PasswordInput
+                id="login-password"
                 autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 style={inp}
               />
-            </label>
+            </div>
 
             {error && (
               <div

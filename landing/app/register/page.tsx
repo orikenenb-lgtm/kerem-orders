@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
@@ -575,14 +575,18 @@ function PasswordField({
   mark?: "req" | "opt";
   error?: string;
 } & React.InputHTMLAttributes<HTMLInputElement>) {
+  // Explicit htmlFor label: PasswordInput also renders the show/hide button,
+  // and an implicit label must not wrap that second control.
+  const id = useId();
   return (
-    <label style={{ display: "grid", gap: "0.35rem" }}>
-      <span style={{ fontFamily: tokens.rubik, fontWeight: 600, fontSize: "0.85rem", color: tokens.text }}>
+    <div style={{ display: "grid", gap: "0.35rem" }}>
+      <label htmlFor={id} style={{ fontFamily: tokens.rubik, fontWeight: 600, fontSize: "0.85rem", color: tokens.text }}>
         {label}
         <LabelMark mark={mark} />
-      </span>
+      </label>
       <PasswordInput
         {...props}
+        id={id}
         aria-invalid={error ? true : undefined}
         style={{
           fontFamily: tokens.assistant,
@@ -600,7 +604,7 @@ function PasswordField({
           {error}
         </span>
       )}
-    </label>
+    </div>
   );
 }
 

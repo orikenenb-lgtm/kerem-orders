@@ -23,6 +23,9 @@ concurrency:
 
 jobs:
   build:
+    # Belt-and-braces for workflow_dispatch: even a manual run can only ever
+    # build/deploy main — dispatching from any other ref is a no-op.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -45,6 +48,7 @@ jobs:
           path: landing/out
 
   deploy:
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:

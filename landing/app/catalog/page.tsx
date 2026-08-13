@@ -264,6 +264,57 @@ export default function CatalogPage() {
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
+  // A11y for the cart drawer — the same dialog pattern the public catalogs'
+  // ProductPreview already follows: Escape closes, Tab cycles inside the
+  // drawer only, the page behind is scroll-locked, focus lands on the close
+  // button when it opens and returns to the floating cart button on close.
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  const cartCloseRef = useRef<HTMLButtonElement | null>(null);
+  const cartOpenerRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!cartOpen) return;
+    cartCloseRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setCartOpen(false);
+        return;
+      }
+      if (e.key === "Tab" && drawerRef.current) {
+        const focusables = drawerRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled])'
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        } else if (!drawerRef.current.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+      // The floating cart button unmounts while the drawer is open and only
+      // remounts after this cleanup — hand focus back on the next tick, once
+      // the fresh button is in the DOM. No-op when it isn't (e.g. order sent).
+      // Reading the ref LATE is the point here: the usual "copy ref.current
+      // into the effect" fix would capture the unmounted node.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      setTimeout(() => cartOpenerRef.current?.focus(), 0);
+    };
+  }, [cartOpen]);
+
   // Auto-load the next page when the sentinel under the grid scrolls into
   // view, so customers see everything just by scrolling — no page buttons.
   const hasMore = !endReached && products.length < total;
@@ -729,7 +780,7 @@ export default function CatalogPage() {
                       }
                       return (
                         <div style={{ display: "grid", gap: "0.35rem" }}>
-                          <Stepper qty={qty} onChange={(n) => setQty(p, n)} accent={accent} step={step}
+                          <Stepper qty={qty} onChange={(n) => setQty(p, n)} accent={accent} step={step} label={p.name}
                             onCommitTyped={ffQty ? (n) => setQty(p, n) : undefined} />
                           {displaySold && (
                             <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>
@@ -780,17 +831,17 @@ export default function CatalogPage() {
       </main>
 
       {itemCount > 0 && !cartOpen && (
-        <button onClick={() => setCartOpen(true)} style={{ position: "fixed", insetInlineStart: 20, bottom: 20, zIndex: 60, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "1rem 1.6rem", borderRadius: 999, boxShadow: "0 12px 30px rgba(138,63,252,0.35)", cursor: "pointer" }}>
+        <button ref={cartOpenerRef} onClick={() => setCartOpen(true)} aria-haspopup="dialog" style={{ position: "fixed", insetInlineStart: 20, bottom: 20, zIndex: 60, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "1rem 1.6rem", borderRadius: 999, boxShadow: "0 12px 30px rgba(138,63,252,0.35)", cursor: "pointer" }}>
           🛒 העגלה ({itemCount}) · {ils(cartTotal)}
         </button>
       )}
 
       {cartOpen && (
         <div onClick={() => setCartOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(26,23,48,0.4)", display: "flex", justifyContent: "flex-start" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(420px, 92vw)", height: "100%", background: "#fff", padding: "1.5rem", overflowY: "auto", boxShadow: "0 0 60px rgba(0,0,0,0.2)" }}>
+          <div ref={drawerRef} role="dialog" aria-modal="true" aria-label="עגלת הקניות" onClick={(e) => e.stopPropagation()} style={{ width: "min(420px, 92vw)", height: "100%", background: "#fff", padding: "1.5rem", overflowY: "auto", boxShadow: "0 0 60px rgba(0,0,0,0.2)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.2rem" }}>
               <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.4rem", color: tokens.text }}>העגלה ({itemCount})</h2>
-              <button onClick={() => setCartOpen(false)} style={{ background: "none", border: "none", fontSize: "1.6rem", cursor: "pointer", color: tokens.dim }}>×</button>
+              <button ref={cartCloseRef} onClick={() => setCartOpen(false)} aria-label="סגירת העגלה" style={{ background: "none", border: "none", fontSize: "1.6rem", cursor: "pointer", color: tokens.dim, minWidth: 44, minHeight: 44 }}>×</button>
             </div>
             {/* The error banner lives OUTSIDE the empty/non-empty branch, so the
                 "items sold out and were removed" explanation is still visible
@@ -829,7 +880,7 @@ export default function CatalogPage() {
                             <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>{describeQuantity(lp, l.qty)}</div>
                           )}
                         </div>
-                        <Stepper qty={l.qty} accent={tokens.accent} compact step={lineStep}
+                        <Stepper qty={l.qty} accent={tokens.accent} compact step={lineStep} label={l.name}
                           onCommitTyped={ffQty ? changeLineQty : undefined}
                           onChange={changeLineQty} />
                       </div>
@@ -862,9 +913,11 @@ export default function CatalogPage() {
                   </div>
                 ))}
                 <div style={{ display: "grid", gap: "0.6rem", marginBottom: "1rem" }}>
-                  <input placeholder="שם איש קשר" value={contactName} onChange={(e) => setContactName(e.target.value)} style={miniInp} />
-                  <input placeholder="טלפון" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} style={miniInp} inputMode="tel" />
-                  <textarea placeholder="הערה להזמנה (לא חובה)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} style={{ ...miniInp, resize: "vertical" }} />
+                  {/* Real programmatic names — a placeholder vanishes on input
+                      and many screen readers skip it entirely. */}
+                  <input aria-label="שם איש קשר" autoComplete="name" placeholder="שם איש קשר" value={contactName} onChange={(e) => setContactName(e.target.value)} style={miniInp} />
+                  <input aria-label="טלפון" autoComplete="tel" placeholder="טלפון" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} style={miniInp} inputMode="tel" />
+                  <textarea aria-label="הערה להזמנה (לא חובה)" placeholder="הערה להזמנה (לא חובה)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} style={{ ...miniInp, resize: "vertical" }} />
                 </div>
                 {/* Wave 5 (ff_min_order_vat_ui): minimum-order progress. The
                     track is a flex row, so the fill grows from the inline-start
@@ -918,12 +971,11 @@ function ProductImg({ src, alt }: { src: string | null; alt: string }) {
   useEffect(() => { setErr(false); }, [src]);
   if (!src || err) return <span>🧸</span>;
   return (
-    // eslint-disable-next-line @next/next/no-img-element
     <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
   );
 }
 
-function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped }: {
+function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped, label }: {
   qty: number; onChange: (q: number) => void; accent: string; compact?: boolean;
   /** Wave 3 (ff_display_quantities): +/- move by this many units. Default 1. */
   step?: number;
@@ -931,13 +983,18 @@ function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped }: {
    *  (so a normalizer can't fight each keystroke); +/- commit immediately.
    *  When absent (flag off) typing calls onChange per keystroke, as today. */
   onCommitTyped?: (q: number) => void;
+  /** Product name for the accessible names — a grid renders dozens of
+   *  steppers, and bare "כמות"/"פחות"/"עוד" are indistinguishable in a
+   *  screen reader's form-controls list. */
+  label?: string;
 }) {
   const sz = compact ? 30 : 34;
   const [draft, setDraft] = useState<string | null>(null);
+  const suffix = label ? ` — ${label}` : "";
   const btn: React.CSSProperties = { width: sz, height: sz, borderRadius: 9, border: `1px solid ${accent}`, background: "#fff", color: accent, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", cursor: "pointer", flexShrink: 0 };
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.4rem" }}>
-      <button aria-label="פחות" style={btn} onClick={() => onChange(qty - step)}>−</button>
+      <button aria-label={`פחות${suffix}`} style={btn} onClick={() => onChange(qty - step)}>−</button>
       <input
         value={draft ?? qty}
         onChange={(e) => {
@@ -953,8 +1010,9 @@ function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped }: {
           onCommitTyped(Number.isFinite(n) ? n : 0);
         } : undefined}
         onKeyDown={onCommitTyped ? (e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); } : undefined}
+        aria-label={`כמות${suffix}`}
         style={{ width: compact ? 44 : 52, textAlign: "center", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", border: `1px solid ${tokens.border}`, borderRadius: 9, padding: "0.4rem 0" }} inputMode="numeric" />
-      <button aria-label="עוד" style={btn} onClick={() => onChange(qty + step)}>+</button>
+      <button aria-label={`עוד${suffix}`} style={btn} onClick={() => onChange(qty + step)}>+</button>
     </div>
   );
 }

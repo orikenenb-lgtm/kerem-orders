@@ -29,7 +29,6 @@ function Logo() {
   return (
     <span style={{ display: "flex", alignItems: "center", height: 40 }}>
       {HAS_LOGO_FILE ? (
-        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={`${base}/logo.png`}
           alt="כרם טויס"

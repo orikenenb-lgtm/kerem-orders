@@ -456,7 +456,6 @@ function ProductImg({ src, alt }: { src: string | null; alt: string }) {
   useEffect(() => { setErr(false); }, [src]);
   if (!src || err) return <span>🧸</span>;
   return (
-    // eslint-disable-next-line @next/next/no-img-element
     <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
   );
 }

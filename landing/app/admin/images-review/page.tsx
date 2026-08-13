@@ -179,8 +179,9 @@ export default function ImagesReviewPage() {
 
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.5rem", lineHeight: 1.7, maxWidth: 720 }}>
           רוב התמונות מיושרות אוטומטית. כאן מסדרים תמונה שצולמה עקום — פשוט מסתכלים,
-          ואם היא על הצד או הפוכה לוחצים על כפתור הסיבוב עד שהיא ישרה. השינוי נשמר מיד
-          ומופיע בכל האתר. <b>כבר תוקנו: {fixedCount.toLocaleString("he-IL")} תמונות.</b>
+          ואם היא על הצד או הפוכה לוחצים על כפתורי הסיבוב עד שהיא ישרה בתצוגה
+          המקדימה, ואז לוחצים <b>שמירה</b>. שום דבר לא משתנה באתר לפני השמירה;
+          ביטול מחזיר את התמונה למצב השמור. <b>כבר תוקנו: {fixedCount.toLocaleString("he-IL")} תמונות.</b>
         </p>
 
         {/* AI auto-scan: goes over every not-yet-scanned image, detects
@@ -207,6 +208,7 @@ export default function ImagesReviewPage() {
 
         <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap", alignItems: "center", margin: "1.2rem 0", position: "sticky", top: 64, zIndex: 10, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "0.6rem 0" }}>
           <input
+            aria-label="חיפוש מוצר לפי שם"
             placeholder="🔍 חיפוש מוצר לפי שם"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -269,7 +271,6 @@ function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRot
     <div style={{ border: `1px solid ${dirty ? tokens.accent : tokens.border}`, borderRadius: 16, background: "#fff", padding: "0.8rem", display: "flex", flexDirection: "column", gap: "0.6rem", boxShadow: "0 6px 18px rgba(26,23,48,0.05)" }}>
       <div style={{ aspectRatio: "1 / 1", borderRadius: 12, border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#fff", fontSize: "2.4rem", padding: 8 }}>
         {imgErr ? <span role="img" aria-label="התמונה לא נטענה">🧸</span> : (
-          // eslint-disable-next-line @next/next/no-img-element
           <img src={src} alt={row.name} loading="lazy" onError={() => setImgErr(true)} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
         )}
       </div>
