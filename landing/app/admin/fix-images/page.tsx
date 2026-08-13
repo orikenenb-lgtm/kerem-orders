@@ -57,6 +57,9 @@ export default function FixImagesPage() {
   const loadingRef = useRef(false);
   const genRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // Async helpers resolve after navigation away — never setState then.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -77,6 +80,7 @@ export default function FixImagesPage() {
       base(),
       base().eq("orient_human_ok", true),
     ]);
+    if (!mountedRef.current) return;
     setTotalAll(all ?? 0);
     setDone(reviewed ?? 0);
   }, []);
@@ -90,7 +94,13 @@ export default function FixImagesPage() {
     if (!reset && loadingRef.current) return;
     loadingRef.current = true;
     const gen = reset ? ++genRef.current : genRef.current;
-    if (reset) { cursorRef.current = null; setHasMore(true); }
+    if (reset) {
+      cursorRef.current = null;
+      setHasMore(true);
+      // A fresh list starts a fresh status map — entries for rows that will
+      // never render again must not accumulate across filter/search resets.
+      setImgStatus({});
+    }
     setBusy(true);
 
     let q = supabase
