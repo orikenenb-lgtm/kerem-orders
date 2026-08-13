@@ -262,6 +262,7 @@ function FixCard({ row, saving, onSave }: { row: Row; saving: boolean; onSave: (
   const [angle, setAngle] = useState(saved);
   const [imgErr, setImgErr] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  // 0,1 = our image proxy · 2 = straight from Rivhit · 3 = give up
   useEffect(() => { setAngle(row.rotation_override ?? 0); }, [row.rotation_override]);
   useEffect(() => { setImgErr(false); setAttempt(0); }, [row.picture_link]);
 
@@ -278,16 +279,22 @@ function FixCard({ row, saving, onSave }: { row: Row; saving: boolean; onSave: (
   // already cached for every product and comes straight off the CDN. The
   // server-side rotation still applies everywhere customers see the photo;
   // this screen only needs an accurate preview, and CSS gives that for free.
-  const src = rivhitImg(row.picture_link, 480, 0);
+  //
+  // FALLBACK: the proxy can still fail on individual photos (it decodes the
+  // full-size original, and the biggest ones exhaust the edge worker). Rather
+  // than strand the card on an emoji, the last attempt loads the photo
+  // STRAIGHT from Rivhit — no resizing, but it renders, which is the whole
+  // point of this screen.
+  const src = attempt >= 2 ? row.picture_link : rivhitImg(row.picture_link, 480, 0);
   // A rotated rectangle has to shrink to stay inside its frame.
   const previewScale = angle % 180 === 0 ? 1 : angle % 90 === 0 ? 0.78 : 0.68;
 
-  // One transient failure shouldn't strand the card on the emoji: retry the
-  // same (cacheable) URL a couple of times, backing off, before giving up.
+  // attempt 0 -> proxy, 1 -> proxy retry (it may be warm by now),
+  // 2 -> direct from Rivhit, 3 -> emoji.
   const onImgError = () => {
-    if (attempt >= 2) { setImgErr(true); return; }
+    if (attempt >= 3) { setImgErr(true); return; }
     const next = attempt + 1;
-    setTimeout(() => setAttempt(next), 1200 * next);
+    setTimeout(() => setAttempt(next), next === 1 ? 1200 : 300);
   };
 
   const nudge = (d: number) => setAngle((a) => (((Math.round(a + d) % 360) + 360) % 360));
