@@ -1,8 +1,46 @@
 # Image pipeline — findings and plan
 
-Status: **diagnosis incomplete — blocked by environment.** No fix has been
-applied on this branch. No deploy, no merge, no Supabase change, no write to
+Status: **diagnosis COMPLETE (run 2026-08-13 from an unblocked machine) and
+client-side fix implemented on this branch.** No Supabase change, no write to
 `rotation_override` / `orient_human_ok`.
+
+## 0. Measured diagnosis (read-only, full catalog)
+
+Probed **all 980 active products** exposed by the public `catalog_public` RPC
+(anon key, GET-only), through the proxy (`w=480`, saved `rot`) and directly:
+
+| bucket                          | count | share |
+|---------------------------------|------:|------:|
+| proxy-ok + source-ok            |   969 | 98.9% |
+| **proxy-FAIL + source-ok**      |   **8** |  0.8% |
+| invalid-or-empty-url            |     3 |  0.3% |
+| proxy-ok + source-problem       |     0 |     — |
+| both-FAIL                       |     0 |     — |
+
+Every one of the 8 proxy failures returned **HTTP 546
+`WORKER_RESOURCE_LIMIT`** ("Function failed due to not having enough compute
+resources") in 1.5–6.6 s, and **every one of their source images is a
+3.1–3.5 MB original that loads fine directly** (200, real JPEG). 27 further
+requests were slow (>5 s) but succeeded. No hotlink blocking, no redirects,
+no HTML-instead-of-image, no timeouts were observed anywhere in the catalog.
+
+Two additional facts settle the earlier open hypotheses:
+
+- **Failures are intermittent per-image cold-decode failures, not steady
+  state:** a product that failed with 546 in one sequential run succeeded in
+  a later run (its variant had been produced meanwhile) — which is why a
+  single delayed retry genuinely helps.
+- **Concurrency alone does not break cached variants:** a 12-request burst
+  against already-cached variants returned 12/12 OK. The historical
+  "whole screen of bears" events came from screens requesting *uncached*
+  variants in bulk — `/admin/images-review` still requested a unique
+  `w=360&rot=<draft>` server-rotated variant per card per click, forcing a
+  full ~3 MB decode each time (fixed on this branch: CSS preview, shared
+  cached variant).
+
+**Root cause:** the `rivhit-img` edge function exhausts its compute budget
+decoding heavy (≳3 MB) originals whenever the requested variant is not yet
+cached; the resized-variant pipeline works for the other 98.9%.
 
 ---
 
@@ -28,10 +66,9 @@ So `rivhit-img`, `rivhit-sync`, `rivhit-push`, `signup` and
 
 ---
 
-## 2. What is NOT yet proven
+## 2. What was NOT yet proven at the time (now settled by §0)
 
-Two competing hypotheses remain open, and the evidence so far does not settle
-them:
+Two competing hypotheses remained open at the time this section was written:
 
 1. `rivhit-img` fails on particular photos (size / format / decode).
 2. `rivhit-img` fails only under concurrency (worker exhaustion).
@@ -45,7 +82,8 @@ burst later returned 200s — but those two observations were taken against
 
 ---
 
-## 3. Why the diagnosis could not be run from this environment
+## 3. Why the diagnosis could not be run from the ORIGINAL environment
+(historical — since completed from a local machine, see §0)
 
 Outbound HTTPS is blocked by the organisation egress policy for both hosts
 the diagnosis needs (recorded proxy denials, `connect_rejected`):
@@ -126,11 +164,30 @@ separately.
 
 ---
 
-## 6. Deliberately not done on this branch
+## 6. Implemented on this branch (client side only)
 
-Steps 3, 4 and 6 (admin guards, the shared `ProductImage` component, and the
-unit tests for the fallback chain) are **not** implemented yet, because the
-instruction is to present the numeric diagnosis **before** changing code. They
-should be built directly on the measured failure distribution — for example,
-the direct-Rivhit fallback currently shipped in `/admin/fix-images` is only
-worth keeping if the data shows a meaningful `proxy-FAIL + source-ok` bucket.
+Built directly on the measured distribution above — the `proxy-FAIL +
+source-ok` bucket is real (8 products, all heavy originals), so the direct
+fallback stage is justified as a TEMPORARY safety net:
+
+- `lib/imageFallback.ts` — pure, unit-tested fallback state machine
+  (proxy → one delayed retry → direct HTTPS original → placeholder; bounded,
+  ≤3 network attempts, zero attempts for empty/non-HTTPS links).
+- `app/components/ProductImage.tsx` — the ONE shared image component, now
+  used by the catalog, the public catalog + preview modal, the product page
+  (main + related), the cart drawer, the admin catalog list and both admin
+  fixing screens. Accessible placeholder (`role="img"`,
+  "תמונת המוצר אינה זמינה"), timer cleanup on unmount, error reset on
+  product change, no technical details shown to customers.
+- `/admin/fix-images` — a photo that did not actually load can no longer be
+  rotated, saved or marked "תקין" (it cannot advance the progress bar);
+  the manager sees the failure stage plus נסה שוב / פתח מקור מרווחית /
+  העתק קישור, and a "רק תמונות שלא נטענו" filter collects the failures.
+- `/admin/images-review` — no longer requests per-angle server-rotated
+  `w=360` variants (the decode-storm trigger); previews rotate locally in
+  CSS over the shared cached `w=480` variant, with the same failed-image
+  guards. The AI scan now stops when the screen unmounts.
+- `tests/imageFallback.test.mjs` — 17 unit tests for the chain.
+
+Still owner-blocked (unchanged): vendoring the edge-function sources into
+Git (§1) and the server-side hardening + pre-generated variants (§5).

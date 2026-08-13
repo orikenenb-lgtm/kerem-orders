@@ -12,6 +12,10 @@
 // Usage:
 //   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/diagnose-images.mjs [--limit 60] [--burst 12]
 //
+// Works with the PUBLIC anon/publishable key too (SUPABASE_KEY=sb_publishable_…):
+// RLS blocks anon SELECT on products, so in that case products are read through
+// the public catalog_public RPC instead (same data the /view page shows).
+//
 // Output: a per-product table, a numeric+percentage summary by failure class,
 // and report files (JSON + CSV) under ./image-diagnostics/.
 
@@ -82,7 +86,24 @@ async function loadProducts() {
   const url = `${SUPABASE_URL}/rest/v1/products?select=${cols}&is_active=eq.true&order=id.asc&limit=${LIMIT}`;
   const res = await fetch(url, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } });
   if (!res.ok) throw new Error(`products query failed: ${res.status} ${await res.text()}`);
-  return res.json();
+  const rows = await res.json();
+  if (rows.length > 0) return rows;
+  // Anon key: RLS hides the table — fall back to the public catalog RPC
+  // (pages of ≤50; the RPC caps larger requests).
+  const out = [];
+  while (out.length < LIMIT) {
+    const page = await fetch(`${SUPABASE_URL}/rest/v1/rpc/catalog_public`, {
+      method: "POST",
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: null, cat: null, lim: 50, off: out.length }),
+    });
+    if (!page.ok) throw new Error(`catalog_public failed: ${page.status} ${await page.text()}`);
+    const batch = await page.json();
+    if (!batch.length) break;
+    out.push(...batch);
+    if (batch.length < 50) break;
+  }
+  return out.slice(0, LIMIT);
 }
 
 // Bucket names match the classification requested by the owner.
