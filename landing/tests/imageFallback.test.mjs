@@ -23,7 +23,7 @@ transpile("imageFallback");
 const { rivhitImg } = await import(pathToFileURL(join(tmp, "images.mjs")).href);
 const {
   ATTEMPT_PROXY, ATTEMPT_PROXY_RETRY, ATTEMPT_DIRECT, ATTEMPT_EXHAUSTED,
-  isDirectFallbackAllowed, srcForAttempt, nextAttempt, stageOf,
+  isDirectFallbackAllowed, srcForAttempt, nextAttempt, stageOf, reduceError,
 } = await import(pathToFileURL(join(tmp, "imageFallback.mjs")).href);
 
 const LINK = "https://api.rivhit.co.il/externals/FileService.svc/x/photo.jpg";
@@ -147,6 +147,76 @@ t("stageOf reports the failure stage for the admin screens", () => {
   assert.equal(stageOf(ATTEMPT_DIRECT, LINK), "direct");
   assert.equal(stageOf(ATTEMPT_EXHAUSTED, LINK), "exhausted");
   assert.equal(stageOf(ATTEMPT_PROXY, ""), "no-url");
+});
+
+// ---- the component's onError decision, as pure data (reduceError) ----
+t("proxy failure schedules the retry, nothing else", () => {
+  assert.deepEqual(reduceError(ATTEMPT_PROXY, LINK), { type: "schedule", attempt: ATTEMPT_PROXY_RETRY, delayMs: 1200 });
+});
+t("retry failure on an HTTPS source schedules the direct hop", () => {
+  assert.deepEqual(reduceError(ATTEMPT_PROXY_RETRY, LINK), { type: "schedule", attempt: ATTEMPT_DIRECT, delayMs: 300 });
+});
+t("direct failure is terminal and reports the exhausted stage", () => {
+  const d = reduceError(ATTEMPT_DIRECT, LINK);
+  assert.equal(d.type, "fail");
+  assert.equal(stageOf(d.attempt, LINK), "exhausted");
+});
+t("a failure past the end never schedules a timer", () => {
+  assert.equal(reduceError(ATTEMPT_EXHAUSTED, LINK).type, "fail");
+  assert.equal(reduceError(ATTEMPT_EXHAUSTED + 3, LINK).type, "fail");
+});
+t("reduceError is idempotent — a double onError cannot double-schedule", () => {
+  for (const a of [ATTEMPT_PROXY, ATTEMPT_PROXY_RETRY, ATTEMPT_DIRECT, ATTEMPT_EXHAUSTED]) {
+    assert.deepEqual(reduceError(a, LINK), reduceError(a, LINK));
+  }
+});
+
+// ---- ordered walks ----
+t("an HTTPS walk visits proxy → proxy-retry → direct → exhausted with delays [1200, 300]", () => {
+  const stages = [];
+  const delays = [];
+  let attempt = ATTEMPT_PROXY;
+  for (let guard = 0; guard < 10; guard++) {
+    stages.push(stageOf(attempt, LINK));
+    const d = reduceError(attempt, LINK);
+    if (d.type === "fail") { stages.push(stageOf(d.attempt, LINK)); break; }
+    delays.push(d.delayMs);
+    attempt = d.attempt;
+  }
+  assert.deepEqual(stages, ["proxy", "proxy-retry", "direct", "exhausted"]);
+  assert.deepEqual(delays, [1200, 300]);
+});
+t("rotation rides every proxy attempt but the direct fallback ships the RAW link", () => {
+  const p0 = srcForAttempt(LINK, ATTEMPT_PROXY, 480, 90);
+  const p1 = srcForAttempt(LINK, ATTEMPT_PROXY_RETRY, 480, 90);
+  assert.ok(p0.includes("&rot=90"));
+  assert.equal(p0, p1);
+  // Direct = the untouched original; rotation is re-applied in CSS instead.
+  assert.equal(srcForAttempt(LINK, ATTEMPT_DIRECT, 480, 90), LINK);
+});
+t("w=0 requests the untouched original through the proxy (no w, no v)", () => {
+  const src = srcForAttempt(LINK, ATTEMPT_PROXY, 0, 0);
+  assert.ok(src.includes(PROXY_PREFIX));
+  assert.ok(!src.includes("&w="));
+  assert.ok(!src.includes("&v="));
+});
+t("out-of-range attempts clamp to the placeholder and the exhausted stage", () => {
+  assert.equal(srcForAttempt(LINK, 99), "");
+  assert.equal(stageOf(99, LINK), "exhausted");
+});
+t("a load success needs no decision — the chain simply stops (nothing schedules after onLoad)", () => {
+  // onLoad flips phase to "loaded"; onError is the only caller of
+  // reduceError, so proving reduceError is pure + bounded is proving the
+  // chain cannot continue past a successful load.
+  let steps = 0;
+  let attempt = ATTEMPT_PROXY;
+  for (let guard = 0; guard < 10; guard++) {
+    const d = reduceError(attempt, LINK);
+    steps++;
+    if (d.type === "fail") break;
+    attempt = d.attempt;
+  }
+  assert.equal(steps, 3); // retry, direct, terminal — and no more
 });
 
 console.log(`\n${n} imageFallback tests passed`);

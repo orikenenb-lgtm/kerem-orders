@@ -66,3 +66,22 @@ export function nextAttempt(
   }
   return { attempt: ATTEMPT_EXHAUSTED, delayMs: 0 };
 }
+
+/** The complete onError decision, as pure data — ProductImage only executes
+ *  it. `schedule` = arm ONE timer for the next attempt; `fail` = terminal,
+ *  render the placeholder and report `attempt` as the stage that died. */
+export type ErrorDecision =
+  | { type: "schedule"; attempt: number; delayMs: number }
+  | { type: "fail"; attempt: number };
+
+export function reduceError(attempt: number, pictureLink: string, w = 480, rot = 0): ErrorDecision {
+  const next = nextAttempt(attempt, pictureLink);
+  if (!next) return { type: "fail", attempt };
+  // A next stage with nothing to load (e.g. non-HTTPS source before the
+  // direct hop) terminates immediately — recorded as the terminal attempt so
+  // stageOf reports "exhausted", never a live stage.
+  if (!srcForAttempt(pictureLink, next.attempt, w, rot)) {
+    return { type: "fail", attempt: next.attempt };
+  }
+  return { type: "schedule", attempt: next.attempt, delayMs: next.delayMs };
+}
