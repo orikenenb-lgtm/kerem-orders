@@ -1,7 +1,10 @@
 // PURE helpers for the rivhit-img edge function — no Deno APIs, no network.
-// Everything here is unit-tested from landing/tests/rivhitImgProxy.test.mjs
-// (plain node, same transpile harness as the other suites), so the security
-// and resource rules of the proxy are enforced by tests that run in CI.
+// Everything in THIS FILE is unit-tested from
+// landing/tests/rivhitImgProxy.test.mjs (plain node, same transpile harness
+// as the other suites), so the validation/limit/error RULES run in CI. The
+// Deno orchestration in index.ts (fetch loop, dedup, concurrency) is NOT
+// covered by these tests — it is exercised by the pre-deploy serve smoke
+// tests in docs/edge-functions-runbook.md Step 2.
 //
 // PROVENANCE: this is part of the PROPOSED replacement implementation — the
 // currently deployed function's source was never committed to Git and could

@@ -116,25 +116,33 @@ async function fetchUpstream(
     }
 
     // Stream with a hard byte cap — never buffer more than maxBytes even
-    // when Content-Length lies or is missing.
+    // when Content-Length lies or is missing. The read loop is inside its
+    // own try/catch: a connection dropped MID-BODY (the heavy-original
+    // failure population) must surface as a structured upstream error, never
+    // as an unhandled rejection that would bypass the CORS/error contract.
     const reader = res.body?.getReader();
     if (!reader) return { ok: false, code: "upstream_status", reason: "empty upstream body" };
     const chunks: Uint8Array[] = [];
     let total = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        await reader.cancel();
-        if (!truncateAtCap) {
-          return { ok: false, code: "source_too_large", reason: `body exceeds ${maxBytes} bytes` };
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel();
+          if (!truncateAtCap) {
+            return { ok: false, code: "source_too_large", reason: `body exceeds ${maxBytes} bytes` };
+          }
+          chunks.push(value);
+          total = maxBytes; // keep exactly the head; drop the overflow below
+          break;
         }
         chunks.push(value);
-        total = maxBytes; // keep exactly the head; drop the overflow below
-        break;
       }
-      chunks.push(value);
+    } catch (e) {
+      const timedOut = e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError");
+      return { ok: false, code: timedOut ? "upstream_timeout" : "upstream_status", reason: "upstream body read failed" };
     }
     const bytes = new Uint8Array(total);
     let off = 0;
@@ -266,12 +274,20 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
   // In-flight dedup: concurrent requests for the SAME variant share one
   // fetch+decode instead of multiplying the load that used to kill the worker.
-  const key = cacheKeyFor(parsed.value) + (parsed.value.meta ? "|meta" : "");
-  let pending = inflight.get(key);
-  if (!pending) {
-    pending = process(parsed.value).finally(() => inflight.delete(key));
-    inflight.set(key, pending);
+  // The belt-and-braces catch keeps the error contract (CORS + sanitized
+  // JSON) even for a defect process() itself failed to classify.
+  try {
+    const key = cacheKeyFor(parsed.value) + (parsed.value.meta ? "|meta" : "");
+    let pending = inflight.get(key);
+    if (!pending) {
+      pending = process(parsed.value).finally(() => inflight.delete(key));
+      inflight.set(key, pending);
+    }
+    const baked = await pending;
+    return new Response(baked.body.slice(), { status: baked.status, headers: baked.headers });
+  } catch {
+    logEvent({ outcome: "error", stage: "handler", code: "internal_error" });
+    const b = errorBaked("internal_error", "unexpected failure");
+    return new Response(b.body, { status: b.status, headers: b.headers });
   }
-  const baked = await pending;
-  return new Response(baked.body.slice(), { status: baked.status, headers: baked.headers });
 });

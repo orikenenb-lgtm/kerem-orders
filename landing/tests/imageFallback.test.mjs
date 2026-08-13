@@ -204,10 +204,10 @@ t("out-of-range attempts clamp to the placeholder and the exhausted stage", () =
   assert.equal(srcForAttempt(LINK, 99), "");
   assert.equal(stageOf(99, LINK), "exhausted");
 });
-t("a load success needs no decision — the chain simply stops (nothing schedules after onLoad)", () => {
-  // onLoad flips phase to "loaded"; onError is the only caller of
-  // reduceError, so proving reduceError is pure + bounded is proving the
-  // chain cannot continue past a successful load.
+t("reduceError terminates in exactly 3 decisions — the chain is finite", () => {
+  // (onLoad halting the chain is a component behavior: onError is the only
+  // caller of reduceError, so nothing can schedule past a successful load.
+  // What IS provable here: the decision sequence itself always terminates.)
   let steps = 0;
   let attempt = ATTEMPT_PROXY;
   for (let guard = 0; guard < 10; guard++) {

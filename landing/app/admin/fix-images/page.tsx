@@ -94,13 +94,12 @@ export default function FixImagesPage() {
     if (!reset && loadingRef.current) return;
     loadingRef.current = true;
     const gen = reset ? ++genRef.current : genRef.current;
-    if (reset) {
-      cursorRef.current = null;
-      setHasMore(true);
-      // A fresh list starts a fresh status map — entries for rows that will
-      // never render again must not accumulate across filter/search resets.
-      setImgStatus({});
-    }
+    if (reset) { cursorRef.current = null; setHasMore(true); }
+    // NOTE: imgStatus is deliberately NOT cleared on reset. A card that
+    // survives the reset keeps its React instance (same key), so its
+    // ProductImage never re-reports — wiping the map would leave such cards
+    // with no status and therefore permanently disabled controls. The map is
+    // bounded by the catalog size (~1000 tiny entries), which is fine.
     setBusy(true);
 
     let q = supabase
