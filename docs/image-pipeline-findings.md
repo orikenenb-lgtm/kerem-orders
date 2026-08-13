@@ -194,3 +194,50 @@ fallback stage is justified as a TEMPORARY safety net:
 
 Still owner-blocked (unchanged): vendoring the edge-function sources into
 Git (§1) and the server-side hardening + pre-generated variants (§5).
+
+---
+
+## 7. Follow-up branch (fix/edge-functions-source-and-image-hardening)
+
+### 7.1 Diagnostic rerun (2026-08-13, later the same day, read-only)
+
+980 products again: **1** proxy failure this run (a product that had not been
+probed before — "מכונית משוגעת סטיצ 36 יח", 546 `WORKER_RESOURCE_LIMIT`,
+3.4 MB original loads fine directly), **3** empty links (same products as
+before), 77 slow (>5 s) requests. The 8 products that failed in the morning
+run now pass — their variants were generated meanwhile and the CDN keeps
+them. This is exactly the cold-decode-of-heavy-originals pattern: the failure
+population is "whichever heavy originals happen to be uncached right now".
+
+### 7.2 The 3 products with no image link (owner action: add a photo in Rivhit)
+
+| product id | name | picture_link |
+|---|---|---|
+| `50ccf16c-8fe5-4cfb-842e-3f28e3f1d47e` | דמפלינג חלק מיוחד 1/12 ק 144 | (ריק) |
+| `23b51ea6-9175-4b57-b657-2cc32562d529` | דמפלינג נידו צבעוני 1/12 ק 144 | (ריק) |
+| `596d013c-88a8-4b2f-8315-ee7f3ffb68ec` | דמפלינג צבעוני מיוחד 1/12  ק 144 | (ריק) |
+
+(SKU/ברקוד אינם נגישים דרך ה־RPC הציבורי — RLS מסתיר את הטבלה מ־anon; המנהל
+יכול לאתר לפי השם במסך הקטלוג.) No product was modified; no image invented.
+
+### 7.3 Edge-function source recovery — blocker documented
+
+Exhaustive search (full git-history object scan, all 30 remote branches, all
+tags, GitHub tags API) confirms **zero** edge-function source anywhere in
+Git. The Supabase CLI (v2.114) is installed but has **no stored credentials**
+on this machine; `supabase functions download` therefore requires a one-time
+owner `supabase login`. The exact export procedure is in
+`docs/edge-functions-runbook.md` Step 0-1. A clearly-labeled PROPOSED
+hardened implementation (built to the live function's probed contract) now
+lives in `supabase/functions/rivhit-img/` with 26 unit tests.
+
+### 7.4 Product-update permissions — NOT VERIFIED
+
+`pg_policies` is not exposed to the anon key (404) and write-testing against
+production is forbidden, so the live `products` UPDATE policy is **not
+verified**. The repo reference snapshot (`backups/schema-before.sql:108`)
+shows `products_manager_all FOR ALL USING (is_manager())` — if production
+matches, only managers can write. A redundant-but-explicit manager-only
+UPDATE policy is prepared (NOT applied) in
+`supabase/proposed-migrations/2026-08-13_products_manager_update_policy.sql`
+with rollback SQL and a verification query for the owner.
