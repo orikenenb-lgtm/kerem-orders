@@ -85,8 +85,13 @@ export default function ImagesReviewPage() {
   }, [input]);
   useEffect(() => { setPage(0); }, [onlyFixed]);
 
+  // Generation guard: a slower earlier query (search/filter/page) must not
+  // overwrite a newer one that already resolved, and nothing setState's after
+  // unmount. Each load bumps the generation; a stale response is dropped.
+  const loadGenRef = useRef(0);
   const load = useCallback(async () => {
     if (!isManager) return;
+    const gen = ++loadGenRef.current;
     setBusy(true);
     let q = supabase
       .from("products")
@@ -99,6 +104,8 @@ export default function ImagesReviewPage() {
     const { data, count, error } = await q
       .order("name", { ascending: true })
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+    // Drop a superseded or post-unmount response before touching any state.
+    if (gen !== loadGenRef.current || !mountedRef.current) return;
     if (error) { setLoadErr(true); setBusy(false); return; }
     setLoadErr(false);
     setRows((data as Row[]) ?? []);
@@ -120,6 +127,7 @@ export default function ImagesReviewPage() {
       .update({ rotation_override: value })
       .eq("id", id)
       .select("id");
+    if (!mountedRef.current) return; // navigated away mid-save — don't touch state
     setSavingId(null);
     if (error || !data || data.length === 0) {
       // revert + tell the manager

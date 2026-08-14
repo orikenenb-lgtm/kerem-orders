@@ -119,9 +119,10 @@ export default function FixImagesPage() {
 
     const { data, error } = await q.order("id", { ascending: true }).limit(BATCH);
 
-    // A newer filter/search superseded this request — drop the stale result
-    // WITHOUT touching loadingRef: it now belongs to the newer request.
-    if (gen !== genRef.current) { return; }
+    // A newer filter/search superseded this request, or the screen unmounted —
+    // drop the stale result WITHOUT touching loadingRef (a supersession means
+    // it now belongs to the newer request).
+    if (gen !== genRef.current || !mountedRef.current) { return; }
 
     if (error) { setLoadErr(true); setBusy(false); loadingRef.current = false; return; }
     setLoadErr(false);
@@ -177,6 +178,7 @@ export default function FixImagesPage() {
       .update({ rotation_override: norm === 0 ? null : norm, orient_human_ok: true })
       .eq("id", id)
       .select("id");
+    if (!mountedRef.current) return; // navigated away mid-save — don't touch state
     setSavingId(null);
     if (error || !data || data.length === 0) {
       setRows((rs) => rs.map((r) => (r.id === id && prev ? prev : r)));
