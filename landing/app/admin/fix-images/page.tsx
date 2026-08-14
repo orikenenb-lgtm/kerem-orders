@@ -58,8 +58,13 @@ export default function FixImagesPage() {
   const genRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   // Async helpers resolve after navigation away — never setState then.
+  // Strict Mode replays mount→cleanup→mount, so setup must re-arm the flag
+  // the replayed cleanup cleared.
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (loading) return;

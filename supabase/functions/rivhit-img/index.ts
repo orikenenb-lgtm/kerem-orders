@@ -197,8 +197,8 @@ async function process(req: ProxyRequest): Promise<Baked> {
     return errorBaked("upstream_not_image", "body is not a recognizable image");
   }
   if (sniffed.width * sniffed.height > LIMITS.maxSourcePixels) {
-    log("error", "sniff", { code: "source_too_large", px: sniffed.width * sniffed.height });
-    return errorBaked("source_too_large", "source image has too many pixels");
+    log("error", "sniff", { code: "invalid_dimensions", px: sniffed.width * sniffed.height });
+    return errorBaked("invalid_dimensions", "source image has too many pixels");
   }
 
   const exifDeg = sniffed.format === "jpeg" ? exifOrientationToDegrees(parseExifOrientation(fetched.bytes)) : 0;

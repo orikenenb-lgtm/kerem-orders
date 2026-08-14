@@ -32,8 +32,12 @@ export const LIMITS = {
   maxRedirects: 3,
   /** Largest compressed upstream body we are willing to buffer. */
   maxSourceBytes: 8 * 1024 * 1024,
-  /** Largest decoded image we are willing to process (width × height). */
-  maxSourcePixels: 40_000_000,
+  /** Largest decoded image we are willing to process (width × height).
+   *  ImageScript decodes to RGBA (4 bytes/pixel), so 12 MP ≈ 48 MB before
+   *  rotate/resize allocate their own buffers — a cap that actually fits the
+   *  edge-worker memory budget (the 546 root cause). Rivhit product photos
+   *  are far below this. */
+  maxSourcePixels: 12_000_000,
   /** Resize width bounds; w=0 means "serve the original untouched". */
   minWidth: 16,
   maxWidth: 1600,
@@ -166,7 +170,10 @@ export function parseRequest(params: URLSearchParams): ParseResult {
       return { ok: false, code: "invalid_request", reason: "w must be a non-negative integer" };
     }
     if (n !== 0 && (n < LIMITS.minWidth || n > LIMITS.maxWidth)) {
-      return { ok: false, code: "invalid_dimensions", reason: `w must be 0 or ${LIMITS.minWidth}-${LIMITS.maxWidth}` };
+      // A client-parameter error, not a payload-size condition → 400 like the
+      // deployed function. invalid_dimensions (413) is reserved for SOURCE
+      // images whose sniffed pixel count exceeds maxSourcePixels.
+      return { ok: false, code: "invalid_request", reason: `w must be 0 or ${LIMITS.minWidth}-${LIMITS.maxWidth}` };
     }
     width = n;
   }
@@ -252,8 +259,11 @@ function sniffJpegDims(b: Uint8Array): { width: number; height: number } | null 
   while (i + 9 < b.length) {
     if (b[i] !== 0xff) { i++; continue; }
     const marker = b[i + 1];
+    // 0xff fill bytes: any run may pad a marker — re-sync one byte at a time
+    // so ff ff e1 still lands on the APP1 marker.
+    if (marker === 0xff) { i += 1; continue; }
     // standalone markers without a length field
-    if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd9) || marker === 0x01 || marker === 0xff) { i += 2; continue; }
+    if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd9) || marker === 0x01) { i += 2; continue; }
     const len = (b[i + 2] << 8) | b[i + 3];
     if (len < 2) return null;
     // SOF0-SOF15 except DHT(C4)/JPG(C8)/DAC(CC) carry the frame dimensions
@@ -301,6 +311,11 @@ export function parseExifOrientation(b: Uint8Array): number {
     if (b[i] !== 0xff) { i++; continue; }
     const marker = b[i + 1];
     if (marker === 0xda || marker === 0xd9) break; // image data / EOI — no EXIF past here
+    // Same marker filter as sniffJpegDims: 0xff fill bytes re-sync one byte
+    // at a time; standalone markers (SOI/RSTn/TEM) carry no length field —
+    // reading one would jump to a wrong offset and could step over APP1.
+    if (marker === 0xff) { i += 1; continue; }
+    if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) { i += 2; continue; }
     const len = (b[i + 2] << 8) | b[i + 3];
     if (len < 2) break;
     if (marker === 0xe1 && i + 4 + 6 <= b.length &&

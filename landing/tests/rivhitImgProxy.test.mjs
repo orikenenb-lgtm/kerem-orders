@@ -64,8 +64,10 @@ t("credentials and odd ports in u are rejected", () => {
 t("w=0 (original) and absent w are accepted; out-of-range w is not", () => {
   assert.equal(parseRequest(qs(`u=${encodeURIComponent(GOOD)}&w=0`)).value.width, 0);
   assert.equal(parseRequest(qs(`u=${encodeURIComponent(GOOD)}`)).value.width, 0);
-  assert.equal(parseRequest(qs(`u=${encodeURIComponent(GOOD)}&w=8`)).code, "invalid_dimensions");
-  assert.equal(parseRequest(qs(`u=${encodeURIComponent(GOOD)}&w=99999`)).code, "invalid_dimensions");
+  // Out-of-range w is a client-parameter error → 400 invalid_request, like
+  // the deployed function; invalid_dimensions (413) is for oversized SOURCES.
+  assert.equal(parseRequest(qs(`u=${encodeURIComponent(GOOD)}&w=8`)).code, "invalid_request");
+  assert.equal(parseRequest(qs(`u=${encodeURIComponent(GOOD)}&w=99999`)).code, "invalid_request");
   assert.equal(parseRequest(qs(`u=${encodeURIComponent(GOOD)}&w=-5`)).code, "invalid_request");
   assert.equal(parseRequest(qs(`u=${encodeURIComponent(GOOD)}&w=1.5`)).code, "invalid_request");
 });
@@ -152,6 +154,17 @@ t("EXIF Orientation=6 is parsed from a real APP1 segment", () => {
 t("a JPEG without EXIF reports orientation 1", () => {
   assert.equal(parseExifOrientation(minimalJpeg({ width: 100, height: 100 })), 1);
 });
+t("0xff fill bytes and standalone markers do not derail the EXIF walk", () => {
+  const clean = minimalJpeg({ width: 100, height: 100, exifOrientation: 6 });
+  // Legal JPEG padding: insert 0xff fill bytes right after SOI, before APP1.
+  const padded = new Uint8Array([0xff, 0xd8, 0xff, 0xff, 0xff, ...clean.slice(2)]);
+  assert.equal(parseExifOrientation(padded), 6);
+  assert.deepEqual(sniffImage(padded), { format: "jpeg", width: 100, height: 100 });
+  // A standalone TEM marker (no length field) before APP1 must be skipped,
+  // not treated as a segment with a length.
+  const tem = new Uint8Array([0xff, 0xd8, 0xff, 0x01, ...clean.slice(2)]);
+  assert.equal(parseExifOrientation(tem), 6);
+});
 t("orientation degrees match the sideways-photo fix (6→90, 3→180, 8→270)", () => {
   assert.equal(exifOrientationToDegrees(1), 0);
   assert.equal(exifOrientationToDegrees(6), 90);
@@ -165,6 +178,7 @@ t("every error code maps to a sane HTTP status", () => {
   assert.equal(statusForError("unsupported_source"), 400);
   assert.equal(statusForError("upstream_timeout"), 504);
   assert.equal(statusForError("source_too_large"), 413);
+  assert.equal(statusForError("invalid_dimensions"), 413); // oversized source, not bad params
   assert.equal(statusForError("resource_limit"), 429);
   assert.equal(statusForError("internal_error"), 500);
 });
