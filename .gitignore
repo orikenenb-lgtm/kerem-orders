@@ -1,3 +1,6 @@
 
 # Scratch dir used by image-review agents (decoded contact sheets)
 imgscratch/
+
+# Supabase CLI local metadata (created by supabase login/link/download)
+supabase/.temp/
