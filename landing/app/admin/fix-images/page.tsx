@@ -243,6 +243,8 @@ export default function FixImagesPage() {
 
         <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap", alignItems: "center", marginBottom: "1rem" }}>
           <input
+            type="search"
+            aria-label="חיפוש מוצר לפי שם"
             placeholder="🔍 חיפוש מוצר לפי שם"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
