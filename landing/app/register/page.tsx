@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
@@ -11,7 +11,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
 import { featureFlags } from "../../lib/featureFlags";
 import { tokens, primaryBtn } from "../../lib/ui";
-import { isTurnstileConfigured } from "../../lib/turnstile";
+import { isTurnstileConfigured, canSubmitSignup } from "../../lib/turnstile";
 
 // Wave 4: address fields in the registration form. With the flag OFF the page
 // renders and behaves exactly as before — none of the new code paths run.
@@ -141,6 +141,20 @@ export default function RegisterPage() {
   const turnstileConfigured = isTurnstileConfigured();
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  // Move focus to the success screen when it appears, so keyboard users don't
+  // lose their place when the form (and the focused submit button) unmounts.
+  const successRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (submittedEmail) successRef.current?.focus();
+  }, [submittedEmail]);
+  // Single source of truth for whether the form may submit (mirrors the pure
+  // canSubmitSignup rule: configured + solved non-empty token + not busy).
+  const submitAllowed = canSubmitSignup({
+    configured: turnstileConfigured,
+    formValid: true, // required-field validity is enforced natively by the inputs
+    busy,
+    state: { status: turnstileToken ? "solved" : "ready", token: turnstileToken },
+  });
   // Confirm-password lives outside `form`: it is never sent anywhere, never
   // drafted to localStorage — it exists only to catch typos before submit.
   const [password2, setPassword2] = useState("");
@@ -242,6 +256,22 @@ export default function RegisterPage() {
     turnstileToken,
   });
 
+  // The signup function replies with { ok, message }: ok:true is the generic
+  // "check your email" success (shown identically for new vs existing accounts
+  // — no enumeration); ok:false carries a user-facing rejection message
+  // (captcha/rate-limit/invalid). Normalize BOTH shapes to { ok?, error? } so a
+  // non-2xx rejection is never mistaken for success on the SDK path.
+  const normalizeSignupResult = (raw: unknown): { ok?: boolean; error?: string } => {
+    if (!raw || typeof raw !== "object") return {};
+    const r = raw as { ok?: boolean; error?: string; message?: string };
+    if (typeof r.error === "string") return { error: r.error };
+    if (r.ok === false) {
+      return { error: (typeof r.message === "string" && r.message) || "ההרשמה נכשלה. נסו שוב בעוד רגע." };
+    }
+    if (r.ok === true) return { ok: true };
+    return {};
+  };
+
   // Call the signup function; if the SDK path fails for any reason, fall back
   // to a plain fetch so a client-side SDK hiccup can never block registration.
   const callSignup = async (): Promise<{ ok?: boolean; error?: string }> => {
@@ -250,11 +280,13 @@ export default function RegisterPage() {
       const { data, error: fnErr } = await supabase.functions.invoke("signup", {
         body,
       });
-      if (!fnErr) return (data as { ok?: boolean; error?: string }) ?? {};
+      if (!fnErr) return normalizeSignupResult(data);
       const ctx = (fnErr as { context?: Response }).context;
       if (ctx && typeof ctx.json === "function") {
         try {
-          return await ctx.json();
+          // A non-2xx rejection ({ ok:false, message }) is surfaced as an error,
+          // not silently treated as success.
+          return normalizeSignupResult(await ctx.json());
         } catch {
           /* fall through to direct fetch */
         }
@@ -281,7 +313,7 @@ export default function RegisterPage() {
     });
     let resBody: { ok?: boolean; error?: string } = {};
     try {
-      resBody = await res.json();
+      resBody = normalizeSignupResult(await res.json());
     } catch {
       /* non-JSON response */
     }
@@ -409,7 +441,7 @@ export default function RegisterPage() {
             פתיחת חשבון לקוח
           </h1>
           {submittedEmail ? (
-            <div role="status" aria-live="polite" style={{ display: "grid", gap: "1rem", fontFamily: tokens.assistant, color: tokens.body }}>
+            <div ref={successRef} tabIndex={-1} role="status" aria-live="polite" style={{ display: "grid", gap: "1rem", fontFamily: tokens.assistant, color: tokens.body, outline: "none" }}>
               <p style={{ fontSize: "1.05rem", lineHeight: 1.6 }}>
                 שלחנו אליכם קישור לאימות כתובת המייל
                 {" "}
@@ -537,7 +569,7 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              disabled={busy || !turnstileConfigured || !turnstileToken}
+              disabled={!submitAllowed}
               style={primaryBtn(busy || !turnstileToken)}
             >
               {busy ? (ADDR ? "שולח..." : "רגע…") : "פתחו חשבון"}

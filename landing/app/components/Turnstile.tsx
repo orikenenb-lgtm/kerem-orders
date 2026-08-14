@@ -103,6 +103,16 @@ export default function Turnstile({
     setState((s) => reduceTurnstile(s, ev));
   };
 
+  // Re-run the challenge in place after an error/expiry/timeout so the user can
+  // recover without reloading the page (Cloudflare's recommended response).
+  const reissueChallenge = () => {
+    try {
+      if (widgetIdRef.current && window.turnstile) window.turnstile.reset(widgetIdRef.current);
+    } catch {
+      /* widget not ready — the status message already prompts a retry */
+    }
+  };
+
   useEffect(() => {
     mountedRef.current = true;
     if (!configured) {
@@ -133,16 +143,19 @@ export default function Turnstile({
             if (!mountedRef.current) return;
             dispatch({ type: "error" });
             onTokenRef.current(null);
+            reissueChallenge(); // let the user recover without reloading
           },
           "expired-callback": () => {
             if (!mountedRef.current) return;
             dispatch({ type: "expired" });
             onTokenRef.current(null);
+            reissueChallenge(); // Cloudflare's recommended response to expiry
           },
           "timeout-callback": () => {
             if (!mountedRef.current) return;
             dispatch({ type: "timeout" });
             onTokenRef.current(null);
+            reissueChallenge();
           },
         });
         dispatch({ type: "rendered" });
@@ -168,7 +181,9 @@ export default function Turnstile({
 
   return (
     <div style={{ display: "grid", gap: "0.4rem" }}>
-      <div ref={containerRef} aria-hidden={!configured} />
+      {/* Reserve the widget's height so the async iframe injection doesn't
+          shift the submit button (minimal CLS). */}
+      <div ref={containerRef} aria-hidden={!configured} style={{ minHeight: configured ? 65 : 0 }} />
       <p
         role="status"
         aria-live="polite"
