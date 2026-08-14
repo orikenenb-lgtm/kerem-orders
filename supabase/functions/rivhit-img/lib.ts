@@ -33,11 +33,12 @@ export const LIMITS = {
   /** Largest compressed upstream body we are willing to buffer. */
   maxSourceBytes: 8 * 1024 * 1024,
   /** Largest decoded image we are willing to process (width × height).
-   *  ImageScript decodes to RGBA (4 bytes/pixel), so 12 MP ≈ 48 MB before
+   *  ImageScript decodes to RGBA (4 bytes/pixel), so this ≈ 50 MB before
    *  rotate/resize allocate their own buffers — a cap that actually fits the
-   *  edge-worker memory budget (the 546 root cause). Rivhit product photos
-   *  are far below this. */
-  maxSourcePixels: 12_000_000,
+   *  edge-worker memory budget (the 546 root cause). 12.6 MP deliberately
+   *  clears a standard "12 MP" phone photo (4032×3024 = 12,192,768 px),
+   *  which a round 12,000,000 would reject. */
+  maxSourcePixels: 12_600_000,
   /** Resize width bounds; w=0 means "serve the original untouched". */
   minWidth: 16,
   maxWidth: 1600,
@@ -216,6 +217,13 @@ export function classifyUpstream(status: number, contentType: string | null, con
 // ---------------------------------------------------------------------------
 
 export type SniffedImage = { format: "jpeg" | "png" | "gif" | "webp"; width: number; height: number };
+
+/** The pre-decode pixel-cap rule (unit-tested; index.ts must not inline it):
+ *  a frame larger than maxSourcePixels is rejected as invalid_dimensions
+ *  BEFORE the expensive decode. */
+export function exceedsPixelCap(width: number, height: number, cap: number = LIMITS.maxSourcePixels): boolean {
+  return width * height > cap;
+}
 
 /** Read the pixel dimensions from the container header so oversized images
  *  are rejected BEFORE the expensive decode (the measured 546 failure mode

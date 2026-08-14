@@ -48,13 +48,12 @@ export default function ImagesReviewPage() {
   // Async helpers resolve after navigation away — never setState then. Also
   // guards the AI-scan continuation after an in-flight invoke resolves
   // post-unmount, and the cleanup below stops the scan loop itself.
-  // Strict Mode replays mount→cleanup→mount, so setup must re-arm the flags
-  // the replayed cleanup cleared (otherwise the AI scan exits after its first
-  // invoke and progress updates are dropped).
+  // Strict Mode replays mount→cleanup→mount, so setup must re-arm mountedRef
+  // or every post-request setState is dropped and the AI scan exits after its
+  // first invoke. aiStopRef needs no re-arm here: runAiScan resets it itself.
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
-    aiStopRef.current = false;
     return () => { mountedRef.current = false; aiStopRef.current = true; };
   }, []);
 

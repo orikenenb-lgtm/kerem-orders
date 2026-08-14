@@ -34,6 +34,7 @@ import {
   classifyUpstream,
   errorBody,
   errorHeaders,
+  exceedsPixelCap,
   exifOrientationToDegrees,
   parseExifOrientation,
   parseRequest,
@@ -196,7 +197,7 @@ async function process(req: ProxyRequest): Promise<Baked> {
     log("error", "sniff", { code: "upstream_not_image" });
     return errorBaked("upstream_not_image", "body is not a recognizable image");
   }
-  if (sniffed.width * sniffed.height > LIMITS.maxSourcePixels) {
+  if (exceedsPixelCap(sniffed.width, sniffed.height)) {
     log("error", "sniff", { code: "invalid_dimensions", px: sniffed.width * sniffed.height });
     return errorBaked("invalid_dimensions", "source image has too many pixels");
   }

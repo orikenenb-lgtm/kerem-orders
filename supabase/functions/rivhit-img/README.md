@@ -55,7 +55,9 @@ Hardening **added** (superset — measured root cause was `WORKER_RESOURCE_LIMIT
   construction — only the allow-listed DNS name can ever be fetched)
 - manual redirect handling, each hop re-validated, max 3
 - 15 s upstream timeout; upstream status / Content-Type checked pre-decode
-- streamed 8 MB byte cap + header-sniffed 40 MP pixel cap **before** decode
+- streamed 8 MB byte cap + header-sniffed 12.6 MP pixel cap **before**
+  decode (≈50 MB decoded RGBA — fits the worker budget while clearing a
+  standard 4032×3024 phone photo; rejection returns 413 `invalid_dimensions`)
 - bounded concurrent decodes (2) that fail fast with `resource_limit`
   instead of dying mid-decode; in-flight dedup shares one decode per variant
 - 60 s negative cache on errors (deployed errors are uncached)
