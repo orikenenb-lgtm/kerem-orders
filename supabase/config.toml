@@ -1,0 +1,20 @@
+# Supabase CLI configuration.
+#
+# Scope: this file exists ONLY to pin the public image proxy's auth behavior
+# explicitly. It declares NOTHING about any other Edge Function, so deploying
+# an unrelated function is unaffected by it (each `functions deploy` reads only
+# its own [functions.<name>] block; an absent block leaves that function's
+# config untouched).
+#
+# project_id is the local project identifier the CLI links against; it matches
+# the already-public project ref committed elsewhere in this repo.
+project_id = "mcdchalyzeqjkkgfeznd"
+
+# rivhit-img is served to plain <img> tags, which cannot send an Authorization
+# header, so it MUST remain publicly callable. verify_jwt = false makes that
+# explicit and version-controlled instead of relying on a deploy-time
+# --no-verify-jwt flag that a future operator could forget. The URL allowlist
+# inside the function (host api.rivhit.co.il + getItemPic path) is the actual
+# access control.
+[functions.rivhit-img]
+verify_jwt = false
