@@ -50,7 +50,24 @@ jobs:
           cache: npm
           cache-dependency-path: landing/package-lock.json
       - run: npm ci
-      - run: npm run build
+      # Turnstile is REQUIRED in production: a signup form built without the
+      # public site key can never submit. Fail the deploy loudly BEFORE build
+      # rather than publish a broken registration flow. Set the site key as a
+      # repository Actions Variable named TURNSTILE_SITE_KEY (a public value —
+      # not a secret). The value is never echoed.
+      - name: Require production Turnstile site key
+        env:
+          SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+        run: |
+          if [ -z "${SITE_KEY}" ]; then
+            echo "::error::TURNSTILE_SITE_KEY repository Variable is not set — refusing to deploy a signup form that cannot pass the captcha. Set it in Settings → Secrets and variables → Actions → Variables."
+            exit 1
+          fi
+          echo "Turnstile site key is configured (length only): ${#SITE_KEY} chars"
+      - name: Build (with public Turnstile site key baked in)
+        env:
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+        run: npm run build
       # SECURITY / SCOPE: the Pages artifact contains ONLY the built Kerem
       # Toys site (landing/out). Nothing from docs/ or any other directory is
       # ever copied in — an earlier version of this workflow copied the whole
