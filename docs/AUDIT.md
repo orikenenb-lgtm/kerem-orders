@@ -61,11 +61,13 @@ pg_cron job יחיד: `rivhit-daily-sync`, `0 3 * * *` → POST ל-`rivhit-sync`
 
 ## 7. Edge functions (כולן verify_jwt=false, אימות ידני בקוד)
 
-- `signup` — יצירה+אישור משתמש, קידום `orikenen.b@gmail.com` ל-manager.
+- `signup` — יצירת משתמש; הקצאת תפקיד מנהל היא תהליך שרת נפרד ומאומת. הפרטים
+  הרגישים אינם בריפו הציבורי (ראו `docs/security-notes.md`).
 - `rivhit-sync` — משיכה יומית, exclude group 999 + /נגמר/, anti-wipe, deactivate-not-delete.
-- `rivhit-push` — יצירת **הצעת מחיר (Document type 6)** בלבד, התאמת לקוח ח.פ→טלפון→אימייל→שם, אידמפוטנטי.
+- `rivhit-push` — יצירת הצעת מחיר בלבד, התאמת לקוח בצד השרת, אידמפוטנטי (מנגנון
+  ההתאמה המדויק אינו מתועד בריפו הציבורי).
 - `rivhit-img` — פרוקסי תמונות, allowlist מנורמל, resize w=480, JPEG 78, cache 30 יום.
-- `rivhit-probe-*` ×4 — פונקציות אבחון ישנות, **עדיין ACTIVE ופתוחות**. → מומלץ להסיר (Wave 8/9).
+- `rivhit-probe-*` ×4 — פונקציות אבחון ישנות שהוסבו ל-stub שמחזיר `410` (verify_jwt=on).
 
 ## 8. תמונות ומלאי
 

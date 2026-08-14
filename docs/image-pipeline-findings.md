@@ -45,22 +45,22 @@ cached; the resized-variant pipeline works for the other 98.9%.
 
 ---
 
-## 1. CRITICAL finding (verified)
+## 1. Finding (RESOLVED)
 
-**The deployed Edge Function source is not in Git.**
+**The deployed Edge Function source was not originally in Git — now recovered
+privately.**
 
-- `supabase/` on `main` contains only `discount-setup.sql`,
-  `discount-sync-notes.md`, `security-hardening.sql`.
-- There is no `supabase/functions/` directory anywhere in the repo.
-- A repo-wide code search for `imagescript`, `parseExifOrientation` and
-  `FileService.svc` (excluding build output) returns **0 results**.
-
-So `rivhit-img`, `rivhit-sync`, `rivhit-push`, `signup` and
-`detect-orientation` exist **only inside the Supabase project**. Consequences:
-
-- Production behaviour cannot be reviewed, diffed, tested or rolled back.
-- Nobody can tell from the repo which version is live.
-- An edge-function change is invisible to CI and to code review.
+Originally, no `supabase/functions/` directory existed in the repo, so the
+deployed functions could not be reviewed, diffed, tested or rolled back. This
+was resolved by an owner-authenticated, read-only
+`supabase functions download` of all active functions. Because this is a
+**public** repository, the byte-exact deployed sources are kept in the owner's
+**private, off-Git archive** (the rollback artifact) and are **not** committed
+here. What lives in Git is the hardened *proposed* replacements
+(`supabase/functions/rivhit-img/`, `supabase/functions/signup/`), clearly
+labeled as proposals, plus `supabase/config.toml` pinning the public proxy's
+`verify_jwt=false`. Deploy/rollback (from the private archive) is in
+`docs/edge-functions-runbook.md`.
 
 **Required regardless of the image bug:** vendor the function sources into
 `supabase/functions/<name>/index.ts` and deploy from Git.
@@ -190,7 +190,57 @@ fallback stage is justified as a TEMPORARY safety net:
   `w=360` variants (the decode-storm trigger); previews rotate locally in
   CSS over the shared cached `w=480` variant, with the same failed-image
   guards. The AI scan now stops when the screen unmounts.
-- `tests/imageFallback.test.mjs` — 17 unit tests for the chain.
+- `tests/imageFallback.test.mjs` — 28 unit tests for the chain (17 in PR #60, 11 more added with the reduceError extraction on this branch).
 
-Still owner-blocked (unchanged): vendoring the edge-function sources into
-Git (§1) and the server-side hardening + pre-generated variants (§5).
+Recovered since: the deployed sources were exported read-only into the
+owner's private off-Git archive (§1). The server-side hardening (proposed
+`rivhit-img` + `signup`) is ready in Git; deployment stays owner-gated (§5,
+`docs/edge-functions-runbook.md`).
+
+---
+
+## 7. Follow-up branch (fix/edge-functions-source-and-image-hardening)
+
+### 7.1 Diagnostic rerun (2026-08-13, later the same day, read-only)
+
+980 products again: **1** proxy failure this run (a product that had not been
+probed before — "מכונית משוגעת סטיצ 36 יח", 546 `WORKER_RESOURCE_LIMIT`,
+3.4 MB original loads fine directly), **3** empty links (same products as
+before), 77 slow (>5 s) requests. The 8 products that failed in the morning
+run now pass — their variants were generated meanwhile and the CDN keeps
+them. This is exactly the cold-decode-of-heavy-originals pattern: the failure
+population is "whichever heavy originals happen to be uncached right now".
+
+### 7.2 The 3 products with no image link (owner action: add a photo in Rivhit)
+
+| product id | name | picture_link |
+|---|---|---|
+| `50ccf16c-8fe5-4cfb-842e-3f28e3f1d47e` | דמפלינג חלק מיוחד 1/12 ק 144 | (ריק) |
+| `23b51ea6-9175-4b57-b657-2cc32562d529` | דמפלינג נידו צבעוני 1/12 ק 144 | (ריק) |
+| `596d013c-88a8-4b2f-8315-ee7f3ffb68ec` | דמפלינג צבעוני מיוחד 1/12  ק 144 | (ריק) |
+
+(SKU/ברקוד אינם נגישים דרך ה־RPC הציבורי — RLS מסתיר את הטבלה מ־anon; המנהל
+יכול לאתר לפי השם במסך הקטלוג.) No product was modified; no image invented.
+
+### 7.3 Edge-function source recovery — DONE (read-only export)
+
+The deployed sources were originally in no Git object/branch/tag. They were
+then exported read-only via an owner-authenticated
+`supabase functions download` (all active functions; the live inventory turned
+out to be more than the five originally assumed). Because this repo is public,
+the byte-exact sources are held in the owner's **private off-Git archive** (the
+rollback artifact) and are **not** committed here. Clearly-labeled PROPOSED
+hardened replacements live in `supabase/functions/rivhit-img/` and
+`supabase/functions/signup/`, with unit tests; deployment is owner-gated
+(`docs/edge-functions-runbook.md`).
+
+### 7.4 Product-update permissions — NOT VERIFIED
+
+`pg_policies` is not exposed to the anon key (404) and write-testing against
+production is forbidden, so the live `products` UPDATE policy is **not
+verified**. The repo reference snapshot (`backups/schema-before.sql:108`)
+shows `products_manager_all FOR ALL USING (is_manager())` — if production
+matches, only managers can write. A redundant-but-explicit manager-only
+UPDATE policy is prepared (NOT applied) in
+`supabase/proposed-migrations/2026-08-13_products_manager_update_policy.sql`
+with rollback SQL and a verification query for the owner.
