@@ -58,6 +58,13 @@ t("correct host but wrong path is rejected (matches deployed 'bad url')", () => 
   assert.equal(parseRequest(qs(`u=${encodeURIComponent("https://api.rivhit.co.il/")}`)).code, "unsupported_source");
   assert.equal(parseRequest(qs(`u=${encodeURIComponent("https://api.rivhit.co.il/anything/else")}`)).code, "unsupported_source");
 });
+t("the getItemPic path match is case-insensitive but dot-segments are rejected", () => {
+  // IIS is case-insensitive, so a case-varied prefix is a legitimate variant.
+  assert.equal(parseRequest(qs(`u=${encodeURIComponent("https://api.rivhit.co.il/ONLINE/FileService.svc/GetItemPic/1/x")}`)).ok, true);
+  // Encoded or literal dot-segments must never pass (no walking out of the subtree).
+  assert.equal(parseRequest(qs(`u=${encodeURIComponent("https://api.rivhit.co.il/online/FileService.svc/getItemPic/%2e%2e/other")}`)).code, "unsupported_source");
+  assert.equal(validateUpstreamUrl("https://api.rivhit.co.il/online/FileService.svc/getItemPic/../secret").ok, false);
+});
 t("credentials and odd ports in u are rejected", () => {
   assert.equal(parseRequest(qs(`u=${encodeURIComponent("https://user:pw@api.rivhit.co.il/online/FileService.svc/getItemPic/1/x")}`)).code, "unsupported_source");
   assert.equal(parseRequest(qs(`u=${encodeURIComponent("https://api.rivhit.co.il:8443/online/FileService.svc/getItemPic/1/x")}`)).code, "unsupported_source");

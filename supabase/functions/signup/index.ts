@@ -16,8 +16,10 @@
 //  * Errors are generic and identical for "already exists" vs. any failure, so
 //    the endpoint cannot be used to enumerate accounts.
 //  * Abuse protection: a Cloudflare Turnstile token is required and verified
-//    server-side; Supabase Auth's own per-IP limits provide rate limiting.
-//  * The service-role key never leaves the server and is never returned.
+//    server-side; signup then goes through the ANON `auth.signUp()` flow,
+//    which BOTH sends Supabase's built-in confirmation email AND applies
+//    Auth's per-IP signup rate limits (surfaced here as a 429). No
+//    service-role key is used by this function at all.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
@@ -80,35 +82,38 @@ Deno.serve(async (req) => {
   const parsed = parseSignup(body);
   if (!parsed.ok) return fail(parsed.kind);
 
-  const admin = createClient(
+  // Public signup goes through the ANON auth.signUp() flow — NOT the
+  // service-role admin API. That is what actually sends the confirmation email
+  // (email_confirm stays under Auth's control, unconfirmed until the user
+  // clicks the link) and applies Auth's per-IP signup rate limits. The role is
+  // set to "customer" in user_metadata for reference only; NOTHING here grants
+  // manager, and no service-role key is used.
+  const anon = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
   );
 
-  // Create the account UNCONFIRMED and as a plain customer. role is never read
-  // from the body; email_confirm is always false.
-  const { data, error } = await admin.auth.admin.createUser({
+  const { error } = await anon.auth.signUp({
     email: parsed.email,
     password: parsed.password,
-    email_confirm: parsed.emailConfirm, // false — confirmation email required
-    user_metadata: { role: parsed.role }, // "customer", always
+    options: { data: { role: parsed.role } }, // "customer", always
   });
 
-  // Uniform response: whether the address is new, already taken, or the
-  // provider errored, the caller sees the SAME generic success-shaped message.
-  // Details go to the server log only.
-  if (error || !data?.user) {
-    console.log(JSON.stringify({ evt: "signup", outcome: "not_created", reason: error?.message ?? "no user" }));
-    return fail("signup_failed");
+  // Auth's own per-IP limiter surfaces as a 429 — map it to the generic
+  // rate-limited response so a flood is throttled with a truthful status.
+  if (error && (error.status === 429 || /rate limit/i.test(error.message))) {
+    console.log(JSON.stringify({ evt: "signup", outcome: "rate_limited" }));
+    return fail("rate_limited");
   }
 
-  // Send the confirmation email through the normal Auth flow.
-  try {
-    await admin.auth.admin.generateLink({ type: "signup", email: parsed.email, password: parsed.password });
-  } catch {
-    /* non-fatal: the account exists unconfirmed; user can request a resend */
+  // Uniform response for everything else: whether the address is new, already
+  // registered, or the provider errored, the caller sees the SAME generic
+  // success-shaped message (Supabase's signUp is itself enumeration-safe for a
+  // duplicate). Details go to the server log only, never the body.
+  if (error) {
+    console.log(JSON.stringify({ evt: "signup", outcome: "not_created", reason: error.message }));
+  } else {
+    console.log(JSON.stringify({ evt: "signup", outcome: "created_or_pending" }));
   }
-
-  console.log(JSON.stringify({ evt: "signup", outcome: "created_unconfirmed" }));
-  return fail("signup_failed"); // same generic message — no enumeration signal
+  return fail("signup_failed"); // generic "check your email" message — no enumeration signal
 });

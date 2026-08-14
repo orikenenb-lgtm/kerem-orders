@@ -165,7 +165,14 @@ export function validateUpstreamUrl(
   if (!isAllowedHost(url.hostname, allowed)) {
     return { ok: false, code: "unsupported_source", reason: "host is not on the allowlist" };
   }
-  if (!LIMITS.allowedPathPrefixes.some((p) => url.pathname.startsWith(p))) {
+  const path = url.pathname.toLowerCase();
+  // Encoded dot-segments (%2e%2e) survive URL normalization; reject them so a
+  // case-insensitive backend cannot be walked out of the getItemPic subtree.
+  if (path.includes("%2e") || path.includes("..")) {
+    return { ok: false, code: "unsupported_source", reason: "path contains dot-segments" };
+  }
+  // Case-insensitive prefix match — the Rivhit/IIS backend is case-insensitive.
+  if (!LIMITS.allowedPathPrefixes.some((p) => path.startsWith(p.toLowerCase()))) {
     return { ok: false, code: "unsupported_source", reason: "path is not an allowed Rivhit image path" };
   }
   return { ok: true, url };

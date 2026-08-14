@@ -85,6 +85,7 @@ t("only a real HTTPS Rivhit getItemPic URL is eligible for the direct fallback",
   assert.equal(isDirectFallbackAllowed(LINK), true);
   // case-insensitive host, standard port, trailing whitespace all fine
   assert.equal(isDirectFallbackAllowed("HTTPS://API.RIVHIT.CO.IL/online/FileService.svc/getItemPic/1/x"), true);
+  assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il/ONLINE/FileService.svc/GetItemPic/1/x"), true); // case-insensitive path
   assert.equal(isDirectFallbackAllowed("  " + LINK + "  "), true);
   assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il:443/online/FileService.svc/getItemPic/1/x"), true);
 });
@@ -95,6 +96,8 @@ t("the direct fallback rejects every non-Rivhit / non-HTTPS / spoofed source", (
   assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il@evil.com/online/FileService.svc/getItemPic/1/x"), false); // userinfo trick
   assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il:8443/online/FileService.svc/getItemPic/1/x"), false); // odd port
   assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il/online/FileService.svc/getGroups/1"), false);   // wrong path
+  assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il/online/FileService.svc/getItemPic/%2e%2e/x"), false); // encoded dot-segment
+  assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il/online/FileService.svc/getItemPic/../secret"), false); // literal dot-segment
   assert.equal(isDirectFallbackAllowed("https://cdn.tracking.example/pixel.png"), false); // arbitrary tracking host
   assert.equal(isDirectFallbackAllowed("data:image/png;base64,xxxx"), false);
   assert.equal(isDirectFallbackAllowed("javascript:alert(1)"), false);

@@ -43,13 +43,18 @@ export function isDirectFallbackAllowed(pictureLink: string): boolean {
   } catch {
     return false;
   }
+  const path = u.pathname.toLowerCase();
   return (
     u.protocol === "https:" &&
     u.hostname.toLowerCase() === RIVHIT_HOST &&
     !u.username &&
     !u.password &&
     (u.port === "" || u.port === "443") &&
-    u.pathname.startsWith(RIVHIT_PATH_PREFIX)
+    // Case-insensitive prefix (the Rivhit/IIS backend is case-insensitive) and
+    // no encoded dot-segments that could escape the getItemPic subtree.
+    path.startsWith(RIVHIT_PATH_PREFIX.toLowerCase()) &&
+    !path.includes("%2e") &&
+    !path.includes("..")
   );
 }
 
