@@ -20,13 +20,34 @@
 -- this restores an explicit manager-only write boundary for the fields the
 -- admin screens write (rotation_override, orient_human_ok, packaging).
 --
--- BEFORE APPLYING, verify the live state with owner credentials:
---   select policyname, cmd, qual, with_check
+-- ===========================================================================
+-- PREFLIGHT — run with owner credentials BEFORE applying, and SAVE the
+-- output (it is the input to the rollback below):
+--
+--   -- (a) Is RLS enabled/forced at all? Policies are inert while
+--   --     relrowsecurity is false — and if it IS false, applying this
+--   --     migration flips enforcement on, which is a behavior change.
+--   select relrowsecurity, relforcerowsecurity
+--   from pg_class where oid = 'public.products'::regclass;
+--
+--   -- (b) ALL policies incl. roles + permissiveness. PostgreSQL ORs every
+--   --     applicable PERMISSIVE policy together: if any permissive
+--   --     UPDATE/ALL policy applies to non-managers, this migration does
+--   --     NOT block them — that policy must be removed/replaced first.
+--   select policyname, cmd, roles, permissive, qual, with_check
 --   from pg_policies where schemaname='public' and tablename='products';
+--
+--   -- (c) What is_manager() actually is in production:
+--   select pg_get_functiondef('public.is_manager()'::regprocedure);
+--
+-- Then replay this file in a SAFE environment (local `supabase start` or a
+-- branch DB) and verify: manager UPDATE succeeds, anon/customer UPDATE
+-- fails. Never verify by writing to production.
 --
 -- NOTE: RLS is row-scoped. It cannot restrict WHICH COLUMNS a manager
 -- updates — column-level protection belongs in triggers like the ones in
 -- supabase/security-hardening.sql.
+-- ===========================================================================
 
 alter table public.products enable row level security;
 
@@ -39,13 +60,33 @@ create policy products_manager_update
   with check (public.is_manager());
 
 -- ---------------------------------------------------------------------------
--- ROLLBACK (exact):
+-- ROLLBACK (exact — restore the PRE-APPLY state captured by the preflight,
+-- not an assumed one):
+--
+-- 1. Always:
 --
 --   drop policy if exists products_manager_update on public.products;
 --
--- If products_manager_all was dropped in favor of granular policies (NOT
--- part of this migration), restore it too:
+-- 2. Only if preflight (a) showed relrowsecurity = false (i.e. THIS
+--    migration is what enabled RLS):
+--
+--   alter table public.products disable row level security;
+--
+-- 3. Only if preflight (b) showed a PRE-EXISTING products_manager_update
+--    policy (this migration dropped and recreated it): recreate it from the
+--    saved preflight output — cmd, roles, permissive, qual, with_check must
+--    all match the saved definition, e.g.:
+--
+--   create policy products_manager_update on public.products
+--     for update to <saved roles>
+--     using (<saved qual>) with check (<saved with_check>);
+--
+-- 4. If products_manager_all was dropped in favor of granular policies (NOT
+--    part of this migration), restore it too:
 --
 --   create policy products_manager_all on public.products
 --     for all to public using (public.is_manager()) with check (public.is_manager());
+--
+-- Validate after rollback: re-run preflight (a)+(b) and diff against the
+-- saved pre-apply output — they must be identical.
 -- ---------------------------------------------------------------------------

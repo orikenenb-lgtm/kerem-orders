@@ -190,7 +190,7 @@ fallback stage is justified as a TEMPORARY safety net:
   `w=360` variants (the decode-storm trigger); previews rotate locally in
   CSS over the shared cached `w=480` variant, with the same failed-image
   guards. The AI scan now stops when the screen unmounts.
-- `tests/imageFallback.test.mjs` — 17 unit tests for the chain.
+- `tests/imageFallback.test.mjs` — 28 unit tests for the chain (17 in PR #60, 11 more added with the reduceError extraction on this branch).
 
 Still owner-blocked (unchanged): vendoring the edge-function sources into
 Git (§1) and the server-side hardening + pre-generated variants (§5).
