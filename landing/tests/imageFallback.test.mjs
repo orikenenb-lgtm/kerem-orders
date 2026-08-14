@@ -23,10 +23,10 @@ transpile("imageFallback");
 const { rivhitImg } = await import(pathToFileURL(join(tmp, "images.mjs")).href);
 const {
   ATTEMPT_PROXY, ATTEMPT_PROXY_RETRY, ATTEMPT_DIRECT, ATTEMPT_EXHAUSTED,
-  isDirectFallbackAllowed, srcForAttempt, nextAttempt, stageOf,
+  isDirectFallbackAllowed, srcForAttempt, nextAttempt, stageOf, reduceError,
 } = await import(pathToFileURL(join(tmp, "imageFallback.mjs")).href);
 
-const LINK = "https://api.rivhit.co.il/externals/FileService.svc/x/photo.jpg";
+const LINK = "https://api.rivhit.co.il/online/FileService.svc/getItemPic/512481045/photo.jpg";
 const PROXY_PREFIX = "/functions/v1/rivhit-img?u=";
 
 let n = 0;
@@ -80,13 +80,30 @@ t("exhausted attempt renders the placeholder", () => {
   assert.equal(srcForAttempt(LINK, ATTEMPT_EXHAUSTED), "");
 });
 
-// ---- isDirectFallbackAllowed ----
-t("only real HTTPS links are eligible for the direct fallback", () => {
+// ---- isDirectFallbackAllowed (tightened to the exact Rivhit host+path) ----
+t("only a real HTTPS Rivhit getItemPic URL is eligible for the direct fallback", () => {
   assert.equal(isDirectFallbackAllowed(LINK), true);
-  assert.equal(isDirectFallbackAllowed("HTTPS://UPPER.example/img.png"), true);
-  assert.equal(isDirectFallbackAllowed("http://x/img.png"), false);
+  // case-insensitive host, standard port, trailing whitespace all fine
+  assert.equal(isDirectFallbackAllowed("HTTPS://API.RIVHIT.CO.IL/online/FileService.svc/getItemPic/1/x"), true);
+  assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il/ONLINE/FileService.svc/GetItemPic/1/x"), true); // case-insensitive path
+  assert.equal(isDirectFallbackAllowed("  " + LINK + "  "), true);
+  assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il:443/online/FileService.svc/getItemPic/1/x"), true);
+});
+t("the direct fallback rejects every non-Rivhit / non-HTTPS / spoofed source", () => {
+  assert.equal(isDirectFallbackAllowed("http://api.rivhit.co.il/online/FileService.svc/getItemPic/1/x"), false); // not https
+  assert.equal(isDirectFallbackAllowed("https://evil.example/online/FileService.svc/getItemPic/1/x"), false);   // wrong host
+  assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il.evil.com/online/FileService.svc/getItemPic/1/x"), false); // suffix spoof
+  assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il@evil.com/online/FileService.svc/getItemPic/1/x"), false); // userinfo trick
+  assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il:8443/online/FileService.svc/getItemPic/1/x"), false); // odd port
+  assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il/online/FileService.svc/getGroups/1"), false);   // wrong path
+  assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il/online/FileService.svc/getItemPic/%2e%2e/x"), false); // encoded dot-segment
+  assert.equal(isDirectFallbackAllowed("https://api.rivhit.co.il/online/FileService.svc/getItemPic/../secret"), false); // literal dot-segment
+  assert.equal(isDirectFallbackAllowed("https://cdn.tracking.example/pixel.png"), false); // arbitrary tracking host
+  assert.equal(isDirectFallbackAllowed("data:image/png;base64,xxxx"), false);
+  assert.equal(isDirectFallbackAllowed("javascript:alert(1)"), false);
+  assert.equal(isDirectFallbackAllowed("ftp://api.rivhit.co.il/online/FileService.svc/getItemPic/1/x"), false);
   assert.equal(isDirectFallbackAllowed(""), false);
-  assert.equal(isDirectFallbackAllowed("ftp://x/img.png"), false);
+  assert.equal(isDirectFallbackAllowed("not a url"), false);
 });
 
 // ---- the chain itself ----
@@ -147,6 +164,76 @@ t("stageOf reports the failure stage for the admin screens", () => {
   assert.equal(stageOf(ATTEMPT_DIRECT, LINK), "direct");
   assert.equal(stageOf(ATTEMPT_EXHAUSTED, LINK), "exhausted");
   assert.equal(stageOf(ATTEMPT_PROXY, ""), "no-url");
+});
+
+// ---- the component's onError decision, as pure data (reduceError) ----
+t("proxy failure schedules the retry, nothing else", () => {
+  assert.deepEqual(reduceError(ATTEMPT_PROXY, LINK), { type: "schedule", attempt: ATTEMPT_PROXY_RETRY, delayMs: 1200 });
+});
+t("retry failure on an HTTPS source schedules the direct hop", () => {
+  assert.deepEqual(reduceError(ATTEMPT_PROXY_RETRY, LINK), { type: "schedule", attempt: ATTEMPT_DIRECT, delayMs: 300 });
+});
+t("direct failure is terminal and reports the exhausted stage", () => {
+  const d = reduceError(ATTEMPT_DIRECT, LINK);
+  assert.equal(d.type, "fail");
+  assert.equal(stageOf(d.attempt, LINK), "exhausted");
+});
+t("a failure past the end never schedules a timer", () => {
+  assert.equal(reduceError(ATTEMPT_EXHAUSTED, LINK).type, "fail");
+  assert.equal(reduceError(ATTEMPT_EXHAUSTED + 3, LINK).type, "fail");
+});
+t("reduceError is idempotent — a double onError cannot double-schedule", () => {
+  for (const a of [ATTEMPT_PROXY, ATTEMPT_PROXY_RETRY, ATTEMPT_DIRECT, ATTEMPT_EXHAUSTED]) {
+    assert.deepEqual(reduceError(a, LINK), reduceError(a, LINK));
+  }
+});
+
+// ---- ordered walks ----
+t("an HTTPS walk visits proxy → proxy-retry → direct → exhausted with delays [1200, 300]", () => {
+  const stages = [];
+  const delays = [];
+  let attempt = ATTEMPT_PROXY;
+  for (let guard = 0; guard < 10; guard++) {
+    stages.push(stageOf(attempt, LINK));
+    const d = reduceError(attempt, LINK);
+    if (d.type === "fail") { stages.push(stageOf(d.attempt, LINK)); break; }
+    delays.push(d.delayMs);
+    attempt = d.attempt;
+  }
+  assert.deepEqual(stages, ["proxy", "proxy-retry", "direct", "exhausted"]);
+  assert.deepEqual(delays, [1200, 300]);
+});
+t("rotation rides every proxy attempt but the direct fallback ships the RAW link", () => {
+  const p0 = srcForAttempt(LINK, ATTEMPT_PROXY, 480, 90);
+  const p1 = srcForAttempt(LINK, ATTEMPT_PROXY_RETRY, 480, 90);
+  assert.ok(p0.includes("&rot=90"));
+  assert.equal(p0, p1);
+  // Direct = the untouched original; rotation is re-applied in CSS instead.
+  assert.equal(srcForAttempt(LINK, ATTEMPT_DIRECT, 480, 90), LINK);
+});
+t("w=0 requests the untouched original through the proxy (no w, no v)", () => {
+  const src = srcForAttempt(LINK, ATTEMPT_PROXY, 0, 0);
+  assert.ok(src.includes(PROXY_PREFIX));
+  assert.ok(!src.includes("&w="));
+  assert.ok(!src.includes("&v="));
+});
+t("out-of-range attempts clamp to the placeholder and the exhausted stage", () => {
+  assert.equal(srcForAttempt(LINK, 99), "");
+  assert.equal(stageOf(99, LINK), "exhausted");
+});
+t("reduceError terminates in exactly 3 decisions — the chain is finite", () => {
+  // (onLoad halting the chain is a component behavior: onError is the only
+  // caller of reduceError, so nothing can schedule past a successful load.
+  // What IS provable here: the decision sequence itself always terminates.)
+  let steps = 0;
+  let attempt = ATTEMPT_PROXY;
+  for (let guard = 0; guard < 10; guard++) {
+    const d = reduceError(attempt, LINK);
+    steps++;
+    if (d.type === "fail") break;
+    attempt = d.attempt;
+  }
+  assert.equal(steps, 3); // retry, direct, terminal — and no more
 });
 
 console.log(`\n${n} imageFallback tests passed`);

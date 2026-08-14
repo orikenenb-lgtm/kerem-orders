@@ -57,6 +57,14 @@ export default function FixImagesPage() {
   const loadingRef = useRef(false);
   const genRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // Async helpers resolve after navigation away — never setState then.
+  // Strict Mode replays mount→cleanup→mount, so setup must re-arm the flag
+  // the replayed cleanup cleared.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -77,6 +85,7 @@ export default function FixImagesPage() {
       base(),
       base().eq("orient_human_ok", true),
     ]);
+    if (!mountedRef.current) return;
     setTotalAll(all ?? 0);
     setDone(reviewed ?? 0);
   }, []);
@@ -91,6 +100,11 @@ export default function FixImagesPage() {
     loadingRef.current = true;
     const gen = reset ? ++genRef.current : genRef.current;
     if (reset) { cursorRef.current = null; setHasMore(true); }
+    // NOTE: imgStatus is deliberately NOT cleared on reset. A card that
+    // survives the reset keeps its React instance (same key), so its
+    // ProductImage never re-reports — wiping the map would leave such cards
+    // with no status and therefore permanently disabled controls. The map is
+    // bounded by the catalog size (~1000 tiny entries), which is fine.
     setBusy(true);
 
     let q = supabase
@@ -105,9 +119,10 @@ export default function FixImagesPage() {
 
     const { data, error } = await q.order("id", { ascending: true }).limit(BATCH);
 
-    // A newer filter/search superseded this request — drop the stale result
-    // WITHOUT touching loadingRef: it now belongs to the newer request.
-    if (gen !== genRef.current) { return; }
+    // A newer filter/search superseded this request, or the screen unmounted —
+    // drop the stale result WITHOUT touching loadingRef (a supersession means
+    // it now belongs to the newer request).
+    if (gen !== genRef.current || !mountedRef.current) { return; }
 
     if (error) { setLoadErr(true); setBusy(false); loadingRef.current = false; return; }
     setLoadErr(false);
@@ -163,6 +178,7 @@ export default function FixImagesPage() {
       .update({ rotation_override: norm === 0 ? null : norm, orient_human_ok: true })
       .eq("id", id)
       .select("id");
+    if (!mountedRef.current) return; // navigated away mid-save — don't touch state
     setSavingId(null);
     if (error || !data || data.length === 0) {
       setRows((rs) => rs.map((r) => (r.id === id && prev ? prev : r)));

@@ -1,3 +1,15 @@
 
 # Scratch dir used by image-review agents (decoded contact sheets)
 imgscratch/
+
+# Supabase CLI local metadata (created by supabase login/link/download)
+supabase/.temp/
+
+# Private, byte-exact DEPLOYED Edge Function exports / rollback archives must
+# NEVER be committed to this public repo (they belong in the owner's private
+# off-Git storage only). These patterns stop an accidental re-commit.
+supabase/functions-deployed/
+**/kerem-orders-deployed-*
+*-BACKUP-*.zip
+*.deployed-source/
+

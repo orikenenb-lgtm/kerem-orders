@@ -7,7 +7,7 @@
 // a rotation; it saves to products.rotation_override (safe from the nightly
 // sync) and the proxy re-renders that image upright everywhere on the site.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
@@ -45,6 +45,17 @@ export default function ImagesReviewPage() {
   const [aiRunning, setAiRunning] = useState(false);
   const [aiMsg, setAiMsg] = useState("");
   const aiStopRef = useRef(false);
+  // Async helpers resolve after navigation away — never setState then. Also
+  // guards the AI-scan continuation after an in-flight invoke resolves
+  // post-unmount, and the cleanup below stops the scan loop itself.
+  // Strict Mode replays mount→cleanup→mount, so setup must re-arm mountedRef
+  // or every post-request setState is dropped and the AI scan exits after its
+  // first invoke. aiStopRef needs no re-arm here: runAiScan resets it itself.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; aiStopRef.current = true; };
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -60,6 +71,7 @@ export default function ImagesReviewPage() {
       .eq("is_active", true)
       .not("rotation_override", "is", null)
       .neq("rotation_override", 0);
+    if (!mountedRef.current) return;
     setFixedCount(count ?? 0);
   }, []);
 
@@ -73,8 +85,13 @@ export default function ImagesReviewPage() {
   }, [input]);
   useEffect(() => { setPage(0); }, [onlyFixed]);
 
+  // Generation guard: a slower earlier query (search/filter/page) must not
+  // overwrite a newer one that already resolved, and nothing setState's after
+  // unmount. Each load bumps the generation; a stale response is dropped.
+  const loadGenRef = useRef(0);
   const load = useCallback(async () => {
     if (!isManager) return;
+    const gen = ++loadGenRef.current;
     setBusy(true);
     let q = supabase
       .from("products")
@@ -87,6 +104,8 @@ export default function ImagesReviewPage() {
     const { data, count, error } = await q
       .order("name", { ascending: true })
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+    // Drop a superseded or post-unmount response before touching any state.
+    if (gen !== loadGenRef.current || !mountedRef.current) return;
     if (error) { setLoadErr(true); setBusy(false); return; }
     setLoadErr(false);
     setRows((data as Row[]) ?? []);
@@ -108,6 +127,7 @@ export default function ImagesReviewPage() {
       .update({ rotation_override: value })
       .eq("id", id)
       .select("id");
+    if (!mountedRef.current) return; // navigated away mid-save — don't touch state
     setSavingId(null);
     if (error || !data || data.length === 0) {
       // revert + tell the manager
@@ -117,15 +137,13 @@ export default function ImagesReviewPage() {
     }
     loadFixedCount();
   };
+  // Stable identity for the memoized cards (same pattern as fix-images):
+  // aiMsg ticking during a scan must not re-render all 30 image cards.
+  const setRotationRef = useRef(setRotation);
+  useEffect(() => { setRotationRef.current = setRotation; });
+  const onRotate = useCallback((id: string, deg: number) => { setRotationRef.current(id, deg); }, []);
 
   const stopAiScan = () => { aiStopRef.current = true; };
-
-  // Leaving the screen must stop the AI scan too — otherwise the loop keeps
-  // writing rotations and calling setState long after the component is gone.
-  // mountedRef also guards the continuation that resumes AFTER an in-flight
-  // invoke() resolves post-unmount.
-  const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; aiStopRef.current = true; }, []);
 
   // Drive the detect-orientation edge function in a loop until nothing is left
   // to scan, showing live progress. Each round scans a small batch so the tab
@@ -248,7 +266,7 @@ export default function ImagesReviewPage() {
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "1.2rem" }}>
             {rows.map((r) => (
-              <ImageCard key={r.id} row={r} saving={savingId === r.id} onRotate={(deg) => setRotation(r.id, deg)} />
+              <ImageCard key={r.id} row={r} saving={savingId === r.id} onRotate={onRotate} />
             ))}
           </div>
         )}
@@ -265,7 +283,10 @@ export default function ImagesReviewPage() {
   );
 }
 
-function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRotate: (deg: number) => void }) {
+// memo + stable onRotate: page-level state ticks (AI scan progress, savingId)
+// must not re-render every card — each card owns an <img> whose remount
+// would refetch.
+const ImageCard = memo(function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRotate: (id: string, deg: number) => void }) {
   const saved = row.rotation_override ?? 0;
   // Preview-before-save: picking a rotation only changes the LOCAL preview.
   // Nothing touches the DB until the manager presses שמירה, and ביטול returns
@@ -339,7 +360,7 @@ function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRot
       {dirty && (
         <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
           <button
-            onClick={() => onRotate(draft)}
+            onClick={() => onRotate(row.id, draft)}
             disabled={controlsDisabled}
             style={{ flex: 1, fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: "#fff", background: "#1A7A4D", border: "none", padding: "0.5rem 0.8rem", borderRadius: 10, cursor: controlsDisabled ? "default" : "pointer", opacity: controlsDisabled ? 0.6 : 1 }}
           >
@@ -356,7 +377,7 @@ function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRot
       )}
     </div>
   );
-}
+});
 
 const ghostBtn = {
   fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: tokens.text,
