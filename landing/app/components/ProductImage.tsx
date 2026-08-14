@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ATTEMPT_DIRECT,
   ATTEMPT_PROXY,
-  nextAttempt,
+  reduceError,
   srcForAttempt,
   stageOf,
   type FallbackStage,
@@ -86,23 +86,19 @@ export default function ProductImage({
   }, [failed, phase, attempt, link]);
 
   const onError = () => {
-    const next = nextAttempt(attempt, link);
-    if (!next) {
-      setPhase("failed");
-      return;
-    }
-    if (!srcForAttempt(link, next.attempt, width, rot)) {
-      // The next stage has nothing to load (e.g. non-HTTPS source) — give up
-      // now, and record the terminal attempt so onStatus reports "exhausted".
-      setAttempt(next.attempt);
+    // The whole decision is pure (and unit-tested in lib/imageFallback.ts);
+    // this handler only arms the single timer or flips to the terminal state.
+    const decision = reduceError(attempt, link, width, rot);
+    if (decision.type === "fail") {
+      setAttempt(decision.attempt);
       setPhase("failed");
       return;
     }
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      setAttempt(next.attempt);
-    }, next.delayMs);
+      setAttempt(decision.attempt);
+    }, decision.delayMs);
   };
 
   if (failed) {

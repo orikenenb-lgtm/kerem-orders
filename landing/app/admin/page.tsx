@@ -543,6 +543,15 @@ function ProductsTab() {
           </div>
           <Link href="/admin/images-review" style={{ ...ghostBtn, textDecoration: "none", whiteSpace: "nowrap" }}>פתיחת מסך היישור ←</Link>
         </div>
+        {/* The free-angle screen got six PRs of work but no navigation link —
+            it was unreachable except by typing the URL. */}
+        <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>תיקון תמונות — זווית חופשית</div>
+            <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>סרגל לכל זווית (0–359°), גלילה אינסופית, ומעקב אילו תמונות כבר נבדקו.</div>
+          </div>
+          <Link href="/admin/fix-images" style={{ ...ghostBtn, textDecoration: "none", whiteSpace: "nowrap" }}>פתיחת מסך התיקון ←</Link>
+        </div>
       </div>
       {msg && <p style={{ fontFamily: tokens.assistant, color: tokens.body, fontSize: "0.9rem", marginBottom: "1rem" }}>{msg}</p>}
       {loadErr && <p style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.9rem", marginBottom: "1rem" }}>{loadErr}</p>}

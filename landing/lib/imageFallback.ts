@@ -23,10 +23,34 @@ export const ATTEMPT_EXHAUSTED = 3;
 
 export type FallbackStage = "proxy" | "proxy-retry" | "direct" | "exhausted" | "no-url";
 
-/** Direct fallback is allowed only for a real HTTPS source — never http:,
- *  data:, javascript: or free-text junk that happens to sit in the DB. */
+/** The exact Rivhit image host+path every legitimate product photo uses
+ *  (verified read-only: all 980 active products, and the deployed image-audit
+ *  function filters on the same prefix). The direct fallback and the proxy
+ *  server-side allowlist (supabase/functions/rivhit-img/lib.ts) are kept in
+ *  lockstep — one trusted origin, nothing else. */
+const RIVHIT_HOST = "api.rivhit.co.il";
+const RIVHIT_PATH_PREFIX = "/online/FileService.svc/getItemPic/";
+
+/** Direct fallback is allowed ONLY for a real HTTPS URL on the exact trusted
+ *  Rivhit host+path — never http:, data:, javascript:, an arbitrary HTTPS
+ *  tracking host, credentials, an odd port, or free-text junk in the DB.
+ *  Parsing with the URL API (not a regex) means userinfo/port tricks like
+ *  `https://api.rivhit.co.il@evil.com/…` cannot slip through. */
 export function isDirectFallbackAllowed(pictureLink: string): boolean {
-  return /^https:\/\//i.test(pictureLink || "");
+  let u: URL;
+  try {
+    u = new URL((pictureLink || "").trim());
+  } catch {
+    return false;
+  }
+  return (
+    u.protocol === "https:" &&
+    u.hostname.toLowerCase() === RIVHIT_HOST &&
+    !u.username &&
+    !u.password &&
+    (u.port === "" || u.port === "443") &&
+    u.pathname.startsWith(RIVHIT_PATH_PREFIX)
+  );
 }
 
 /** Human-readable stage (manager diagnostics only — customers never see it). */
@@ -65,4 +89,23 @@ export function nextAttempt(
       : { attempt: ATTEMPT_EXHAUSTED, delayMs: 0 };
   }
   return { attempt: ATTEMPT_EXHAUSTED, delayMs: 0 };
+}
+
+/** The complete onError decision, as pure data — ProductImage only executes
+ *  it. `schedule` = arm ONE timer for the next attempt; `fail` = terminal,
+ *  render the placeholder and report `attempt` as the stage that died. */
+export type ErrorDecision =
+  | { type: "schedule"; attempt: number; delayMs: number }
+  | { type: "fail"; attempt: number };
+
+export function reduceError(attempt: number, pictureLink: string, w = 480, rot = 0): ErrorDecision {
+  const next = nextAttempt(attempt, pictureLink);
+  if (!next) return { type: "fail", attempt };
+  // A next stage with nothing to load (e.g. non-HTTPS source before the
+  // direct hop) terminates immediately — recorded as the terminal attempt so
+  // stageOf reports "exhausted", never a live stage.
+  if (!srcForAttempt(pictureLink, next.attempt, w, rot)) {
+    return { type: "fail", attempt: next.attempt };
+  }
+  return { type: "schedule", attempt: next.attempt, delayMs: next.delayMs };
 }

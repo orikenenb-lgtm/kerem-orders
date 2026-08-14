@@ -57,6 +57,14 @@ export default function FixImagesPage() {
   const loadingRef = useRef(false);
   const genRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // Async helpers resolve after navigation away — never setState then.
+  // Strict Mode replays mount→cleanup→mount, so setup must re-arm the flag
+  // the replayed cleanup cleared.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -77,6 +85,7 @@ export default function FixImagesPage() {
       base(),
       base().eq("orient_human_ok", true),
     ]);
+    if (!mountedRef.current) return;
     setTotalAll(all ?? 0);
     setDone(reviewed ?? 0);
   }, []);
@@ -91,6 +100,11 @@ export default function FixImagesPage() {
     loadingRef.current = true;
     const gen = reset ? ++genRef.current : genRef.current;
     if (reset) { cursorRef.current = null; setHasMore(true); }
+    // NOTE: imgStatus is deliberately NOT cleared on reset. A card that
+    // survives the reset keeps its React instance (same key), so its
+    // ProductImage never re-reports — wiping the map would leave such cards
+    // with no status and therefore permanently disabled controls. The map is
+    // bounded by the catalog size (~1000 tiny entries), which is fine.
     setBusy(true);
 
     let q = supabase
