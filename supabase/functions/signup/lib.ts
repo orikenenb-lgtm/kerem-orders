@@ -75,6 +75,42 @@ export function publicSignupError(kind: SignupErrorKind): { status: number; mess
 
 /** Validate the request body into a normalized, safe shape or an error kind.
  *  Never trusts role/confirm fields from the client. */
+// ---------------------------------------------------------------------------
+// Turnstile siteverify response validation (pure, unit-tested)
+// ---------------------------------------------------------------------------
+
+/** The only hostname a PRODUCTION Turnstile solve may come from. */
+export const TURNSTILE_PROD_HOSTNAME = "orikenenb-lgtm.github.io";
+
+export type SiteverifyResponse = {
+  success?: boolean;
+  hostname?: string;
+  action?: string;
+  "error-codes"?: string[];
+};
+
+/** Decide whether a Cloudflare siteverify response is acceptable. Enforces:
+ *  - success === true;
+ *  - the widget action (when the response echoes one) matches expectedAction;
+ *  - in PRODUCTION, the solving hostname is exactly the GitHub Pages host and
+ *    never localhost/127.0.0.1.
+ *  In test mode (Cloudflare's official test keys, which don't echo a real
+ *  hostname) the hostname check is skipped but success is still required. */
+export function isTurnstileVerifyAcceptable(
+  data: SiteverifyResponse | null | undefined,
+  opts: { allowTest: boolean; expectedAction?: string },
+): boolean {
+  if (!data || data.success !== true) return false;
+  // Only enforce action when the response actually carries one (test keys omit it).
+  if (opts.expectedAction && typeof data.action === "string" && data.action.length > 0) {
+    if (data.action !== opts.expectedAction) return false;
+  }
+  if (opts.allowTest) return true;
+  const host = (data.hostname || "").toLowerCase();
+  if (!host || host === "localhost" || host === "127.0.0.1" || host === "[::1]") return false;
+  return host === TURNSTILE_PROD_HOSTNAME;
+}
+
 export type ParsedSignup =
   | { ok: true; email: string; password: string; role: typeof CUSTOMER_ROLE; emailConfirm: false }
   | { ok: false; kind: SignupErrorKind };
