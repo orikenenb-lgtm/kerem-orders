@@ -115,12 +115,42 @@ access breaks.
 The deployed `signup` has security weaknesses (auto-confirm, email-based
 manager promotion). A secure **proposed** replacement is in
 `supabase/functions/signup/` (clearly labeled proposed; it is NOT the deployed
-source). Deploy it only after: exporting+checksumming the current deployed
-`signup` privately, recording its version and `verify_jwt` state, local serve
-tests, and verifying normal registration + email verification + existing-user
-login **without creating a production test customer**. Same one-function-at-a-
-time discipline; rollback restores the private pre-deploy `signup` snapshot via
-the temp-workspace procedure above.
+source). It requires server-side Cloudflare Turnstile verification and never
+grants manager / never pre-confirms.
+
+**Required configuration BEFORE deploying signup (deploy is NO-GO without all):**
+
+1. **`TURNSTILE_SECRET`** stored as a Supabase Edge Function secret
+   (Dashboard → Project Settings → Edge Functions → Secrets, or
+   `npx supabase secrets set TURNSTILE_SECRET=… --project-ref mcdchalyzeqjkkgfeznd`).
+   Never paste the value into chat/commits. The signup gate fails **closed**
+   when it is absent, so deploying without it blocks every registration.
+2. **`TURNSTILE_SITE_KEY`** repository Actions **Variable** (public value) so
+   the Pages build bakes `NEXT_PUBLIC_TURNSTILE_SITE_KEY` into the frontend.
+   The deploy-pages workflow **fails hard** if this Variable is missing.
+   Both keys must belong to the SAME Turnstile widget, whose hostname is
+   restricted to `orikenenb-lgtm.github.io`.
+3. **Auth: Confirm email = ON**, Site URL and Redirect URLs set to
+   `https://orikenenb-lgtm.github.io/kerem-orders/` (verify in the Dashboard —
+   not changed automatically here).
+4. Frontend with the Turnstile widget already released to production Pages
+   (frontend ships FIRST; see the ordering note below).
+
+Then: export+checksum the current deployed `signup` v3 privately, record its
+`verify_jwt` state, run the local serve tests (needs Docker) with Cloudflare's
+official **test** keys and `TURNSTILE_ENV=test`, and verify registration →
+email-verification → existing-user login **without creating a production
+customer**. `config.toml` pins `[functions.signup] verify_jwt=false`. Deploy
+one function only:
+`npx supabase functions deploy signup --project-ref mcdchalyzeqjkkgfeznd --no-verify-jwt`.
+Rollback restores the private pre-deploy `signup` v3 snapshot via the
+temp-workspace procedure above.
+
+**Ordering:** the frontend Turnstile release (Pages) must go live BEFORE the
+signup backend is switched to the token-requiring version — otherwise a live
+form without a widget could not satisfy the new backend. During the brief
+window where the new frontend meets deployed `signup` v3, the extra
+`turnstileToken` field is simply ignored by v3, so nothing breaks.
 
 ---
 

@@ -25,6 +25,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   parseSignup,
   publicSignupError,
+  isTurnstileVerifyAcceptable,
   type SignupErrorKind,
 } from "./lib.ts";
 
@@ -45,22 +46,30 @@ function fail(kind: SignupErrorKind): Response {
   return json({ ok: kind === "signup_failed", message: e.message }, e.status);
 }
 
-/** Verify a Cloudflare Turnstile token server-side. If TURNSTILE_SECRET is not
- *  configured the gate is treated as unavailable and signup is refused rather
- *  than silently open. */
-async function verifyTurnstile(token: unknown): Promise<boolean> {
+/** Verify a Cloudflare Turnstile token server-side, with a bounded timeout and
+ *  success + action + (production) hostname checks. If TURNSTILE_SECRET is not
+ *  configured the gate is treated as unavailable and signup is REFUSED rather
+ *  than silently open. TURNSTILE_ENV=test relaxes the hostname check for local/
+ *  CI runs that use Cloudflare's official test keys. The token/secret are never
+ *  logged. */
+async function verifyTurnstile(token: unknown, remoteIp: string | null): Promise<boolean> {
   const secret = Deno.env.get("TURNSTILE_SECRET");
   if (!secret) return false;
   if (typeof token !== "string" || !token) return false;
+  const allowTest = Deno.env.get("TURNSTILE_ENV") === "test";
   try {
+    const params = new URLSearchParams({ secret, response: token });
+    if (remoteIp) params.set("remoteip", remoteIp);
     const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ secret, response: token }),
+      body: params,
+      signal: AbortSignal.timeout(5000),
     });
     const data = await r.json();
-    return data?.success === true;
+    return isTurnstileVerifyAcceptable(data, { allowTest, expectedAction: "signup" });
   } catch {
+    // Network error / timeout / non-JSON → fail closed.
     return false;
   }
 }
@@ -76,8 +85,10 @@ Deno.serve(async (req) => {
     return fail("invalid_input");
   }
 
-  // Abuse protection before doing any work.
-  if (!(await verifyTurnstile(body?.turnstileToken))) return fail("captcha_failed");
+  // Abuse protection before doing any work. Pass the caller IP (if the edge
+  // provides it) to Cloudflare for an extra signal; never logged.
+  const remoteIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for");
+  if (!(await verifyTurnstile(body?.turnstileToken, remoteIp))) return fail("captcha_failed");
 
   const parsed = parseSignup(body);
   if (!parsed.ok) return fail(parsed.kind);

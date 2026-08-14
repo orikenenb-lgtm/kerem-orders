@@ -18,6 +18,7 @@ writeFileSync(join(tmp, "lib.mjs"), js);
 const {
   CUSTOMER_ROLE, normalizeEmail, isValidEmail, isAcceptablePassword,
   resolveRole, EMAIL_CONFIRM_ON_PUBLIC_SIGNUP, publicSignupError, parseSignup,
+  isTurnstileVerifyAcceptable, TURNSTILE_PROD_HOSTNAME,
 } = await import(pathToFileURL(join(tmp, "lib.mjs")).href);
 
 let n = 0;
@@ -86,6 +87,31 @@ t("repeated automated signups are gated (rate_limited maps to 429)", () => {
   // The edge function requires a Turnstile token and relies on Auth's per-IP
   // limits; the rate-limited response is a generic 429.
   assert.equal(publicSignupError("rate_limited").status, 429);
+});
+
+// ---- Turnstile siteverify response validation ----
+t("siteverify: production requires success + exact GitHub Pages hostname", () => {
+  assert.equal(TURNSTILE_PROD_HOSTNAME, "orikenenb-lgtm.github.io");
+  const ok = { success: true, hostname: "orikenenb-lgtm.github.io", action: "signup" };
+  assert.equal(isTurnstileVerifyAcceptable(ok, { allowTest: false, expectedAction: "signup" }), true);
+  // failures:
+  assert.equal(isTurnstileVerifyAcceptable({ success: false, hostname: "orikenenb-lgtm.github.io" }, { allowTest: false }), false);
+  assert.equal(isTurnstileVerifyAcceptable({ success: true, hostname: "evil.example" }, { allowTest: false }), false);
+  assert.equal(isTurnstileVerifyAcceptable({ success: true, hostname: "localhost" }, { allowTest: false }), false);
+  assert.equal(isTurnstileVerifyAcceptable({ success: true, hostname: "127.0.0.1" }, { allowTest: false }), false);
+  assert.equal(isTurnstileVerifyAcceptable({ success: true, hostname: "" }, { allowTest: false }), false);
+  assert.equal(isTurnstileVerifyAcceptable(null, { allowTest: false }), false);
+});
+t("siteverify: action mismatch is rejected when the response echoes an action", () => {
+  const wrongAction = { success: true, hostname: "orikenenb-lgtm.github.io", action: "login" };
+  assert.equal(isTurnstileVerifyAcceptable(wrongAction, { allowTest: false, expectedAction: "signup" }), false);
+  // when no action is echoed (test keys), action is not enforced
+  const noAction = { success: true, hostname: "orikenenb-lgtm.github.io" };
+  assert.equal(isTurnstileVerifyAcceptable(noAction, { allowTest: false, expectedAction: "signup" }), true);
+});
+t("siteverify: test mode relaxes the hostname check but still requires success", () => {
+  assert.equal(isTurnstileVerifyAcceptable({ success: true, hostname: "localhost" }, { allowTest: true }), true);
+  assert.equal(isTurnstileVerifyAcceptable({ success: false, hostname: "localhost" }, { allowTest: true }), false);
 });
 
 console.log(`\n${n} signup tests passed`);
