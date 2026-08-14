@@ -1,13 +1,23 @@
 # Edge Functions — export, deployment and rollback runbook
 
-Status: **NOTHING in this runbook has been executed.** It is the exact
-procedure for the owner-approved future deployment of the hardened
-`rivhit-img` (`supabase/functions/rivhit-img/`, a PROPOSED implementation —
-see its README for provenance). Every step is owner-gated.
+Status: **Steps 0–1 were EXECUTED on 2026-08-14** (owner login + read-only
+export). Steps 2–5 (deployment) remain owner-gated and NOT executed.
 
-Project ref: `mcdchalyzeqjkkgfeznd` · Functions live only in Supabase (not in
-Git) as of 2026-08-13: `rivhit-img`, `rivhit-sync`, `rivhit-push`, `signup`,
-`detect-orientation`.
+- The byte-exact deployed sources are vendored in
+  `supabase/functions-deployed/` (see its README for versions + hashes) and
+  archived privately outside Git
+  (`Documents\kerem-orders-deployed-functions-BACKUP-2026-08-14.zip`).
+- Secret scan of the export: **zero embedded literals** — all credentials
+  are runtime `Deno.env.get(...)` or Vault RPCs, so the committed copy is
+  identical to production (nothing sanitized).
+- The export revealed **11 ACTIVE functions**, not 5: additionally
+  `image-audit`, `image-thumbs`, and four retired `rivhit-probe-*` stubs
+  (each answers `410 gone`).
+- Deployed `rivhit-img` is **v11**,
+  `ezbr_sha256 d0752de68da33770435afc477c13cb582499608dba47657b0abdbbd24522c4ba`.
+
+Project ref: `mcdchalyzeqjkkgfeznd`. The hardened replacement under
+`supabase/functions/rivhit-img/` remains a PROPOSED implementation.
 
 ---
 
@@ -90,8 +100,10 @@ curl -s -o /dev/null --max-time 20 \
   "https://mcdchalyzeqjkkgfeznd.supabase.co/functions/v1/rivhit-img?u=<enc>&w=480&v=2"
 # expect: status=200 type=image/jpeg bytes>0
 # 2. a rot=90 product — compare orientation with the pre-deploy screenshot;
-#    if it rotated the WRONG way, rollback immediately (ImageScript rotation
-#    direction was flagged as needing live verification).
+#    if it rotated the WRONG way, rollback immediately. (Low risk since
+#    2026-08-14: the proposed pipeline now mirrors the vendored deployed v11
+#    — same imagescript@1.3.0 rotate() call, same EXIF mapping — so this is
+#    a sanity check, not an open question.)
 # 3. an invalid u — expect 400 within ~100ms.
 # 4. run the read-only sweep on a 60-product sample:
 SUPABASE_KEY=<anon publishable key> node scripts/diagnose-images.mjs --limit 60

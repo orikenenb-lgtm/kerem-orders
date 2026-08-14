@@ -17,7 +17,7 @@ const tmp = mkdtempSync(join(tmpdir(), "rimg-"));
 writeFileSync(join(tmp, "lib.mjs"), js);
 const {
   LIMITS, parseRequest, validateUpstreamUrl, classifyUpstream, sniffImage,
-  parseExifOrientation, exifOrientationToDegrees, normalizeRotation, exceedsPixelCap,
+  parseExifOrientation, exifOrientationToDegrees, normalizeRotation, exceedsPixelCap, preRotateCapFor,
   statusForError, cacheKeyFor, successHeaders, errorHeaders, errorBody,
 } = await import(pathToFileURL(join(tmp, "lib.mjs")).href);
 
@@ -149,6 +149,13 @@ t("the pixel cap admits a real 12MP phone photo and rejects just above it", () =
   assert.equal(exceedsPixelCap(4200, 3000), false); // 12,600,000 exactly — allowed
   assert.equal(exceedsPixelCap(4201, 3000), true);  // one column over — rejected
   assert.ok(LIMITS.maxSourcePixels * 4 < 64 * 1024 * 1024, "decoded RGBA must fit the worker budget");
+});
+t("shrink-before-rotate cap matches the deployed v11 rule exactly", () => {
+  assert.equal(LIMITS.preRotateCapPx, 1024);         // deployed HARD_CAP_PX
+  assert.equal(preRotateCapFor(0), 1024);            // w=0: original, capped
+  assert.equal(preRotateCapFor(480), 480);           // grid width — no upscale
+  assert.equal(preRotateCapFor(100), 320);           // deployed floor of 320
+  assert.equal(preRotateCapFor(1600), 1024);         // never above the cap
 });
 t("junk bytes are not an image", () => {
   assert.equal(sniffImage(new TextEncoder().encode("<html>oops, an error page</html>....................")), null);

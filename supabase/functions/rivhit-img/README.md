@@ -39,7 +39,7 @@ A **proposed replacement** implementation, written to the live function's
 | observed behavior | kept here |
 |---|---|
 | `GET ?u=<enc>&w=480&v=2[&rot=N]` → `image/jpeg`, `Cache-Control: public, max-age=2592000, immutable` | ✔ identical |
-| `rot` = extra **clockwise** degrees applied after the EXIF fix; each (u,w,v,rot) tuple is its own cache entry | ✔ identical (direction must be re-verified on a sample before cut-over — runbook step 4) |
+| `rot` = extra **clockwise** degrees applied after the EXIF fix; each (u,w,v,rot) tuple is its own cache entry | ✔ identical (direction now matches by construction — the vendored deployed v11 uses the same imagescript@1.3.0 `rotate()` call and EXIF mapping; runbook step 4 still eyeballs one rot=90 sample) |
 | `w=0`/absent → untouched original passthrough | ✔ identical |
 | `meta=1` → `application/json` `{"size":n,"orientation":n}`, `no-store`, reads only ~256 KB | ✔ same shape; `size` caps at 262400 for larger files (matches the deployed cap observed live) |
 | invalid `u` (missing / non-https / foreign host / non-getItemPic path) → HTTP 400 (deployed body: text `bad url`) | ✔ same status; body upgraded to sanitized JSON `{error,reason}` — the client only checks status + magic bytes |

@@ -1,10 +1,12 @@
 // rivhit-img — hardened product-image proxy for Supabase Edge Functions.
 //
-// ⚠️ PROVENANCE: this is a PROPOSED REPLACEMENT, written to the live
-// function's observable contract (probed 2026-08-13, see README.md). It is
-// NOT the currently deployed source — that was never committed to Git and
-// exporting it requires an owner `supabase login`. DO NOT deploy without the
-// runbook in docs/edge-functions-runbook.md and owner approval.
+// ⚠️ PROVENANCE: this is a PROPOSED REPLACEMENT. The real deployed source
+// (v11) was exported on 2026-08-14 and lives byte-exact in
+// supabase/functions-deployed/rivhit-img/ — the transform pipeline below
+// mirrors its decode→shrink→rotate→composite→fit order exactly, and the
+// validation/limits/caching layers are the hardening this PR adds on top.
+// DO NOT deploy without the runbook in docs/edge-functions-runbook.md and
+// owner approval.
 //
 // Contract kept (verified against production):
 //   GET ?u=<https Rivhit getItemPic URL>[&w=N&v=2][&rot=0-359][&meta=1]
@@ -38,6 +40,7 @@ import {
   exifOrientationToDegrees,
   parseExifOrientation,
   parseRequest,
+  preRotateCapFor,
   sniffImage,
   statusForError,
   successHeaders,
@@ -232,13 +235,28 @@ async function process(req: ProxyRequest): Promise<Baked> {
       return errorBaked("decode_failure", "could not decode source image");
     }
 
-    // ⚠️ Rotation direction MUST be validated against the deployed output
-    // before cut-over (runbook step 4): the contract is "rot = extra
-    // CLOCKWISE degrees", and ImageScript's rotate() direction has to be
-    // confirmed to match on a rot=90 sample.
-    if (totalRotation !== 0) img.rotate(totalRotation);
+    // Deployed-v11 pipeline, kept exactly: shrink FIRST (that was the actual
+    // 546 hotfix — rotate/composite never touch a full-resolution bitmap),
+    // then rotate, compositing free angles onto opaque white so exposed
+    // corners don't encode as black, then the final fit. rotate()/resize()
+    // return a new Image — the result MUST be reassigned (the deployed
+    // source reassigns at every step; dropping the return value silently
+    // serves the untransformed image). Rotation direction matches deployed
+    // by construction: same imagescript@1.3.0, same rotate() call, same
+    // EXIF mapping (runbook step 4 still eyeballs one rot=90 sample).
+    const preCap = preRotateCapFor(req.width);
+    if (img.width > preCap) img = img.resize(preCap, Image.RESIZE_AUTO) as Image;
+    if (totalRotation !== 0) {
+      img = img.rotate(totalRotation) as Image;
+      if (totalRotation % 90 !== 0) {
+        const canvas = new Image(img.width, img.height);
+        canvas.fill(0xffffffff); // opaque white, matching the studio background
+        canvas.composite(img, 0, 0);
+        img = canvas;
+      }
+    }
     if (req.width > 0 && img.width > req.width) {
-      img.resize(req.width, Image.RESIZE_AUTO);
+      img = img.resize(req.width, Image.RESIZE_AUTO) as Image;
     }
 
     const out = await img.encodeJPEG(78);

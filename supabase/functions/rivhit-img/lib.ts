@@ -42,6 +42,11 @@ export const LIMITS = {
   /** Resize width bounds; w=0 means "serve the original untouched". */
   minWidth: 16,
   maxWidth: 1600,
+  /** Shrink-BEFORE-rotate cap — the deployed v11's actual hotfix: never hold
+   *  a bitmap wider than this while rotating/compositing, whatever the source
+   *  resolution. Identical to the deployed HARD_CAP_PX so rotated output
+   *  stays visually identical across cut-over. */
+  preRotateCapPx: 1024,
   /** Concurrent decodes per worker; queue beyond this fails fast instead of
    *  exhausting the worker (the measured 546 failure mode). */
   maxConcurrentDecodes: 2,
@@ -223,6 +228,15 @@ export type SniffedImage = { format: "jpeg" | "png" | "gif" | "webp"; width: num
  *  BEFORE the expensive decode. */
 export function exceedsPixelCap(width: number, height: number, cap: number = LIMITS.maxSourcePixels): boolean {
   return width * height > cap;
+}
+
+/** Width to shrink to BEFORE any rotate/composite — byte-for-byte the
+ *  deployed v11 rule: min(HARD_CAP, max(w, 320)), or HARD_CAP when serving
+ *  the original size. Keeps peak memory flat however large the source is. */
+export function preRotateCapFor(requestedWidth: number): number {
+  return requestedWidth > 0
+    ? Math.min(LIMITS.preRotateCapPx, Math.max(requestedWidth, 320))
+    : LIMITS.preRotateCapPx;
 }
 
 /** Read the pixel dimensions from the container header so oversized images
