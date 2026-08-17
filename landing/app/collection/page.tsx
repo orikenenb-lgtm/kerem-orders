@@ -26,6 +26,9 @@ type CollectionProduct = {
   in_stock: boolean;
   rotation_override: number | null;
   price: number | null;
+  /** Price before the collection discount — for the struck-through original. */
+  list_price: number | null;
+  discount_percent: number | string | null;
   collection_name: string;
   show_prices: boolean;
   total: number;
@@ -44,6 +47,7 @@ function CollectionCatalog() {
   const [total, setTotal] = useState(0);
   const [collectionName, setCollectionName] = useState("");
   const [showPrices, setShowPrices] = useState(false);
+  const [discount, setDiscount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState(false);
   // Distinguish "collection empty/unknown" from "search found nothing".
@@ -91,6 +95,7 @@ function CollectionCatalog() {
       setKnown(true);
       setCollectionName(rows[0].collection_name);
       setShowPrices(rows[0].show_prices);
+      setDiscount(Number(rows[0].discount_percent) || 0);
       setTotal(Number(rows[0].total ?? 0));
     } else if (page === 0) {
       // No rows: unknown slug OR a search with no hits. Without a search this
@@ -146,6 +151,11 @@ function CollectionCatalog() {
         קטלוג מותאם אישית · {total.toLocaleString("he-IL")} מוצרים · לצפייה בלבד
         {showPrices ? " · המחירים כוללים מע״מ" : ""}
       </p>
+      {showPrices && discount > 0 && (
+        <p style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", color: "#1A7A4D", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 999, padding: "0.4rem 1rem", display: "inline-block", marginTop: "0.6rem" }}>
+          🎁 הנחה של {discount}% על כל המוצרים בקטלוג — כבר מחושבת במחירים
+        </p>
+      )}
 
       <div style={{ position: "sticky", top: 64, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
         <input
@@ -190,8 +200,13 @@ function CollectionCatalog() {
                   <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>{p.category}</div>
                 )}
                 {showPrices && p.price != null && (
-                  <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>
-                    {ils(Number(p.price) || 0)}
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem", flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: discount > 0 ? "#1A7A4D" : tokens.text }}>
+                      {ils(Number(p.price) || 0)}
+                    </span>
+                    {discount > 0 && p.list_price != null && (
+                      <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(Number(p.list_price) || 0)}</s>
+                    )}
                   </div>
                 )}
               </button>
@@ -307,8 +322,11 @@ function CollectionPreview({ product, showPrice, onClose }: {
           </p>
         )}
         {showPrice && product.price != null && (
-          <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.35rem", color: tokens.text, margin: 0 }}>
+          <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.35rem", color: Number(product.discount_percent) > 0 ? "#1A7A4D" : tokens.text, margin: 0 }}>
             {ils(Number(product.price) || 0)}
+            {Number(product.discount_percent) > 0 && product.list_price != null && (
+              <s style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.9rem", color: tokens.dim }}> {ils(Number(product.list_price) || 0)}</s>
+            )}
             <span style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.85rem", color: tokens.dim }}> · כולל מע״מ</span>
           </p>
         )}
