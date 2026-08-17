@@ -72,6 +72,25 @@ export function resolveQuantity(p: QuantityProduct, requestedQty: unknown): Reso
   return { units, displays, cartons, wasAdjusted: units !== requested, priceTotal, step };
 }
 
+// Correct Hebrew plurals for the pack presets the admin editor offers
+// (admin PACK_NAMES). A blind `name + "ים"` mangles two of them —
+// "קרטונית" → "קרטוניתים" (should be קרטוניות), "דיספליי" → "דיספלייים".
+const PACK_PLURALS: Record<string, string> = {
+  "מארז": "מארזים",
+  "מגש": "מגשים",
+  "קרטונית": "קרטוניות",
+  "דיספליי": "דיספליי",
+};
+
+/** The pack noun for `count` units of `name`. Uses the correct plural for the
+ *  known presets; for a free-text name it keeps the name as-is rather than
+ *  appending "ים" and risking a mangled word. */
+export function pluralPack(name: string, count: number): string {
+  const base = (name || "מארז").trim() || "מארז";
+  if (count === 1) return base;
+  return PACK_PLURALS[base] ?? base;
+}
+
 /** "2 מארזים (24 יח׳)" / "24 יח׳" — the human description used in cards,
  *  cart lines and order summaries. */
 export function describeQuantity(p: QuantityProduct, units: number): string {
@@ -80,7 +99,7 @@ export function describeQuantity(p: QuantityProduct, units: number): string {
   const unitWord = "יח׳";
   if (displayQty > 1 && units > 0 && units % displayQty === 0) {
     const packs = units / displayQty;
-    const packWord = packs === 1 ? name : name + "ים";
+    const packWord = pluralPack(name, packs);
     return `${packs.toLocaleString("he-IL")} ${packWord} (${units.toLocaleString("he-IL")} ${unitWord})`;
   }
   return `${units.toLocaleString("he-IL")} ${unitWord}`;

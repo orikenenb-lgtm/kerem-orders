@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SiteHeader from "./SiteHeader";
 import SiteFooter from "./SiteFooter";
 import { supabase } from "../../lib/supabaseClient";
-import { rivhitImg } from "../../lib/images";
+import ProductImage from "./ProductImage";
 import { tokens, ils } from "../../lib/ui";
 import { orderExactFirst } from "../../lib/searchRank";
 
@@ -189,6 +189,8 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
         <div style={{ position: "sticky", top: 64, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
           <input
             type="search"
+            id="kt-public-search"
+            name="public-search"
             // A real programmatic name — placeholder alone is not a label
             // (it vanishes on input and many screen readers skip it).
             aria-label="חיפוש מוצר לפי שם"
@@ -243,7 +245,6 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
               {products.map((p, i) => {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
-                const img = rivhitImg(p.picture_link, 480, p.rotation_override ?? 0);
                 return (
                   // The whole card is one real <button>: reachable with Tab,
                   // activated with Enter/Space, announced with the product
@@ -265,7 +266,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                         ever cropped or stretched, small inner padding, one
                         background for photographed-on-white images. */}
                     <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "2.6rem", padding: 8 }}>
-                      <ProductImg src={img} alt={p.name} />
+                      <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} />
                     </div>
                     <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", margin: 0 }}>{p.name}</h3>
                     {p.category && (
@@ -333,10 +334,6 @@ function ProductPreview({ product, showPrice, vatLabel, onClose }: {
   // "zoom" state simply lets the image use the full panel height and native
   // pinch-zoom keeps working — nothing is hijacked.
   const [zoomed, setZoomed] = useState(false);
-
-  // Big image: request a wider variant for the dialog; zoom = the original.
-  const imgSmall = rivhitImg(product.picture_link, 480, product.rotation_override ?? 0);
-  const imgBig = rivhitImg(product.picture_link, 960, product.rotation_override ?? 0);
 
   useEffect(() => {
     closeBtnRef.current?.focus();
@@ -408,7 +405,8 @@ function ProductPreview({ product, showPrice, vatLabel, onClose }: {
           aria-label={zoomed ? "הקטנת התמונה" : "הגדלת התמונה"}
           style={{ border: `1px solid ${tokens.border}`, borderRadius: 14, background: "#fff", padding: 8, cursor: "zoom-in", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 220, maxHeight: zoomed ? "70dvh" : 340, overflow: "hidden", fontSize: "3rem" }}
         >
-          <ProductImg src={zoomed ? imgBig : imgSmall} alt={product.name} />
+          {/* zoom = request the wider 960 variant for the dialog */}
+          <ProductImage pictureLink={product.picture_link} name={product.name} width={zoomed ? 960 : 480} rotation={product.rotation_override ?? 0} />
         </button>
         <p style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim, textAlign: "center", margin: 0 }}>
           {zoomed ? "לחיצה נוספת מקטינה חזרה" : "אפשר ללחוץ על התמונה להגדלה"}
@@ -448,14 +446,3 @@ const ghostBtn = {
   borderRadius: 999,
   cursor: "pointer",
 } as const;
-
-// Product image with a graceful fallback: if the (proxied) image fails to load,
-// show the toy emoji instead of a broken-image icon.
-function ProductImg({ src, alt }: { src: string | null; alt: string }) {
-  const [err, setErr] = useState(false);
-  useEffect(() => { setErr(false); }, [src]);
-  if (!src || err) return <span>🧸</span>;
-  return (
-    <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-  );
-}

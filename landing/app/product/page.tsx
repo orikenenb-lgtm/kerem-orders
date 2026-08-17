@@ -1,16 +1,17 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
+import ProductImage from "../components/ProductImage";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
-import { rivhitImg } from "../../lib/images";
 import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
 import { featureFlags } from "../../lib/featureFlags";
 import { resolveQuantity, stepOf } from "../../lib/quantity";
+import { readCart } from "../../lib/cart";
 
 const ffQty = featureFlags.ff_display_quantities;
 const CART_KEY = "kt_cart_v2";
@@ -36,23 +37,13 @@ type Product = {
   is_active?: boolean;
 };
 
-// Image with graceful emoji fallback (same behavior as the catalog).
-function ProductImg({ src, alt, style }: { src: string; alt: string; style?: React.CSSProperties }) {
-  const [err, setErr] = useState(false);
-  useEffect(() => { setErr(false); }, [src]);
-  if (!src || err) return <span style={{ fontSize: "4rem" }}>🧸</span>;
-  return <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} style={style} />;
-}
-
 // Add `addUnits` to the SAME localStorage cart the catalog uses, through the
 // SAME shared resolver — so a line added here is byte-identical to one added
 // from the catalog, and the checkout reconcile never flags it.
 function addToCart(p: Product, addUnits: number, discount: number) {
-  let cart: Record<string, { qty: number; name: string; price: number; sku: string | null; picture_link: string; display_qty?: number | null; display_name?: string | null }> = {};
-  try {
-    const raw = localStorage.getItem(CART_KEY);
-    if (raw) cart = JSON.parse(raw);
-  } catch { /* ignore */ }
+  const cart = readCart<{ qty: number; name: string; price: number; sku: string | null; picture_link: string; display_qty?: number | null; display_name?: string | null }>(
+    localStorage.getItem(CART_KEY)
+  );
   const existing = Number(cart[p.id]?.qty) || 0;
   const requested = existing + addUnits;
   const q = ffQty ? resolveQuantity(p, Math.min(requested, 9999)).units : Math.min(requested, 9999);
@@ -96,12 +87,18 @@ function ProductDetail() {
     });
   }, [session]);
 
+  // Drop superseded responses: clicking through "מוצרים דומים" fires a new
+  // load before the previous one resolves, so an earlier product's response
+  // could otherwise overwrite a later one (same guard the catalog uses).
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
     if (!session) return;
     if (!id) { setBusy(false); setNotFound(true); return; }
+    const seq = ++loadSeq.current;
     setBusy(true);
     setNotFound(false);
     const { data, error } = await supabase.from("products").select(PROD_COLS).eq("id", id).eq("is_active", true).maybeSingle();
+    if (seq !== loadSeq.current) return;
     if (error) { setBusy(false); setNotFound(true); return; }
     if (!data) { setBusy(false); setNotFound(true); return; }
     const p = data as Product;
@@ -118,6 +115,7 @@ function ProductDetail() {
         .neq("id", p.id)
         .order("name")
         .limit(8);
+      if (seq !== loadSeq.current) return;
       setRelated((rel as Product[]) ?? []);
     } else {
       setRelated([]);
@@ -145,7 +143,6 @@ function ProductDetail() {
   }
 
   const p = product;
-  const img = rivhitImg(p.picture_link, 900, p.rotation_override ?? 0);
   const step = ffQty ? stepOf(p) : 1;
   const unitPrice = applyDiscount(p.price, discount);
   // The button total reflects the quantity that will ACTUALLY be added: for
@@ -163,8 +160,13 @@ function ProductDetail() {
 
       <div style={{ display: "grid", gap: "clamp(1.5rem,4vw,3rem)", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", alignItems: "start" }}>
         {/* image */}
-        <div style={{ background: "#fff", border: `1px solid ${tokens.border}`, borderRadius: 20, padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 340, boxShadow: tokens.shadowCard }}>
-          <ProductImg src={img} alt={p.name} style={{ maxWidth: "100%", maxHeight: 440, width: "auto", height: "auto", objectFit: "contain" }} />
+        {/* Fixed 1:1 box reserves the space before the async image loads, so
+            the details below don't jump when it arrives (matches the grid
+            cards' aspect-ratio approach — no CLS). */}
+        <div style={{ background: "#fff", border: `1px solid ${tokens.border}`, borderRadius: 20, padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center", aspectRatio: "1 / 1", maxHeight: 480, boxShadow: tokens.shadowCard }}>
+          <ProductImage pictureLink={p.picture_link} name={p.name} width={900} rotation={p.rotation_override ?? 0}
+            imgStyle={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto" }}
+            placeholderStyle={{ fontSize: "4rem" }} />
         </div>
 
         {/* details */}
@@ -222,14 +224,13 @@ function ProductDetail() {
           <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.3rem", color: tokens.text, marginBottom: "1.2rem" }}>מוצרים דומים</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "1rem" }}>
             {related.map((r) => {
-              const rImg = rivhitImg(r.picture_link, 480, r.rotation_override ?? 0);
               const rPrice = applyDiscount(r.price, discount);
               return (
                 <Link key={r.id} href={`/product/?id=${r.id}`} className="kt-card" style={{ textDecoration: "none", border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.8rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                   {/* Same uniform frame as the catalog cards: square, contain,
                       inner padding, white background. */}
                   <div style={{ aspectRatio: "1 / 1", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
-                    <ProductImg src={rImg} alt={r.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                    <ProductImage pictureLink={r.picture_link} name={r.name} rotation={r.rotation_override ?? 0} placeholderStyle={{ fontSize: "2.6rem" }} />
                   </div>
                   <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.2em" }}>{r.name}</div>
                   <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: discount > 0 ? "#1A7A4D" : tokens.text }}>{ils(rPrice)}</div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase } from "../../lib/supabaseClient";
+import { getMinOrderTotal } from "../../lib/siteSettings";
 import { tokens } from "../../lib/ui";
 import {
   MIN_ORDER_FALLBACK,
@@ -21,15 +21,7 @@ export default function LandingV2() {
   const [minOrder, setMinOrder] = useState(MIN_ORDER_FALLBACK);
 
   useEffect(() => {
-    supabase
-      .from("site_settings")
-      .select("value")
-      .eq("key", "min_order_total")
-      .maybeSingle()
-      .then(({ data }) => {
-        const n = Number((data as { value: string } | null)?.value);
-        if (Number.isFinite(n) && n > 0) setMinOrder(n);
-      });
+    getMinOrderTotal().then(setMinOrder);
   }, []);
 
   return (

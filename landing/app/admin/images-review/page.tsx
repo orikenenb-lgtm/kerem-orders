@@ -7,13 +7,14 @@
 // a rotation; it saves to products.rotation_override (safe from the nightly
 // sync) and the proxy re-renders that image upright everywhere on the site.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
+import ProductImage, { type ProductImageStatus } from "../../components/ProductImage";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
-import { rivhitImg } from "../../../lib/images";
+import { isDirectFallbackAllowed } from "../../../lib/imageFallback";
 import { tokens } from "../../../lib/ui";
 
 type Row = {
@@ -44,6 +45,17 @@ export default function ImagesReviewPage() {
   const [aiRunning, setAiRunning] = useState(false);
   const [aiMsg, setAiMsg] = useState("");
   const aiStopRef = useRef(false);
+  // Async helpers resolve after navigation away — never setState then. Also
+  // guards the AI-scan continuation after an in-flight invoke resolves
+  // post-unmount, and the cleanup below stops the scan loop itself.
+  // Strict Mode replays mount→cleanup→mount, so setup must re-arm mountedRef
+  // or every post-request setState is dropped and the AI scan exits after its
+  // first invoke. aiStopRef needs no re-arm here: runAiScan resets it itself.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; aiStopRef.current = true; };
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -59,6 +71,7 @@ export default function ImagesReviewPage() {
       .eq("is_active", true)
       .not("rotation_override", "is", null)
       .neq("rotation_override", 0);
+    if (!mountedRef.current) return;
     setFixedCount(count ?? 0);
   }, []);
 
@@ -72,8 +85,13 @@ export default function ImagesReviewPage() {
   }, [input]);
   useEffect(() => { setPage(0); }, [onlyFixed]);
 
+  // Generation guard: a slower earlier query (search/filter/page) must not
+  // overwrite a newer one that already resolved, and nothing setState's after
+  // unmount. Each load bumps the generation; a stale response is dropped.
+  const loadGenRef = useRef(0);
   const load = useCallback(async () => {
     if (!isManager) return;
+    const gen = ++loadGenRef.current;
     setBusy(true);
     let q = supabase
       .from("products")
@@ -86,6 +104,8 @@ export default function ImagesReviewPage() {
     const { data, count, error } = await q
       .order("name", { ascending: true })
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
+    // Drop a superseded or post-unmount response before touching any state.
+    if (gen !== loadGenRef.current || !mountedRef.current) return;
     if (error) { setLoadErr(true); setBusy(false); return; }
     setLoadErr(false);
     setRows((data as Row[]) ?? []);
@@ -107,6 +127,7 @@ export default function ImagesReviewPage() {
       .update({ rotation_override: value })
       .eq("id", id)
       .select("id");
+    if (!mountedRef.current) return; // navigated away mid-save — don't touch state
     setSavingId(null);
     if (error || !data || data.length === 0) {
       // revert + tell the manager
@@ -116,6 +137,11 @@ export default function ImagesReviewPage() {
     }
     loadFixedCount();
   };
+  // Stable identity for the memoized cards (same pattern as fix-images):
+  // aiMsg ticking during a scan must not re-render all 30 image cards.
+  const setRotationRef = useRef(setRotation);
+  useEffect(() => { setRotationRef.current = setRotation; });
+  const onRotate = useCallback((id: string, deg: number) => { setRotationRef.current(id, deg); }, []);
 
   const stopAiScan = () => { aiStopRef.current = true; };
 
@@ -131,6 +157,7 @@ export default function ImagesReviewPage() {
       for (let round = 0; round < 300; round++) {
         if (aiStopRef.current) { setAiMsg(`נעצר · נסרקו ${checked.toLocaleString("he-IL")}, סובבו ${flipped.toLocaleString("he-IL")}`); break; }
         const { data, error } = await supabase.functions.invoke("detect-orientation", { body: { limit: 20 } });
+        if (!mountedRef.current) return;
         if (error) {
           let msg = "שגיאה בסריקה.";
           try { const ctx = (error as { context?: Response }).context; if (ctx && typeof ctx.json === "function") { const b = await ctx.json(); if (b?.error) msg = b.error; } } catch { /* */ }
@@ -146,10 +173,12 @@ export default function ImagesReviewPage() {
         if ((d.checked ?? 0) === 0) { setAiMsg("נעצר: לא ניתן היה לעבד תמונות (בדקו מפתח API / מכסה) ונסו שוב."); break; }
       }
     } catch (e) {
-      setAiMsg("שגיאת רשת בסריקה: " + String((e as Error)?.message ?? e));
+      if (mountedRef.current) setAiMsg("שגיאת רשת בסריקה: " + String((e as Error)?.message ?? e));
     } finally {
-      setAiRunning(false);
-      load();
+      if (mountedRef.current) {
+        setAiRunning(false);
+        load();
+      }
     }
   }, [loadFixedCount, load]);
 
@@ -237,7 +266,7 @@ export default function ImagesReviewPage() {
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "1.2rem" }}>
             {rows.map((r) => (
-              <ImageCard key={r.id} row={r} saving={savingId === r.id} onRotate={(deg) => setRotation(r.id, deg)} />
+              <ImageCard key={r.id} row={r} saving={savingId === r.id} onRotate={onRotate} />
             ))}
           </div>
         )}
@@ -254,27 +283,57 @@ export default function ImagesReviewPage() {
   );
 }
 
-function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRotate: (deg: number) => void }) {
+// memo + stable onRotate: page-level state ticks (AI scan progress, savingId)
+// must not re-render every card — each card owns an <img> whose remount
+// would refetch.
+const ImageCard = memo(function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRotate: (id: string, deg: number) => void }) {
   const saved = row.rotation_override ?? 0;
   // Preview-before-save: picking a rotation only changes the LOCAL preview.
   // Nothing touches the DB until the manager presses שמירה, and ביטול returns
   // to the saved state. (The old version wrote on every rotation click, so a
   // wrong press was live on the site for a moment before being corrected.)
+  //
+  // The preview requests the SAME plain w=480 variant the catalog caches and
+  // rotates with CSS — the old per-click `w=360&rot=draft` variants forced the
+  // proxy to re-decode the ~3MB original for every angle of every card, the
+  // exact overload that made whole screenfuls of images fail.
   const [draft, setDraft] = useState(saved);
-  const [imgErr, setImgErr] = useState(false);
+  const [status, setStatus] = useState<ProductImageStatus | undefined>();
+  const [retryKey, setRetryKey] = useState(0);
   useEffect(() => { setDraft(saved); }, [saved]);
-  useEffect(() => { setImgErr(false); }, [draft]);
   const dirty = draft !== saved;
-  const src = rivhitImg(row.picture_link, 360, draft);
+  const loaded = status?.phase === "loaded";
+  const failed = status?.phase === "failed";
+  const controlsDisabled = saving || !loaded;
 
   return (
-    <div style={{ border: `1px solid ${dirty ? tokens.accent : tokens.border}`, borderRadius: 16, background: "#fff", padding: "0.8rem", display: "flex", flexDirection: "column", gap: "0.6rem", boxShadow: "0 6px 18px rgba(26,23,48,0.05)" }}>
+    <div style={{ border: `1px solid ${failed ? "rgba(192,20,60,0.45)" : dirty ? tokens.accent : tokens.border}`, borderRadius: 16, background: "#fff", padding: "0.8rem", display: "flex", flexDirection: "column", gap: "0.6rem", boxShadow: "0 6px 18px rgba(26,23,48,0.05)" }}>
       <div style={{ aspectRatio: "1 / 1", borderRadius: 12, border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#fff", fontSize: "2.4rem", padding: 8 }}>
-        {imgErr ? <span role="img" aria-label="התמונה לא נטענה">🧸</span> : (
-          <img src={src} alt={row.name} loading="lazy" onError={() => setImgErr(true)} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-        )}
+        <ProductImage
+          pictureLink={row.picture_link}
+          name={row.name}
+          rotation={0}
+          retryKey={retryKey}
+          onStatus={setStatus}
+          imgStyle={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", transform: draft ? `rotate(${draft}deg) scale(${draft % 180 === 0 ? 1 : 0.78})` : undefined, transition: "transform 0.12s ease" }}
+        />
       </div>
       <div style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.text, minHeight: "2.4em", lineHeight: 1.3 }}>{row.name}</div>
+      {failed && (
+        // role="status" (polite) — see fix-images: a mass failure must not
+        // fire a screenful of assertive alerts.
+        <div role="status" style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C", background: "rgba(192,20,60,0.07)", border: "1px solid rgba(192,20,60,0.25)", borderRadius: 10, padding: "0.5rem 0.6rem", lineHeight: 1.45 }}>
+          <b>לא ניתן לבדוק את התמונה כי היא לא נטענה.</b>
+          <div style={{ display: "flex", gap: "0.3rem", marginTop: "0.45rem", flexWrap: "wrap" }}>
+            <button onClick={() => setRetryKey((k) => k + 1)} style={smallBtn}>↻ נסה שוב</button>
+            {isDirectFallbackAllowed(row.picture_link) && (
+              <a href={row.picture_link} target="_blank" rel="noopener noreferrer" style={{ ...smallBtn, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
+                פתח מקור מרווחית ↗
+              </a>
+            )}
+          </div>
+        </div>
+      )}
       <div role="group" aria-label={`סיבוב עבור ${row.name}`} style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", alignItems: "center" }}>
         {STEPS.map((deg) => {
           const active = draft === deg;
@@ -282,15 +341,15 @@ function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRot
             <button
               key={deg}
               onClick={() => setDraft(deg)}
-              disabled={saving}
+              disabled={controlsDisabled}
               aria-pressed={active}
               title={deg === 0 ? "ישר (בלי סיבוב)" : `סיבוב ${deg}° עם כיוון השעון — תצוגה מקדימה בלבד עד שמירה`}
               style={{
                 fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem",
-                padding: "0.4rem 0.6rem", borderRadius: 10, cursor: saving ? "default" : "pointer",
+                padding: "0.4rem 0.6rem", borderRadius: 10, cursor: controlsDisabled ? "default" : "pointer",
                 border: `1px solid ${active ? "transparent" : tokens.border}`,
                 background: active ? tokens.accent : "#fff", color: active ? "#fff" : tokens.body,
-                opacity: saving ? 0.6 : 1, minWidth: 44,
+                opacity: controlsDisabled ? 0.6 : 1, minWidth: 44,
               }}
             >
               {deg === 0 ? "ישר" : `↻ ${deg}°`}
@@ -301,9 +360,9 @@ function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRot
       {dirty && (
         <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
           <button
-            onClick={() => onRotate(draft)}
-            disabled={saving}
-            style={{ flex: 1, fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: "#fff", background: "#1A7A4D", border: "none", padding: "0.5rem 0.8rem", borderRadius: 10, cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}
+            onClick={() => onRotate(row.id, draft)}
+            disabled={controlsDisabled}
+            style={{ flex: 1, fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: "#fff", background: "#1A7A4D", border: "none", padding: "0.5rem 0.8rem", borderRadius: 10, cursor: controlsDisabled ? "default" : "pointer", opacity: controlsDisabled ? 0.6 : 1 }}
           >
             {saving ? "שומר…" : "שמירה"}
           </button>
@@ -318,10 +377,16 @@ function ImageCard({ row, saving, onRotate }: { row: Row; saving: boolean; onRot
       )}
     </div>
   );
-}
+});
 
 const ghostBtn = {
   fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: tokens.text,
   background: "#fff", border: `1px solid ${tokens.border}`, padding: "0.7rem 1.4rem",
   borderRadius: 999, cursor: "pointer",
 } as const;
+
+const smallBtn: React.CSSProperties = {
+  fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.78rem",
+  padding: "0.35rem 0.6rem", borderRadius: 9, border: `1px solid ${tokens.border}`,
+  background: "#fff", color: tokens.body, cursor: "pointer",
+};

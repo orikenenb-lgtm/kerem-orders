@@ -4,14 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
+import ProductImage from "../components/ProductImage";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
-import { rivhitImg } from "../../lib/images";
 import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
 import { featureFlags } from "../../lib/featureFlags";
 import { VAT_RATE } from "../../lib/config";
-import { resolveQuantity, stepOf, describeQuantity } from "../../lib/quantity";
+import { resolveQuantity, stepOf, describeQuantity, pluralPack } from "../../lib/quantity";
 import { orderExactFirst } from "../../lib/searchRank";
+import { readCart } from "../../lib/cart";
 
 type Product = {
   id: string;
@@ -133,10 +134,7 @@ export default function CatalogPage() {
 
   // cart persistence
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(CART_KEY);
-      if (raw) setCart(JSON.parse(raw));
-    } catch { /* */ }
+    setCart(readCart<CartLine>(localStorage.getItem(CART_KEY)));
   }, []);
   useEffect(() => {
     try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch { /* */ }
@@ -350,7 +348,7 @@ export default function CatalogPage() {
         const show = r.wasAdjusted && q > 0 && dq > 1;
         if (!show && !(p.id in notes)) return notes;
         const next = { ...notes };
-        if (show) next[p.id] = `עיגלנו ל־${q.toLocaleString("he-IL")} יחידות (${describeQuantity(p, q)}) — המוצר נמכר ב${packName}ים שלמים`;
+        if (show) next[p.id] = `עיגלנו ל־${q.toLocaleString("he-IL")} יחידות (${describeQuantity(p, q)}) — המוצר נמכר ב${pluralPack(packName, 2)} שלמים`;
         else delete next[p.id];
         return next;
       });
@@ -617,6 +615,8 @@ export default function CatalogPage() {
         <div style={{ position: "sticky", top: 92, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
           <input
             type="search"
+            id="kt-catalog-search"
+            name="catalog-search"
             // A real programmatic name — placeholder alone is not a label
             // (it vanishes on input and many screen readers skip it).
             aria-label="חיפוש מוצר לפי שם, קוד פריט או ברקוד"
@@ -625,7 +625,11 @@ export default function CatalogPage() {
             onChange={(e) => setInput(e.target.value)}
             style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
           />
-          {categories.length > 0 && (
+          {/* Category chips apply while browsing. A text search runs across ALL
+              categories (search_products takes no category argument), so the
+              chips are hidden during search — leaving them visible and
+              highlighted would falsely imply the results are filtered. */}
+          {categories.length > 0 && query.trim().length < 2 && (
             <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
               {[{ category: "all", n: 0 }, ...orderedCats].map((c, i) => {
                 const active = activeCat === c.category;
@@ -695,7 +699,6 @@ export default function CatalogPage() {
               {products.map((p, i) => {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
                 const qty = cart[p.id]?.qty ?? 0;
-                const img = rivhitImg(p.picture_link, 480, p.rotation_override ?? 0);
                 // Wave 3 (flag on): pack-aware card. RPC rows lack the quantity
                 // columns → step 1 (unit product), so nothing changes for them.
                 const step = ffQty ? stepOf(p) : 1;
@@ -712,7 +715,7 @@ export default function CatalogPage() {
                         small inner padding, one white background. */}
                     <Link href={`/product/?id=${p.id}`} aria-label={`פרטים על ${p.name}`} style={{ display: "block", position: "relative", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, overflow: "hidden" }}>
                       <span style={{ position: "absolute", inset: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>
-                        <ProductImg src={img} alt={p.name} />
+                        <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} />
                       </span>
                     </Link>
                     <Link href={`/product/?id=${p.id}`} style={{ textDecoration: "none" }}>
@@ -853,7 +856,6 @@ export default function CatalogPage() {
               <>
                 <div style={{ display: "grid", gap: "0.8rem", marginBottom: "1rem" }}>
                   {lines.map((l) => {
-                    const img = rivhitImg(l.picture_link);
                     // Wave 3: the drawer is a path into the cart too — when the
                     // flag is on its stepper moves by the pack size and every
                     // change is normalized. Lines without pack fields (old
@@ -871,7 +873,7 @@ export default function CatalogPage() {
                     return (
                       <div key={l.id} style={{ display: "flex", gap: "0.6rem", alignItems: "center", borderBottom: `1px solid ${tokens.border}`, paddingBottom: "0.6rem" }}>
                         <div style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>
-                          <ProductImg src={img} alt={l.name} />
+                          <ProductImage pictureLink={l.picture_link} name={l.name} />
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.88rem", color: tokens.text }}>{l.name}</div>
@@ -964,17 +966,6 @@ export default function CatalogPage() {
   );
 }
 
-// Product image with a graceful fallback: if the (proxied) image fails to load,
-// show the toy emoji instead of a broken-image icon.
-function ProductImg({ src, alt }: { src: string | null; alt: string }) {
-  const [err, setErr] = useState(false);
-  useEffect(() => { setErr(false); }, [src]);
-  if (!src || err) return <span>🧸</span>;
-  return (
-    <img src={src} alt={alt} loading="lazy" onError={() => setErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-  );
-}
-
 function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped, label }: {
   qty: number; onChange: (q: number) => void; accent: string; compact?: boolean;
   /** Wave 3 (ff_display_quantities): +/- move by this many units. Default 1. */
@@ -1005,6 +996,11 @@ function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped, labe
         }}
         onBlur={onCommitTyped ? () => {
           if (draft === null) return;
+          // An empty field means "I cleared it to retype", not "remove this
+          // line" — restore the current qty instead of committing 0 (which
+          // would delete the cart line the moment focus leaves). A typed 0
+          // still removes, as documented.
+          if (draft === "") { setDraft(null); return; }
           const n = parseInt(draft, 10);
           setDraft(null);
           onCommitTyped(Number.isFinite(n) ? n : 0);

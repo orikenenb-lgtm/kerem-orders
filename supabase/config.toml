@@ -1,0 +1,25 @@
+# Supabase CLI configuration.
+#
+# Scope: this file pins the auth behavior of the two PUBLIC (pre-auth) Edge
+# Functions only. It declares nothing about any other function, so deploying an
+# unrelated function is unaffected (each `functions deploy` reads only its own
+# [functions.<name>] block; an absent block leaves that function untouched).
+#
+# project_id is the local project identifier the CLI links against; it matches
+# the already-public project ref committed elsewhere in this repo.
+project_id = "mcdchalyzeqjkkgfeznd"
+
+# rivhit-img is served to plain <img> tags, which cannot send an Authorization
+# header, so it MUST remain publicly callable. verify_jwt = false makes that
+# explicit and version-controlled instead of relying on a deploy-time
+# --no-verify-jwt flag that a future operator could forget. The URL allowlist
+# inside the function (host api.rivhit.co.il + getItemPic path) is the actual
+# access control.
+[functions.rivhit-img]
+verify_jwt = false
+
+# signup is called by a NEW customer who does not yet have a JWT, so it must be
+# publicly callable. Its protection is server-side Turnstile verification +
+# input validation + Supabase Auth's per-IP signup rate limits — NOT a JWT.
+[functions.signup]
+verify_jwt = false

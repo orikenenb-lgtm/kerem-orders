@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
 import PasswordInput from "../components/PasswordInput";
+import Turnstile from "../components/Turnstile";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
 import { featureFlags } from "../../lib/featureFlags";
 import { tokens, primaryBtn } from "../../lib/ui";
+import { isTurnstileConfigured, canSubmitSignup } from "../../lib/turnstile";
 
 // Wave 4: address fields in the registration form. With the flag OFF the page
 // renders and behaves exactly as before — none of the new code paths run.
@@ -130,6 +132,29 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // After a successful signup we show an email-verification screen instead of
+  // logging the user in (the account is unconfirmed until they click the link).
+  const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
+  // Turnstile: the fresh single-use token + widget state. `turnstileResetKey`
+  // remounts the widget (via React key) to get a NEW token after a failed
+  // submit, since a Turnstile token can be used only once.
+  const turnstileConfigured = isTurnstileConfigured();
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  // Move focus to the success screen when it appears, so keyboard users don't
+  // lose their place when the form (and the focused submit button) unmounts.
+  const successRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (submittedEmail) successRef.current?.focus();
+  }, [submittedEmail]);
+  // Single source of truth for whether the form may submit (mirrors the pure
+  // canSubmitSignup rule: configured + solved non-empty token + not busy).
+  const submitAllowed = canSubmitSignup({
+    configured: turnstileConfigured,
+    formValid: true, // required-field validity is enforced natively by the inputs
+    busy,
+    state: { status: turnstileToken ? "solved" : "ready", token: turnstileToken },
+  });
   // Confirm-password lives outside `form`: it is never sent anywhere, never
   // drafted to localStorage — it exists only to catch typos before submit.
   const [password2, setPassword2] = useState("");
@@ -215,9 +240,10 @@ export default function RegisterPage() {
 
   // What gets sent to the signup function. Flag off: exactly the same six
   // keys as before. Flag on: the address fields ride along in the same object
-  // (the function stores the columns it knows and ignores anything else).
-  const signupBody = () =>
-    ADDR
+  // (the function stores the columns it knows and ignores anything else). The
+  // Turnstile token is always attached — the hardened signup requires it.
+  const signupBody = () => ({
+    ...(ADDR
       ? { ...form }
       : {
           business_name: form.business_name,
@@ -226,7 +252,25 @@ export default function RegisterPage() {
           phone: form.phone,
           email: form.email,
           password: form.password,
-        };
+        }),
+    turnstileToken,
+  });
+
+  // The signup function replies with { ok, message }: ok:true is the generic
+  // "check your email" success (shown identically for new vs existing accounts
+  // — no enumeration); ok:false carries a user-facing rejection message
+  // (captcha/rate-limit/invalid). Normalize BOTH shapes to { ok?, error? } so a
+  // non-2xx rejection is never mistaken for success on the SDK path.
+  const normalizeSignupResult = (raw: unknown): { ok?: boolean; error?: string } => {
+    if (!raw || typeof raw !== "object") return {};
+    const r = raw as { ok?: boolean; error?: string; message?: string };
+    if (typeof r.error === "string") return { error: r.error };
+    if (r.ok === false) {
+      return { error: (typeof r.message === "string" && r.message) || "ההרשמה נכשלה. נסו שוב בעוד רגע." };
+    }
+    if (r.ok === true) return { ok: true };
+    return {};
+  };
 
   // Call the signup function; if the SDK path fails for any reason, fall back
   // to a plain fetch so a client-side SDK hiccup can never block registration.
@@ -236,11 +280,13 @@ export default function RegisterPage() {
       const { data, error: fnErr } = await supabase.functions.invoke("signup", {
         body,
       });
-      if (!fnErr) return (data as { ok?: boolean; error?: string }) ?? {};
+      if (!fnErr) return normalizeSignupResult(data);
       const ctx = (fnErr as { context?: Response }).context;
       if (ctx && typeof ctx.json === "function") {
         try {
-          return await ctx.json();
+          // A non-2xx rejection ({ ok:false, message }) is surfaced as an error,
+          // not silently treated as success.
+          return normalizeSignupResult(await ctx.json());
         } catch {
           /* fall through to direct fetch */
         }
@@ -267,7 +313,7 @@ export default function RegisterPage() {
     });
     let resBody: { ok?: boolean; error?: string } = {};
     try {
-      resBody = await res.json();
+      resBody = normalizeSignupResult(await res.json());
     } catch {
       /* non-JSON response */
     }
@@ -276,6 +322,13 @@ export default function RegisterPage() {
       return { error: "ההרשמה נכשלה. נסו שוב בעוד רגע." };
     }
     return resBody;
+  };
+
+  // Force a NEW captcha token: clear the used one and remount the widget.
+  // Called after any failed submit — a Turnstile token is single-use.
+  const resetTurnstile = () => {
+    setTurnstileToken(null);
+    setTurnstileResetKey((k) => k + 1);
   };
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -300,12 +353,22 @@ export default function RegisterPage() {
         return;
       }
     }
+    // Fail closed: never send without a fresh captcha token.
+    if (!turnstileConfigured || !turnstileToken) {
+      setError(
+        turnstileConfigured
+          ? "אנא השלימו את אימות האבטחה כדי להמשיך."
+          : "אימות האבטחה אינו זמין כרגע. לא ניתן להשלים הרשמה — נסו שוב מאוחר יותר."
+      );
+      return;
+    }
     setBusy(true);
     try {
       const result = await callSignup();
       if (result?.error) {
         setError(result.error);
         setBusy(false);
+        resetTurnstile(); // token is spent — a retry needs a new one
         return;
       }
       if (ADDR) {
@@ -316,26 +379,21 @@ export default function RegisterPage() {
           /* ignore */
         }
       }
-      // Instant login (user is pre-confirmed by the signup function).
+      // Account is created UNCONFIRMED. Do NOT auto-login — show the
+      // email-verification screen. The same generic success is shown whether
+      // the address is new or already registered (no account enumeration).
       const email = form.email.trim().toLowerCase();
-      const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email,
-        password: form.password,
-      });
-      if (signInErr) {
-        // Account exists — hand off to the login page with the email prefilled.
-        try {
-          localStorage.setItem("kt_last_email", email);
-        } catch {
-          /* ignore */
-        }
-        router.replace("/login");
-        return;
+      try {
+        localStorage.setItem("kt_last_email", email); // prefill login only
+      } catch {
+        /* ignore */
       }
-      router.replace("/catalog");
+      setBusy(false);
+      setSubmittedEmail(email);
     } catch {
       setError("שגיאת רשת. בדקו את החיבור ונסו שוב.");
       setBusy(false);
+      resetTurnstile();
     }
   };
 
@@ -382,6 +440,23 @@ export default function RegisterPage() {
           >
             פתיחת חשבון לקוח
           </h1>
+          {submittedEmail ? (
+            <div ref={successRef} tabIndex={-1} role="status" aria-live="polite" style={{ display: "grid", gap: "1rem", fontFamily: tokens.assistant, color: tokens.body, outline: "none" }}>
+              <p style={{ fontSize: "1.05rem", lineHeight: 1.6 }}>
+                שלחנו אליכם קישור לאימות כתובת המייל
+                {" "}
+                <span dir="ltr" style={{ fontWeight: 700, color: tokens.text }}>{submittedEmail}</span>.
+                יש לפתוח את הקישור לפני ההתחברות.
+              </p>
+              <p style={{ fontSize: "0.95rem", color: tokens.body }}>
+                לא קיבלתם? בדקו את תיקיית הספאם, או נסו להתחבר לאחר האימות.
+              </p>
+              <Link href="/login" style={{ ...primaryBtn(false), textAlign: "center", textDecoration: "none" }}>
+                מעבר להתחברות
+              </Link>
+            </div>
+          ) : (
+          <>
           <p
             style={{
               fontFamily: tokens.assistant,
@@ -389,7 +464,7 @@ export default function RegisterPage() {
               marginBottom: "1.6rem",
             }}
           >
-            כמה פרטים ואתם בפנים — מתחברים מיד, בלי אימות במייל.
+            כמה פרטים וסיימתם — לאחר ההרשמה נשלח קישור לאימות כתובת המייל.
           </p>
 
           <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
@@ -487,8 +562,17 @@ export default function RegisterPage() {
               </div>
             )}
 
-            <button type="submit" disabled={busy} style={primaryBtn(busy)}>
-              {busy ? (ADDR ? "שולח..." : "רגע…") : "פתחו חשבון והתחילו"}
+            {/* Cloudflare Turnstile — remounted via key to force a fresh
+                single-use token after a failed submit. Fails closed when the
+                site key is not configured. */}
+            <Turnstile key={turnstileResetKey} onToken={setTurnstileToken} action="signup" />
+
+            <button
+              type="submit"
+              disabled={!submitAllowed}
+              style={primaryBtn(busy || !turnstileToken)}
+            >
+              {busy ? (ADDR ? "שולח..." : "רגע…") : "פתחו חשבון"}
             </button>
           </form>
 
@@ -498,6 +582,8 @@ export default function RegisterPage() {
               להתחברות
             </Link>
           </p>
+          </>
+          )}
         </div>
       </main>
       <SiteFooter />

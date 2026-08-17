@@ -16,7 +16,7 @@ const js = ts.transpileModule(src, {
 const tmp = mkdtempSync(join(tmpdir(), "qty-"));
 const mod = join(tmp, "quantity.mjs");
 writeFileSync(mod, js);
-const { resolveQuantity, describeQuantity, stepOf } = await import(pathToFileURL(mod).href);
+const { resolveQuantity, describeQuantity, stepOf, pluralPack } = await import(pathToFileURL(mod).href);
 
 const tray12 = { price: 12, display_qty: 12, display_name: "מגש", carton_qty: 144, min_order_qty: 1, order_step: 1, sell_by: "display" };
 const unit = { price: 5, display_qty: 1, carton_qty: null, min_order_qty: 1, order_step: 1, sell_by: "unit" };
@@ -116,6 +116,38 @@ t("describeQuantity dual display", () => {
 t("agorot rounding is exact", () => {
   const p = { ...unit, price: 3.33 };
   assert.equal(resolveQuantity(p, 3).priceTotal, 9.99);
+});
+
+// --- carton-sold products step by the display size (sell_by:"carton") ---
+t("carton-sold product steps by its display size", () => {
+  // stepOf's "carton" disjunct was never exercised before.
+  assert.equal(stepOf({ sell_by: "carton", display_qty: 6, order_step: 1 }), 6);
+  const carton = { price: 1, sell_by: "carton", display_qty: 6, carton_qty: 24, min_order_qty: 1, order_step: 1 };
+  const r = resolveQuantity(carton, 7);
+  assert.equal(r.units, 12);   // 7 rounds up to the next multiple of 6
+  assert.equal(r.cartons, 0);  // carton_qty known, below one carton → 0 (not null)
+});
+
+// --- describeQuantity default pack label & non-multiple branch ---
+t("describeQuantity default label 'מארז' when unnamed", () => {
+  assert.equal(describeQuantity({ display_qty: 12 }, 24), "2 מארזים (24 יח׳)");
+  assert.equal(describeQuantity({ display_qty: 12 }, 12), "1 מארז (12 יח׳)");
+  // whitespace-only name still falls back to מארז (pins the .trim()||"מארז" guard)
+  assert.equal(describeQuantity({ display_qty: 12, display_name: "   " }, 12), "1 מארז (12 יח׳)");
+});
+
+t("describeQuantity non-multiple units drops pack phrasing", () => {
+  assert.equal(describeQuantity({ display_qty: 12 }, 13), "13 יח׳");
+});
+
+// --- Hebrew pluralization of the admin pack presets ---
+t("pluralPack uses correct Hebrew plurals for presets", () => {
+  assert.equal(pluralPack("מארז", 1), "מארז");
+  assert.equal(pluralPack("מארז", 2), "מארזים");
+  assert.equal(pluralPack("מגש", 3), "מגשים");
+  assert.equal(pluralPack("קרטונית", 2), "קרטוניות"); // NOT קרטוניתים
+  assert.equal(pluralPack("דיספליי", 2), "דיספליי");  // loanword: no mangled suffix
+  assert.equal(pluralPack("שקית", 2), "שקית");        // unknown free-text: keep as-is, no "ים"
 });
 
 console.log(`\n${n} tests passed`);
