@@ -22,6 +22,7 @@ type Collection = {
   slug: string;
   name: string;
   show_prices: boolean;
+  discount_percent: number | string | null;
   is_active: boolean;
   created_at: string;
   n?: number;
@@ -82,7 +83,7 @@ export default function CollectionsAdminPage() {
     setBusy(true);
     const { data, error } = await supabase
       .from("collections")
-      .select("id,slug,name,show_prices,is_active,created_at, collection_products(count)")
+      .select("id,slug,name,show_prices,discount_percent,is_active,created_at, collection_products(count)")
       .order("created_at", { ascending: false });
     if (!mountedRef.current) return;
     if (error) { setErr("טעינת הקטלוגים נכשלה."); setBusy(false); return; }
@@ -120,6 +121,20 @@ export default function CollectionsAdminPage() {
       .update({ is_active: !c.is_active })
       .eq("id", c.id);
     if (error) { setErr("העדכון נכשל."); return; }
+    loadCollections();
+  };
+
+  // One click sets a percentage off EVERY product in this catalogue. It is
+  // stored on the collection and applied server-side inside catalog_collection,
+  // so it covers products added later too — no need to re-apply, and no
+  // per-product rows to keep in sync.
+  const setDiscount = async (c: Collection, pct: number) => {
+    const d = Math.max(0, Math.min(99.99, Math.round(pct * 100) / 100));
+    const { error } = await supabase.from("collections").update({ discount_percent: d }).eq("id", c.id);
+    if (error) { setErr("שמירת ההנחה נכשלה."); return; }
+    setNotice(d > 0
+      ? `הנחה של ${d}% הוחלה על כל המוצרים בקטלוג "${c.name}".`
+      : `ההנחה בקטלוג "${c.name}" בוטלה.`);
     loadCollections();
   };
 
@@ -252,6 +267,7 @@ export default function CollectionsAdminPage() {
                     </div>
                     <div style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>
                       {(c.n ?? 0).toLocaleString("he-IL")} מוצרים · {c.show_prices ? "עם מחירים" : "בלי מחירים"}
+                      {Number(c.discount_percent) > 0 ? ` · הנחה ${Number(c.discount_percent)}% על הכל` : ""}
                     </div>
                   </div>
                   <button onClick={() => copyLink(c)} style={miniBtn}>📋 העתקת קישור</button>
@@ -262,6 +278,51 @@ export default function CollectionsAdminPage() {
                   <button onClick={() => openCollection(c)} aria-expanded={openId === c.id} style={{ ...miniBtn, background: openId === c.id ? tokens.accent : "#fff", color: openId === c.id ? "#fff" : tokens.text }}>
                     {openId === c.id ? "סגירת עריכה" : "עריכת מוצרים"}
                   </button>
+                </div>
+
+                {/* One-click discount on the whole catalogue. Applies to every
+                    product in it, including ones added later. Only meaningful
+                    when the link shows prices at all. */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.7rem", paddingTop: "0.7rem", borderTop: `1px dashed ${tokens.border}` }}>
+                  <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text }}>הנחה על כל הקטלוג:</span>
+                  {[10, 20, 30, 40, 50].map((pct) => (
+                    <button
+                      key={pct}
+                      onClick={() => setDiscount(c, pct)}
+                      aria-pressed={Number(c.discount_percent) === pct}
+                      style={{
+                        ...miniBtn,
+                        background: Number(c.discount_percent) === pct ? "#1A7A4D" : "#fff",
+                        color: Number(c.discount_percent) === pct ? "#fff" : tokens.text,
+                        border: `1px solid ${Number(c.discount_percent) === pct ? "transparent" : tokens.border}`,
+                      }}
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>אחר:</span>
+                    <input
+                      aria-label={`אחוז הנחה מותאם לקטלוג ${c.name}`}
+                      defaultValue={Number(c.discount_percent) || ""}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        const v = Number((e.target as HTMLInputElement).value.replace(/[^\d.]/g, ""));
+                        if (Number.isFinite(v)) setDiscount(c, v);
+                      }}
+                      inputMode="decimal"
+                      placeholder="%"
+                      style={{ width: 62, fontFamily: tokens.assistant, fontSize: "0.85rem", padding: "0.3rem 0.5rem", borderRadius: 8, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
+                    />
+                  </label>
+                  {Number(c.discount_percent) > 0 && (
+                    <button onClick={() => setDiscount(c, 0)} style={{ ...miniBtn, color: "#C0143C" }}>ביטול ההנחה</button>
+                  )}
+                  {!c.show_prices && Number(c.discount_percent) > 0 && (
+                    <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: "#C0143C" }}>
+                      ⚠ הקישור מוגדר בלי מחירים — ההנחה לא תיראה עד שמדליקים ״להציג מחירים״.
+                    </span>
+                  )}
                 </div>
 
                 {openId === c.id && (
