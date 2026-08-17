@@ -538,6 +538,13 @@ function ProductsTab() {
         </div>
         <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
           <div>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>שינוי מחירים</div>
+            <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>מחיר לכל הלקוחות או ללקוחות מסוימים — נשמר בנפרד ממחיר רווחית, הסנכרון לא מוחק אותו.</div>
+          </div>
+          <Link href="/admin/prices" style={{ ...ghostBtn, textDecoration: "none", whiteSpace: "nowrap" }}>ניהול המחירים ←</Link>
+        </div>
+        <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+          <div>
             <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>קטלוגים מותאמים ללקוחות</div>
             <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>בוחרים מוצרים ללקוח מסוים (למשל רשת) ושולחים לו קישור שמציג רק אותם.</div>
           </div>

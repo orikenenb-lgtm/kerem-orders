@@ -8,6 +8,7 @@ import ProductImage from "../components/ProductImage";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
 import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
+import { buildPriceMap, resolvePrice, hasSpecialPrice, type PriceMap, type PriceOverrideRow } from "../../lib/pricing";
 import { featureFlags } from "../../lib/featureFlags";
 import { VAT_RATE } from "../../lib/config";
 import { resolveQuantity, stepOf, describeQuantity, pluralPack } from "../../lib/quantity";
@@ -111,6 +112,36 @@ export default function CatalogPage() {
   // The customer's fixed discount (0 when none / column not present yet).
   // ONE derived value drives display, cart storage and checkout reconcile.
   const discount = discountPct(profile?.discount_percent);
+
+  // Manager-set prices (for everyone / for this customer). RLS returns only
+  // the global rows and this customer's own, so the map is safe to hold in the
+  // browser. Null until loaded — resolvePrice then falls back to list price.
+  const [priceMap, setPriceMap] = useState<PriceMap | null>(null);
+  useEffect(() => {
+    if (!session) return;
+    supabase
+      .from("price_overrides")
+      .select("product_id,user_id,price")
+      .then(({ data }) => {
+        setPriceMap(buildPriceMap((data as PriceOverrideRow[]) ?? [], session.user.id));
+      });
+  }, [session]);
+
+  // ONE place decides what a product costs this customer; every price shown,
+  // stored in the cart and re-checked at checkout goes through these.
+  const unitPrice = useCallback(
+    (p: { id: string; price: number }) => resolvePrice(p.id, p.price, priceMap, discount),
+    [priceMap, discount]
+  );
+  /** List price before the fixed discount (honours a global override). */
+  const listPrice = useCallback(
+    (p: { id: string; price: number }) => priceMap?.get(p.id)?.all ?? (Number(p.price) || 0),
+    [priceMap]
+  );
+  const isSpecial = useCallback(
+    (p: { id: string }) => hasSpecialPrice(p.id, priceMap),
+    [priceMap]
+  );
 
   // site settings: minimum-order threshold + whether to show the VAT label
   // (prices_include_vat defaults to on; set the row to 'false' to hide).
@@ -356,13 +387,14 @@ export default function CatalogPage() {
     setCart((c) => {
       const next = { ...c };
       if (q <= 0) delete next[p.id];
-      // The cart stores the price the customer actually pays — after their
-      // fixed discount. applyDiscount(x, 0) === x, so no discount → unchanged.
+      // The cart stores the price the customer actually pays — a manager-set
+      // price for them, else a global price, else the list price after their
+      // fixed discount (unitPrice decides; same rule as the DB trigger).
       // Flag on: q is already resolved (and capped pre-resolve), so no second
       // cap — it could knock the quantity off its step.
       else next[p.id] = {
         qty: ffQty ? q : Math.min(q, 9999),
-        name: p.name, price: applyDiscount(p.price, discount), sku: p.sku, picture_link: p.picture_link,
+        name: p.name, price: unitPrice(p), sku: p.sku, picture_link: p.picture_link,
         ...(ffQty ? { display_qty: p.display_qty ?? null, display_name: p.display_name ?? null } : {}),
       };
       return next;
@@ -406,6 +438,18 @@ export default function CatalogPage() {
         if (prow) d = discountPct((prow as { discount_percent?: number | null }).discount_percent);
       } catch { /* keep session value */ }
       if (d !== discount) refreshProfile().catch(() => {});
+      // Re-read the manager-set prices too, for the same reason the discount is
+      // re-read: one that changed mid-session must be caught HERE, where the
+      // customer is asked to confirm, rather than by the DB trigger rejecting
+      // the order with a raw "price mismatch".
+      let freshMap = priceMap;
+      try {
+        const { data: pov } = await supabase
+          .from("price_overrides")
+          .select("product_id,user_id,price");
+        freshMap = buildPriceMap((pov as PriceOverrideRow[]) ?? [], session.user.id);
+        setPriceMap(freshMap);
+      } catch { /* keep the map already loaded */ }
       // Reconcile the cart against the DB (the single source of truth) before
       // ordering: drop sold-out items and refresh changed prices IN THE CART.
       // If anything changed, update the cart and ask the customer to review and
@@ -440,11 +484,11 @@ export default function CatalogPage() {
       for (const l of lines) {
         const p = byId.get(l.id);
         if (!p || p.is_active === false) { removed.push(l.name); continue; }
-        // CRITICAL: apply the SAME customer discount here as at add-to-cart
-        // time (applyDiscount is shared), otherwise every discounted
-        // customer's checkout would flag a false "price changed" and rewrite
-        // the cart back to full price — silently erasing the discount.
-        const freshPrice = applyDiscount(Number(p.price) || 0, d);
+        // CRITICAL: resolve the price the SAME way as at add-to-cart time
+        // (resolvePrice is shared), otherwise every discounted customer — and
+        // now every customer with a manager-set price — would hit a false
+        // "price changed" and have the cart rewritten to full price.
+        const freshPrice = resolvePrice(p.id, Number(p.price) || 0, freshMap, d);
         if (Math.abs(freshPrice - (Number(l.price) || 0)) > 0.001) priceChanged = true;
         let qty = l.qty;
         if (ffQty) {
@@ -727,32 +771,46 @@ export default function CatalogPage() {
                         {packName} = {dq.toLocaleString("he-IL")} יחידות
                       </div>
                     )}
-                    {displaySold ? (
+                    {/* A price the manager set for THIS customer replaces the
+                        discount presentation entirely — showing a "-10%" badge
+                        next to a negotiated price would be a lie, since the
+                        discount is not applied on top of it. */}
+                    {isSpecial(p) ? (
+                      <div style={{ display: "flex", alignItems: "baseline", gap: "0.45rem", flexWrap: "wrap" }}>
+                        <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: displaySold ? "1.05rem" : "1.1rem", color: "#1A7A4D" }}>
+                          {displaySold ? `ל${packName}: ` : ""}{ils(unitPrice(p) * (displaySold ? dq : 1))}
+                        </span>
+                        <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#1A7A4D", padding: "0.15rem 0.5rem", borderRadius: 999 }}>מחיר מיוחד</span>
+                        {displaySold && (
+                          <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>· ליחידה: {ils(unitPrice(p))}</span>
+                        )}
+                      </div>
+                    ) : displaySold ? (
                       // Pack-sold price line: per-display figure first (this is
                       // what one +/- press adds), per-unit after it. The
                       // strikethrough/badge for discounted customers stays,
                       // applied to the per-display figure.
                       discount > 0 ? (
                         <div style={{ display: "flex", alignItems: "baseline", gap: "0.45rem", flexWrap: "wrap" }}>
-                          <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: "#1A7A4D" }}>ל{packName}: {ils(applyDiscount(p.price, discount) * dq)}</span>
-                          <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(p.price * dq)}</s>
+                          <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: "#1A7A4D" }}>ל{packName}: {ils(unitPrice(p) * dq)}</span>
+                          <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(listPrice(p) * dq)}</s>
                           <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#25C77E", padding: "0.15rem 0.5rem", borderRadius: 999 }}>‎-{discount}%</span>
-                          <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>· ליחידה: {ils(applyDiscount(p.price, discount))}</span>
+                          <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>· ליחידה: {ils(unitPrice(p))}</span>
                         </div>
                       ) : (
                         <div style={{ display: "flex", alignItems: "baseline", gap: "0.45rem", flexWrap: "wrap" }}>
-                          <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>ל{packName}: {ils(p.price * dq)}</span>
-                          <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>· ליחידה: {ils(p.price)}</span>
+                          <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>ל{packName}: {ils(unitPrice(p) * dq)}</span>
+                          <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>· ליחידה: {ils(unitPrice(p))}</span>
                         </div>
                       )
                     ) : discount > 0 ? (
                       <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
-                        <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: "#1A7A4D" }}>{ils(applyDiscount(p.price, discount))}</span>
-                        <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(p.price)}</s>
+                        <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: "#1A7A4D" }}>{ils(unitPrice(p))}</span>
+                        <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(listPrice(p))}</s>
                         <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#25C77E", padding: "0.15rem 0.5rem", borderRadius: 999 }}>‎-{discount}%</span>
                       </div>
                     ) : (
-                      <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{ils(p.price)}</div>
+                      <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{ils(unitPrice(p))}</div>
                     )}
                     {(() => {
                       // Wave 3 (flag on): the DB carton_qty wins; the legacy

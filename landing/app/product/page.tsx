@@ -9,6 +9,7 @@ import ProductImage from "../components/ProductImage";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
 import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
+import { buildPriceMap, resolvePrice, hasSpecialPrice, type PriceMap, type PriceOverrideRow } from "../../lib/pricing";
 import { featureFlags } from "../../lib/featureFlags";
 import { resolveQuantity, stepOf } from "../../lib/quantity";
 import { readCart } from "../../lib/cart";
@@ -40,7 +41,7 @@ type Product = {
 // Add `addUnits` to the SAME localStorage cart the catalog uses, through the
 // SAME shared resolver — so a line added here is byte-identical to one added
 // from the catalog, and the checkout reconcile never flags it.
-function addToCart(p: Product, addUnits: number, discount: number) {
+function addToCart(p: Product, addUnits: number, discount: number, priceMap: PriceMap | null) {
   const cart = readCart<{ qty: number; name: string; price: number; sku: string | null; picture_link: string; display_qty?: number | null; display_name?: string | null }>(
     localStorage.getItem(CART_KEY)
   );
@@ -51,7 +52,7 @@ function addToCart(p: Product, addUnits: number, discount: number) {
   else cart[p.id] = {
     qty: q,
     name: p.name,
-    price: applyDiscount(p.price, discount),
+    price: resolvePrice(p.id, p.price, priceMap, discount),
     sku: p.sku,
     picture_link: p.picture_link,
     ...(ffQty ? { display_qty: p.display_qty ?? null, display_name: p.display_name ?? null } : {}),
@@ -78,6 +79,16 @@ function ProductDetail() {
   useEffect(() => {
     if (!loading && !session) router.replace("/login");
   }, [loading, session, router]);
+
+  // Manager-set prices (global + this customer's). Same source and same
+  // resolver as the catalog, so both screens always quote one number.
+  const [priceMap, setPriceMap] = useState<PriceMap | null>(null);
+  useEffect(() => {
+    if (!session) return;
+    supabase.from("price_overrides").select("product_id,user_id,price").then(({ data }) => {
+      setPriceMap(buildPriceMap((data as PriceOverrideRow[]) ?? [], session.user.id));
+    });
+  }, [session]);
 
   useEffect(() => {
     if (!session) return;
@@ -144,7 +155,10 @@ function ProductDetail() {
 
   const p = product;
   const step = ffQty ? stepOf(p) : 1;
-  const unitPrice = applyDiscount(p.price, discount);
+  const unitPrice = resolvePrice(p.id, p.price, priceMap, discount);
+  const special = hasSpecialPrice(p.id, priceMap);
+  /** List price before the fixed discount — honours a global override. */
+  const listPrice = priceMap?.get(p.id)?.all ?? (Number(p.price) || 0);
   // The button total reflects the quantity that will ACTUALLY be added: for
   // pack-sold products a typed number is rounded up to a whole pack, so preview
   // the resolved units, not the raw input.
@@ -179,14 +193,21 @@ function ProductDetail() {
 
           {/* price */}
           <div style={{ marginTop: "1.4rem", display: "flex", alignItems: "baseline", gap: "0.6rem", flexWrap: "wrap" }}>
-            {discount > 0 ? (
+            {/* A price set for this customer is already their price — no
+                discount badge on top of it (the discount is not applied). */}
+            {special ? (
               <>
                 <span style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "2rem", color: "#1A7A4D" }}>{ils(unitPrice)}</span>
-                <s style={{ fontFamily: tokens.assistant, fontSize: "1rem", color: tokens.dim }}>{ils(p.price)}</s>
+                <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", color: "#fff", background: "#1A7A4D", padding: "0.2rem 0.7rem", borderRadius: 999 }}>מחיר מיוחד</span>
+              </>
+            ) : discount > 0 ? (
+              <>
+                <span style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "2rem", color: "#1A7A4D" }}>{ils(unitPrice)}</span>
+                <s style={{ fontFamily: tokens.assistant, fontSize: "1rem", color: tokens.dim }}>{ils(listPrice)}</s>
                 <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", color: "#fff", background: "#25C77E", padding: "0.2rem 0.7rem", borderRadius: 999 }}>‎-{discount}%</span>
               </>
             ) : (
-              <span style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "2rem", color: tokens.text }}>{ils(p.price)}</span>
+              <span style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "2rem", color: tokens.text }}>{ils(unitPrice)}</span>
             )}
             <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>ליחידה{vatLabel ? " · כולל מע״מ" : ""}</span>
           </div>
@@ -202,7 +223,7 @@ function ProductDetail() {
                 style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${tokens.accent}`, background: "#fff", color: tokens.accent, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", cursor: "pointer" }}>+</button>
             </div>
             <button
-              onClick={() => { const total = addToCart(p, qty, discount); setAdded(total); }}
+              onClick={() => { const total = addToCart(p, qty, discount, priceMap); setAdded(total); }}
               style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.85rem 2rem", borderRadius: 999, cursor: "pointer" }}
             >
               🛒 הוספה לעגלה · {ils(lineTotal)}
@@ -224,7 +245,7 @@ function ProductDetail() {
           <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.3rem", color: tokens.text, marginBottom: "1.2rem" }}>מוצרים דומים</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "1rem" }}>
             {related.map((r) => {
-              const rPrice = applyDiscount(r.price, discount);
+              const rPrice = resolvePrice(r.id, r.price, priceMap, discount);
               return (
                 <Link key={r.id} href={`/product/?id=${r.id}`} className="kt-card" style={{ textDecoration: "none", border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.8rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                   {/* Same uniform frame as the catalog cards: square, contain,
