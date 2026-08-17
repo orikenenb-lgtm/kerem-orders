@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
 import ProductImage from "../../components/ProductImage";
+import AdminProductBrowser, { type BrowserProduct } from "../components/AdminProductBrowser";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
 import { tokens } from "../../../lib/ui";
@@ -26,13 +27,9 @@ type Collection = {
   n?: number;
 };
 
-type ProductRow = {
-  id: string;
-  name: string;
-  sku: string | null;
-  picture_link: string;
-  rotation_override: number | null;
-};
+// The browser hands back full product rows; the collection only stores ids,
+// but keeping the same shape means members and search results render alike.
+type ProductRow = BrowserProduct;
 
 // Unguessable link token: 12 chars, URL-safe, from the browser CSPRNG.
 function makeSlug(): string {
@@ -67,12 +64,6 @@ export default function CollectionsAdminPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [members, setMembers] = useState<ProductRow[]>([]);
   const [membersBusy, setMembersBusy] = useState(false);
-
-  // product search (for adding)
-  const [input, setInput] = useState("");
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ProductRow[]>([]);
-  const [searchBusy, setSearchBusy] = useState(false);
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -154,7 +145,10 @@ export default function CollectionsAdminPage() {
     setMembersBusy(true);
     const { data, error } = await supabase
       .from("collection_products")
-      .select("sort_order, products(id,name,sku,picture_link,rotation_override)")
+      // Select every column BrowserProduct declares — the rows are typed as
+      // that shape, so a short select would leave price/category undefined at
+      // runtime while the types claim otherwise.
+      .select("sort_order, products(id,name,sku,price,category,picture_link,rotation_override)")
       .eq("collection_id", collectionId)
       .order("sort_order", { ascending: true });
     if (!mountedRef.current) return;
@@ -168,38 +162,8 @@ export default function CollectionsAdminPage() {
     if (openId === c.id) { setOpenId(null); setMembers([]); return; }
     setOpenId(c.id);
     setMembers([]);
-    setInput("");
-    setQuery("");
-    setResults([]);
     loadMembers(c.id);
   };
-
-  // debounce product search
-  useEffect(() => {
-    const t = setTimeout(() => setQuery(input), 350);
-    return () => clearTimeout(t);
-  }, [input]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      const s = query.trim();
-      if (!openId || s.length < 2) { setResults([]); return; }
-      setSearchBusy(true);
-      const { data } = await supabase
-        .from("products")
-        .select("id,name,sku,picture_link,rotation_override")
-        .eq("is_active", true)
-        .or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`)
-        .order("name")
-        .limit(12);
-      if (cancelled || !mountedRef.current) return;
-      setSearchBusy(false);
-      setResults((data as ProductRow[]) ?? []);
-    };
-    run();
-    return () => { cancelled = true; };
-  }, [query, openId]);
 
   const addProduct = async (p: ProductRow) => {
     if (!openId) return;
@@ -302,36 +266,26 @@ export default function CollectionsAdminPage() {
 
                 {openId === c.id && (
                   <div style={{ borderTop: `1px solid ${tokens.border}`, marginTop: "0.9rem", paddingTop: "0.9rem" }}>
-                    <input
-                      type="search"
-                      aria-label="חיפוש מוצר להוספה לקטלוג"
-                      placeholder="🔍 חיפוש מוצר להוספה (שם / קוד / ברקוד)…"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.7rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
+                    {/* The whole catalogue, shown immediately — same grid,
+                        categories, search and infinite scroll the customer
+                        sees. Cards already in this collection are outlined and
+                        offer הסרה instead of הוספה. */}
+                    <AdminProductBrowser
+                      searchLabel="חיפוש מוצר להוספה (שם / קוד / ברקוד)"
+                      stickyTop={0}
+                      highlight={(p) => memberIds.has(p.id)}
+                      renderAction={(p) => {
+                        const inCol = memberIds.has(p.id);
+                        return (
+                          <button
+                            onClick={() => (inCol ? removeProduct(p) : addProduct(p))}
+                            style={{ marginTop: "auto", width: "100%", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", border: "none", padding: "0.55rem 0.9rem", borderRadius: 12, color: "#fff", background: inCol ? "#C0143C" : "#1A7A4D" }}
+                          >
+                            {inCol ? "הסרה מהקטלוג" : "+ הוספה לקטלוג"}
+                          </button>
+                        );
+                      }}
                     />
-                    {searchBusy && <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginTop: "0.5rem" }}>מחפש…</p>}
-                    {results.length > 0 && (
-                      <div style={{ display: "grid", gap: "0.4rem", marginTop: "0.6rem" }}>
-                        {results.map((p) => {
-                          const inCol = memberIds.has(p.id);
-                          return (
-                            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.6rem", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.4rem 0.6rem" }}>
-                              <div style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
-                                <ProductImage pictureLink={p.picture_link} name={p.name} width={480} rotation={p.rotation_override ?? 0} imgStyle={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                              </div>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.88rem", color: tokens.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                                {p.sku && <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }} dir="ltr">{p.sku}</div>}
-                              </div>
-                              <button onClick={() => (inCol ? removeProduct(p) : addProduct(p))} style={{ ...miniBtn, color: inCol ? "#C0143C" : "#1A7A4D" }}>
-                                {inCol ? "הסרה" : "+ הוספה"}
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
 
                     <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", color: tokens.text, marginTop: "1rem" }}>
                       בקטלוג ({members.length.toLocaleString("he-IL")})

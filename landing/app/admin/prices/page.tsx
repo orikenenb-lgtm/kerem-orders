@@ -1,38 +1,32 @@
 "use client";
 
-// Manager screen: set a price for EVERYONE or for CHOSEN CUSTOMERS.
+// Manager screen: browse the WHOLE catalogue exactly like the customer sees it
+// (grid, categories, search, infinite scroll) and change the price of any
+// product — for everyone, or for chosen customers.
 //
 // Why prices are not edited on the product row: the Rivhit sync upserts
 // products.price from Item.List every 15 minutes, so a manual edit there is
-// silently reverted. Everything here writes to price_overrides, which the
-// sync never touches. The rules (customer price beats global; a customer
-// price is final and the fixed discount is NOT added on top) live in
+// silently reverted. Everything here writes to price_overrides, which the sync
+// never touches. The resolution rules (a customer price beats the global one
+// and is final — the fixed discount is NOT added on top) live in
 // lib/pricing.ts and, identically, in the validate_order_item DB trigger.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
-import ProductImage from "../../components/ProductImage";
+import AdminProductBrowser, { type BrowserProduct } from "../components/AdminProductBrowser";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
 import { tokens, ils } from "../../../lib/ui";
 
-type ProductRow = {
-  id: string;
-  name: string;
-  sku: string | null;
-  price: number;
-  picture_link: string;
-  rotation_override: number | null;
-};
+type ProductRow = BrowserProduct;
 
 type OverrideRow = {
   id: string;
   product_id: string;
   user_id: string | null;
   price: number;
-  updated_at: string;
 };
 
 type CustomerRow = {
@@ -46,23 +40,14 @@ export default function PricesAdminPage() {
   const router = useRouter();
   const { session, isManager, loading } = useAuth();
 
-  const [input, setInput] = useState("");
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ProductRow[]>([]);
-  const [searching, setSearching] = useState(false);
-
-  const [selected, setSelected] = useState<ProductRow | null>(null);
-  const [overrides, setOverrides] = useState<OverrideRow[]>([]);
+  // ── prices ──
+  // product_id → { global?: OverrideRow; customers: OverrideRow[] }
+  const [ovMap, setOvMap] = useState<Map<string, { global?: OverrideRow; customers: OverrideRow[] }>>(new Map());
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
-  const [ovBusy, setOvBusy] = useState(false);
-
-  // editor state
-  const [scope, setScope] = useState<"all" | "some">("all");
-  const [newPrice, setNewPrice] = useState("");
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
+  const [editing, setEditing] = useState<ProductRow | null>(null);
+  const [total, setTotal] = useState(0);
   const [notice, setNotice] = useState("");
+  const [err, setErr] = useState("");
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -76,7 +61,7 @@ export default function PricesAdminPage() {
     else if (!isManager) router.replace("/catalog");
   }, [loading, session, isManager, router]);
 
-  // customer list once (for the "chosen customers" picker)
+  // categories + customers, once
   useEffect(() => {
     if (!isManager) return;
     supabase
@@ -89,261 +74,293 @@ export default function PricesAdminPage() {
       });
   }, [isManager]);
 
-  useEffect(() => {
-    const t = setTimeout(() => setQuery(input), 350);
-    return () => clearTimeout(t);
-  }, [input]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      const s = query.trim();
-      if (s.length < 2) { setResults([]); return; }
-      setSearching(true);
-      const { data } = await supabase
-        .from("products")
-        .select("id,name,sku,price,picture_link,rotation_override")
-        .eq("is_active", true)
-        .or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`)
-        .order("name")
-        .limit(15);
-      if (cancelled || !mountedRef.current) return;
-      setSearching(false);
-      setResults((data as ProductRow[]) ?? []);
-    };
-    run();
-    return () => { cancelled = true; };
-  }, [query]);
-
-  const loadOverrides = useCallback(async (productId: string) => {
-    setOvBusy(true);
+  // Every override in one read, indexed by product — the grid needs to badge
+  // any card that already has a price, not just the one being edited.
+  const loadOverrides = useCallback(async () => {
     const { data, error } = await supabase
       .from("price_overrides")
-      .select("id,product_id,user_id,price,updated_at")
-      .eq("product_id", productId);
-    if (!mountedRef.current) return;
-    setOvBusy(false);
-    if (error) { setErr("טעינת המחירים נכשלה."); return; }
-    setOverrides((data as OverrideRow[]) ?? []);
+      .select("id,product_id,user_id,price");
+    if (!mountedRef.current || error) return;
+    const m = new Map<string, { global?: OverrideRow; customers: OverrideRow[] }>();
+    for (const o of (data as OverrideRow[]) ?? []) {
+      const e = m.get(o.product_id) ?? { customers: [] };
+      if (o.user_id === null) e.global = o;
+      else e.customers.push(o);
+      m.set(o.product_id, e);
+    }
+    setOvMap(m);
   }, []);
 
-  const pick = (p: ProductRow) => {
-    setSelected(p);
-    setOverrides([]);
-    setNewPrice("");
-    setScope("all");
-    setPicked(new Set());
-    setErr("");
-    setNotice("");
-    loadOverrides(p.id);
-  };
+  useEffect(() => { if (isManager) loadOverrides(); }, [isManager, loadOverrides]);
 
-  const priceNum = Number(newPrice);
-  const priceValid = newPrice.trim() !== "" && Number.isFinite(priceNum) && priceNum >= 0;
-
-  const save = async () => {
-    if (!selected || !priceValid || saving) return;
-    if (scope === "some" && picked.size === 0) {
-      setErr("בחרו לפחות לקוח אחד, או עברו ל״לכל הלקוחות״.");
-      return;
-    }
-    setSaving(true);
-    setErr("");
-    const rounded = Math.round(priceNum * 100) / 100;
-    // user_id null = "everyone"; a uuid = that one customer. Typed as the
-    // union up front so the ternary doesn't collapse to the string-only shape.
-    const rows: { product_id: string; user_id: string | null; price: number; updated_by: string | null }[] =
-      scope === "all"
-        ? [{ product_id: selected.id, user_id: null, price: rounded, updated_by: session?.user.id ?? null }]
-        : [...picked].map((uid) => ({
-            product_id: selected.id, user_id: uid, price: rounded, updated_by: session?.user.id ?? null,
-          }));
-    // The unique indexes are partial (one WHERE user_id IS NULL, one WHERE it
-    // is not), which upsert's ON CONFLICT cannot target — so replace instead:
-    // delete the rows being rewritten, then insert.
-    let delQ = supabase.from("price_overrides").delete().eq("product_id", selected.id);
-    delQ = scope === "all" ? delQ.is("user_id", null) : delQ.in("user_id", [...picked]);
-    const { error: delErr } = await delQ;
-    if (delErr) { setSaving(false); setErr("שמירת המחיר נכשלה."); return; }
-    const { error } = await supabase.from("price_overrides").insert(rows);
-    if (!mountedRef.current) return;
-    setSaving(false);
-    if (error) { setErr("שמירת המחיר נכשלה."); return; }
-    setNotice(
-      scope === "all"
-        ? `המחיר ${ils(rounded)} נשמר לכל הלקוחות.`
-        : `המחיר ${ils(rounded)} נשמר ל־${picked.size} לקוחות.`
-    );
-    setNewPrice("");
-    setPicked(new Set());
-    loadOverrides(selected.id);
-  };
-
-  const removeOverride = async (o: OverrideRow) => {
-    const { error } = await supabase.from("price_overrides").delete().eq("id", o.id);
-    if (error) { setErr("הביטול נכשל."); return; }
-    setNotice("המחיר בוטל — חזרה למחיר מרווחית.");
-    if (selected) loadOverrides(selected.id);
-  };
+  const customerName = useCallback((id: string) => {
+    const c = customers.find((x) => x.id === id);
+    return c?.business_name || c?.full_name || "לקוח";
+  }, [customers]);
 
   if (loading || !isManager) return null;
 
-  const globalOv = overrides.find((o) => o.user_id === null) ?? null;
-  const customerOvs = overrides.filter((o) => o.user_id !== null);
-  const customerName = (id: string) => {
-    const c = customers.find((x) => x.id === id);
-    return c?.business_name || c?.full_name || "לקוח";
-  };
+  const pricedCount = ovMap.size;
 
   return (
     <>
       <SiteHeader />
-      <main id="main-content" style={{ maxWidth: 1000, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 5rem" }}>
+      <main id="main-content" style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 5rem" }}>
         <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "0.8rem" }}>
           <Link href="/admin" style={{ color: tokens.accent, textDecoration: "none" }}>ניהול</Link> · מחירים
         </div>
         <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.5rem,4vw,2.2rem)", color: tokens.text }}>
           שינוי מחירים
         </h1>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.4rem", maxWidth: 700 }}>
-          מחפשים מוצר, קובעים מחיר, ובוחרים אם הוא חל <strong>על כל הלקוחות</strong> או <strong>על לקוחות מסוימים</strong>.
+        <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.4rem", maxWidth: 720 }}>
+          כל המוצרים באתר. לוחצים ״שינוי מחיר״ על מוצר, קובעים מחיר, ובוחרים אם הוא חל{" "}
+          <strong>על כל הלקוחות</strong> או <strong>על לקוחות מסוימים</strong>.
           המחיר נשמר בנפרד ממחיר רווחית, כך שהסנכרון האוטומטי לא מוחק אותו.
         </p>
+        <p style={{ fontFamily: tokens.assistant, color: tokens.dim, fontSize: "0.88rem", marginTop: "0.3rem" }}>
+          {total.toLocaleString("he-IL")} מוצרים
+          {pricedCount > 0 ? ` · ${pricedCount.toLocaleString("he-IL")} מהם עם מחיר מיוחד` : ""}
+        </p>
 
-        <input
-          type="search"
-          aria-label="חיפוש מוצר לשינוי מחיר"
-          placeholder="🔍 חיפוש מוצר (שם / קוד / ברקוד)…"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          style={{ width: "100%", marginTop: "1.2rem", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.8rem 1rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
+        {notice && <p role="status" style={{ fontFamily: tokens.assistant, color: "#1A7A4D", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 10, padding: "0.5rem 0.8rem" }}>{notice}</p>}
+        {err && <p role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C" }}>{err}</p>}
+
+        <AdminProductBrowser
+          searchLabel="חיפוש מוצר (שם / קוד / ברקוד)"
+          onTotal={setTotal}
+          highlight={(p) => ovMap.has(p.id)}
+          renderAction={(p) => {
+            const ov = ovMap.get(p.id);
+            return (
+              <>
+                {ov?.global ? (
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem", flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: "#1A7A4D" }}>{ils(ov.global.price)}</span>
+                    <s style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>{ils(p.price)}</s>
+                    <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.65rem", color: "#fff", background: "#1A7A4D", padding: "0.12rem 0.45rem", borderRadius: 999 }}>לכולם</span>
+                  </div>
+                ) : (
+                  <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>{ils(p.price)}</div>
+                )}
+                {ov && ov.customers.length > 0 && (
+                  <div style={{ fontFamily: tokens.assistant, fontSize: "0.75rem", color: "#1A7A4D" }}>
+                    מחיר מיוחד ל־{ov.customers.length.toLocaleString("he-IL")} לקוחות
+                  </div>
+                )}
+                <button
+                  onClick={() => { setEditing(p); setNotice(""); setErr(""); }}
+                  style={{ marginTop: "auto", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: "#fff", background: tokens.accent, border: "none", padding: "0.55rem 0.9rem", borderRadius: 12, cursor: "pointer", width: "100%" }}
+                >
+                  שינוי מחיר
+                </button>
+              </>
+            );
+          }}
         />
-        {searching && <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginTop: "0.5rem" }}>מחפש…</p>}
+      </main>
 
-        {results.length > 0 && (
-          <div style={{ display: "grid", gap: "0.4rem", marginTop: "0.7rem" }}>
-            {results.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => pick(p)}
-                style={{ display: "flex", alignItems: "center", gap: "0.7rem", textAlign: "start", font: "inherit", cursor: "pointer", border: `1px solid ${selected?.id === p.id ? tokens.accent : tokens.border}`, borderRadius: 12, padding: "0.5rem 0.7rem", background: "#fff" }}
-              >
-                <span style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
-                  <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} imgStyle={{ width: "100%", height: "100%", objectFit: "contain" }} />
+      {editing && (
+        <PriceEditor
+          product={editing}
+          existing={ovMap.get(editing.id) ?? { customers: [] }}
+          customers={customers}
+          customerName={customerName}
+          managerId={session?.user.id ?? null}
+          onClose={() => setEditing(null)}
+          onSaved={(msg) => { setNotice(msg); loadOverrides(); }}
+          onError={(msg) => setErr(msg)}
+        />
+      )}
+    </>
+  );
+}
+
+// Focused editor dialog: price + who it applies to + the prices already set.
+function PriceEditor({ product, existing, customers, customerName, managerId, onClose, onSaved, onError }: {
+  product: ProductRow;
+  existing: { global?: OverrideRow; customers: OverrideRow[] };
+  customers: CustomerRow[];
+  customerName: (id: string) => string;
+  managerId: string | null;
+  onClose: () => void;
+  onSaved: (msg: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const [scope, setScope] = useState<"all" | "some">("all");
+  const [newPrice, setNewPrice] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [localErr, setLocalErr] = useState("");
+
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "Tab" && panelRef.current) {
+        const f = panelRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled])'
+        );
+        if (f.length === 0) return;
+        const first = f[0], last = f[f.length - 1], active = document.activeElement;
+        if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+        else if (!panelRef.current.contains(active)) { e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+
+  const priceNum = Number(newPrice);
+  const priceValid = newPrice.trim() !== "" && Number.isFinite(priceNum) && priceNum >= 0;
+
+  const save = async () => {
+    if (!priceValid || saving) return;
+    if (scope === "some" && picked.size === 0) {
+      setLocalErr("בחרו לפחות לקוח אחד, או עברו ל״כל הלקוחות״.");
+      return;
+    }
+    setSaving(true);
+    setLocalErr("");
+    const rounded = Math.round(priceNum * 100) / 100;
+    const rows: { product_id: string; user_id: string | null; price: number; updated_by: string | null }[] =
+      scope === "all"
+        ? [{ product_id: product.id, user_id: null, price: rounded, updated_by: managerId }]
+        : [...picked].map((uid) => ({ product_id: product.id, user_id: uid, price: rounded, updated_by: managerId }));
+    // The unique indexes are partial (one WHERE user_id IS NULL, one WHERE it
+    // is not), which upsert's ON CONFLICT cannot target — so replace instead.
+    let del = supabase.from("price_overrides").delete().eq("product_id", product.id);
+    del = scope === "all" ? del.is("user_id", null) : del.in("user_id", [...picked]);
+    const { error: delErr } = await del;
+    if (delErr) { setSaving(false); setLocalErr("השמירה נכשלה."); return; }
+    const { error } = await supabase.from("price_overrides").insert(rows);
+    setSaving(false);
+    if (error) { setLocalErr("השמירה נכשלה."); return; }
+    onSaved(
+      scope === "all"
+        ? `${product.name}: ${ils(rounded)} לכל הלקוחות.`
+        : `${product.name}: ${ils(rounded)} ל־${picked.size} לקוחות.`
+    );
+    onClose();
+  };
+
+  const cancelOverride = async (o: OverrideRow) => {
+    const { error } = await supabase.from("price_overrides").delete().eq("id", o.id);
+    if (error) { onError("הביטול נכשל."); return; }
+    onSaved("המחיר בוטל — חזרה למחיר מרווחית.");
+    onClose();
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(20,16,32,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`שינוי מחיר: ${product.name}`}
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "#fff", width: "100%", maxWidth: 520, maxHeight: "92dvh", overflowY: "auto", borderRadius: 20, padding: "1rem 1.1rem 1.4rem", display: "flex", flexDirection: "column", gap: "0.8rem" }}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.8rem" }}>
+          <div>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>{product.name}</div>
+            <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, marginTop: "0.2rem" }}>
+              מחיר רווחית: <strong>{ils(product.price)}</strong>
+            </div>
+          </div>
+          <button ref={closeRef} onClick={onClose} aria-label="סגירה" style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, fontSize: "1.2rem", lineHeight: 1, cursor: "pointer" }}>✕</button>
+        </div>
+
+        {/* what is already set */}
+        {(existing.global || existing.customers.length > 0) && (
+          <div style={{ display: "grid", gap: "0.4rem" }}>
+            {existing.global && (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", background: "rgba(37,199,126,0.10)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 10, padding: "0.5rem 0.7rem" }}>
+                <span style={{ flex: 1, fontFamily: tokens.assistant, fontSize: "0.86rem", color: tokens.text }}>
+                  לכל הלקוחות: <strong>{ils(existing.global.price)}</strong>{" "}
+                  <span style={{ color: tokens.dim }}>(ההנחה הקבועה עדיין חלה על זה)</span>
                 </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: "block", fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.9rem", color: tokens.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-                  <span style={{ display: "block", fontFamily: tokens.assistant, fontSize: "0.75rem", color: tokens.dim }}>
-                    מחיר רווחית: {ils(p.price)}{p.sku ? ` · ${p.sku}` : ""}
-                  </span>
+                <button onClick={() => cancelOverride(existing.global!)} style={miniBtn}>ביטול</button>
+              </div>
+            )}
+            {existing.customers.map((o) => (
+              <div key={o.id} style={{ display: "flex", alignItems: "center", gap: "0.6rem", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.5rem 0.7rem" }}>
+                <span style={{ flex: 1, fontFamily: tokens.assistant, fontSize: "0.86rem", color: tokens.text }}>
+                  {customerName(o.user_id!)}: <strong>{ils(o.price)}</strong>{" "}
+                  <span style={{ color: tokens.dim }}>(מחיר סופי)</span>
                 </span>
-              </button>
+                <button onClick={() => cancelOverride(o)} style={miniBtn}>ביטול</button>
+              </div>
             ))}
           </div>
         )}
 
-        {selected && (
-          <div style={{ marginTop: "1.5rem", border: `1px solid ${tokens.border}`, borderRadius: 16, background: "#fff", padding: "1.1rem" }}>
-            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{selected.name}</div>
-            <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, marginTop: "0.2rem" }}>
-              מחיר מרווחית (ברירת מחדל): <strong>{ils(selected.price)}</strong>
-            </div>
+        <label style={{ display: "grid", gap: "0.3rem", maxWidth: 220 }}>
+          <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text }}>מחיר חדש (₪)</span>
+          <input
+            value={newPrice}
+            onChange={(e) => setNewPrice(e.target.value.replace(/[^\d.]/g, ""))}
+            inputMode="decimal"
+            placeholder="לדוגמה: 12.50"
+            style={{ fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.65rem 0.8rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
+          />
+        </label>
 
-            {/* current state */}
-            <div style={{ marginTop: "1rem", display: "grid", gap: "0.4rem" }}>
-              {ovBusy ? (
-                <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>טוען מחירים…</span>
-              ) : (
-                <>
-                  {globalOv && (
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", background: "rgba(37,199,126,0.10)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 10, padding: "0.5rem 0.7rem" }}>
-                      <span style={{ flex: 1, fontFamily: tokens.assistant, fontSize: "0.88rem", color: tokens.text }}>
-                        לכל הלקוחות: <strong>{ils(globalOv.price)}</strong> <span style={{ color: tokens.dim }}>(ההנחה הקבועה של הלקוח עדיין חלה על זה)</span>
-                      </span>
-                      <button onClick={() => removeOverride(globalOv)} style={miniBtn}>ביטול</button>
-                    </div>
-                  )}
-                  {customerOvs.map((o) => (
-                    <div key={o.id} style={{ display: "flex", alignItems: "center", gap: "0.6rem", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.5rem 0.7rem" }}>
-                      <span style={{ flex: 1, fontFamily: tokens.assistant, fontSize: "0.88rem", color: tokens.text }}>
-                        {customerName(o.user_id!)}: <strong>{ils(o.price)}</strong> <span style={{ color: tokens.dim }}>(מחיר סופי)</span>
-                      </span>
-                      <button onClick={() => removeOverride(o)} style={miniBtn}>ביטול</button>
-                    </div>
-                  ))}
-                  {!globalOv && customerOvs.length === 0 && (
-                    <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>
-                      אין כרגע מחיר מיוחד — כולם משלמים את מחיר רווחית (בניכוי ההנחה הקבועה שלהם).
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
+        <fieldset style={{ border: "none", padding: 0, margin: 0, display: "grid", gap: "0.4rem" }}>
+          <legend style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text, padding: 0 }}>על מי המחיר חל?</legend>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontFamily: tokens.assistant, fontSize: "0.92rem", color: tokens.body, cursor: "pointer" }}>
+            <input type="radio" name="scope" checked={scope === "all"} onChange={() => setScope("all")} />
+            על כל הלקוחות
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontFamily: tokens.assistant, fontSize: "0.92rem", color: tokens.body, cursor: "pointer" }}>
+            <input type="radio" name="scope" checked={scope === "some"} onChange={() => setScope("some")} />
+            על לקוחות מסוימים
+          </label>
+        </fieldset>
 
-            {/* editor */}
-            <div style={{ borderTop: `1px solid ${tokens.border}`, marginTop: "1rem", paddingTop: "1rem", display: "grid", gap: "0.8rem" }}>
-              <label style={{ display: "grid", gap: "0.3rem", maxWidth: 240 }}>
-                <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text }}>מחיר חדש (₪)</span>
+        {scope === "some" && (
+          <div style={{ border: `1px solid ${tokens.border}`, borderRadius: 12, padding: "0.6rem", maxHeight: 220, overflowY: "auto", display: "grid", gap: "0.25rem" }}>
+            {customers.length === 0 ? (
+              <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>אין עדיין לקוחות רשומים.</span>
+            ) : customers.map((c) => (
+              <label key={c.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontFamily: tokens.assistant, fontSize: "0.88rem", color: tokens.text, cursor: "pointer", padding: "0.25rem" }}>
                 <input
-                  value={newPrice}
-                  onChange={(e) => setNewPrice(e.target.value.replace(/[^\d.]/g, ""))}
-                  inputMode="decimal"
-                  placeholder="לדוגמה: 12.50"
-                  style={{ fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.65rem 0.8rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
+                  type="checkbox"
+                  checked={picked.has(c.id)}
+                  onChange={(e) => setPicked((s) => {
+                    const n = new Set(s);
+                    if (e.target.checked) n.add(c.id); else n.delete(c.id);
+                    return n;
+                  })}
                 />
+                <span>{c.business_name || c.full_name || "לקוח"}</span>
+                {Number(c.discount_percent) > 0 && (
+                  <span style={{ fontSize: "0.72rem", color: tokens.dim }}>· הנחה {Number(c.discount_percent)}% (לא תתווסף)</span>
+                )}
               </label>
-
-              <fieldset style={{ border: "none", padding: 0, margin: 0, display: "grid", gap: "0.4rem" }}>
-                <legend style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text, padding: 0 }}>על מי המחיר חל?</legend>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontFamily: tokens.assistant, fontSize: "0.92rem", color: tokens.body, cursor: "pointer" }}>
-                  <input type="radio" name="scope" checked={scope === "all"} onChange={() => setScope("all")} />
-                  על כל הלקוחות
-                </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontFamily: tokens.assistant, fontSize: "0.92rem", color: tokens.body, cursor: "pointer" }}>
-                  <input type="radio" name="scope" checked={scope === "some"} onChange={() => setScope("some")} />
-                  על לקוחות מסוימים
-                </label>
-              </fieldset>
-
-              {scope === "some" && (
-                <div style={{ border: `1px solid ${tokens.border}`, borderRadius: 12, padding: "0.6rem", maxHeight: 260, overflowY: "auto", display: "grid", gap: "0.25rem" }}>
-                  {customers.length === 0 ? (
-                    <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>אין עדיין לקוחות רשומים.</span>
-                  ) : customers.map((c) => (
-                    <label key={c.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontFamily: tokens.assistant, fontSize: "0.88rem", color: tokens.text, cursor: "pointer", padding: "0.25rem" }}>
-                      <input
-                        type="checkbox"
-                        checked={picked.has(c.id)}
-                        onChange={(e) => setPicked((s) => {
-                          const n = new Set(s);
-                          if (e.target.checked) n.add(c.id); else n.delete(c.id);
-                          return n;
-                        })}
-                      />
-                      <span>{c.business_name || c.full_name || "לקוח"}</span>
-                      {Number(c.discount_percent) > 0 && (
-                        <span style={{ fontSize: "0.75rem", color: tokens.dim }}>· הנחה קבועה {Number(c.discount_percent)}% (לא תתווסף למחיר הזה)</span>
-                      )}
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {err && <p role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.9rem", margin: 0 }}>{err}</p>}
-              {notice && <p role="status" style={{ fontFamily: tokens.assistant, color: "#1A7A4D", fontSize: "0.9rem", margin: 0 }}>{notice}</p>}
-
-              <button
-                onClick={save}
-                disabled={!priceValid || saving}
-                style={{ justifySelf: "start", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.75rem 1.6rem", borderRadius: 999, cursor: "pointer", opacity: !priceValid || saving ? 0.6 : 1 }}
-              >
-                {saving ? "שומר…" : "שמירת המחיר"}
-              </button>
-            </div>
+            ))}
           </div>
         )}
-      </main>
-    </>
+
+        {localErr && <p role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.9rem", margin: 0 }}>{localErr}</p>}
+
+        <button
+          onClick={save}
+          disabled={!priceValid || saving}
+          style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.75rem 1.6rem", borderRadius: 999, cursor: "pointer", opacity: !priceValid || saving ? 0.6 : 1 }}
+        >
+          {saving ? "שומר…" : "שמירת המחיר"}
+        </button>
+      </div>
+    </div>
   );
 }
 
