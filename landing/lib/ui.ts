@@ -67,3 +67,19 @@ export function primaryBtn(busy: boolean): CSSProperties {
     marginTop: "0.4rem",
   };
 }
+
+/**
+ * A button that has to read as a text link — used inside the auth screen,
+ * where "להתחברות" / "פתיחת חשבון" switch tabs in place instead of
+ * navigating. A real <button> keeps it keyboard- and screen-reader-correct.
+ */
+export const linkBtn: CSSProperties = {
+  font: "inherit",
+  fontWeight: 600,
+  color: tokens.accent,
+  background: "none",
+  border: "none",
+  padding: 0,
+  cursor: "pointer",
+  textDecoration: "underline",
+};
