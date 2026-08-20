@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
+import SiteFooter from "../../components/SiteFooter";
 import ProductImage from "../../components/ProductImage";
 import AdminProductBrowser, { type BrowserProduct } from "../components/AdminProductBrowser";
 import { supabase } from "../../../lib/supabaseClient";
@@ -214,7 +215,7 @@ export default function CollectionsAdminPage() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 5rem" }}>
+      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 5rem" }}>
         <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "0.8rem" }}>
           <Link href="/admin" style={{ color: tokens.accent, textDecoration: "none" }}>ניהול</Link> · קטלוגים ללקוחות
         </div>
@@ -375,6 +376,7 @@ export default function CollectionsAdminPage() {
           </div>
         )}
       </main>
+      <SiteFooter />
     </>
   );
 }

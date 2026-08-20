@@ -16,7 +16,7 @@ import ClosingCTA from "./ClosingCTA";
 
 export default function LegacyLanding() {
   return (
-    <main id="main-content" style={{ background: "#fff" }}>
+    <main id="main-content" tabIndex={-1} style={{ background: "#fff" }}>
       <ScrollHero />
       <FeaturesSection />
       <NumbersSection />

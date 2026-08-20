@@ -40,7 +40,7 @@ export default function AccessibilityPage() {
     <div style={{ background: tokens.bg, minHeight: "100vh" }}>
       <SiteHeader />
 
-      <main id="main-content"
+      <main id="main-content" tabIndex={-1}
         style={{
           maxWidth: 720,
           margin: "0 auto",
@@ -85,7 +85,8 @@ export default function AccessibilityPage() {
           <ul style={{ paddingInlineStart: "1.4rem", margin: "0 0 0.8rem" }}>
             <li style={listItem}>ניווט באמצעות מקלדת, כולל קישור דילוג לתוכן הראשי.</li>
             <li style={listItem}>טקסטים חלופיים (alt) לתמונות מוצרים.</li>
-            <li style={listItem}>הקפדה על ניגודיות צבעים בין טקסט לרקע.</li>
+            <li style={listItem}>ניגודיות צבעים בין טקסט לרקע בהתאם לתקן (4.5:1 לטקסט רגיל).</li>
+            <li style={listItem}>סימון ברור של הפוקוס בעת ניווט במקלדת.</li>
             <li style={listItem}>תוויות ומאפייני ARIA לרכיבים אינטראקטיביים, לתמיכה בקוראי מסך.</li>
             <li style={listItem}>תמיכה מלאה בכיווניות עברית (RTL) ובתצוגה במסכים קטנים.</li>
           </ul>

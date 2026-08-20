@@ -8,7 +8,7 @@ import SiteFooter from "../components/SiteFooter";
 import ProductImage from "../components/ProductImage";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
-import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
+import { tokens, ils, discountPct } from "../../lib/ui";
 import { buildPriceMap, resolvePrice, hasSpecialPrice, type PriceMap, type PriceOverrideRow } from "../../lib/pricing";
 import { featureFlags } from "../../lib/featureFlags";
 import { resolveQuantity, stepOf } from "../../lib/quantity";
@@ -137,7 +137,7 @@ function ProductDetail() {
 
   if (loading || busy) {
     return (
-      <main id="main-content" style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
+      <main id="main-content" tabIndex={-1} style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
         טוען…
       </main>
     );
@@ -145,7 +145,7 @@ function ProductDetail() {
 
   if (notFound || !product) {
     return (
-      <main id="main-content" style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
+      <main id="main-content" tabIndex={-1} style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
         <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🧸</div>
         <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.6rem", color: tokens.text, marginBottom: "1rem" }}>המוצר לא נמצא</h1>
         <Link href="/catalog" style={{ fontFamily: tokens.rubik, fontWeight: 700, color: "#fff", background: tokens.rainbow, padding: "0.7rem 1.6rem", borderRadius: 999, textDecoration: "none" }}>← חזרה לקטלוג</Link>
@@ -166,7 +166,7 @@ function ProductDetail() {
   const lineTotal = unitPrice * effectiveQty;
 
   return (
-    <main id="main-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 4rem" }}>
+    <main id="main-content" tabIndex={-1} style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 4rem" }}>
       <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "1.2rem" }}>
         <Link href="/catalog" style={{ color: tokens.accent, textDecoration: "none" }}>הקטלוג</Link>
         {p.category ? <> · {p.category}</> : null}
@@ -243,7 +243,7 @@ function ProductDetail() {
       {related.length > 0 && (
         <section style={{ marginTop: "3.5rem" }}>
           <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.3rem", color: tokens.text, marginBottom: "1.2rem" }}>מוצרים דומים</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "1rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem" }}>
             {related.map((r) => {
               const rPrice = resolvePrice(r.id, r.price, priceMap, discount);
               return (
@@ -269,7 +269,7 @@ export default function ProductPage() {
   return (
     <>
       <SiteHeader />
-      <Suspense fallback={<main id="main-content" style={{ minHeight: "60vh" }} />}>
+      <Suspense fallback={<main id="main-content" tabIndex={-1} style={{ minHeight: "60vh" }} />}>
         <ProductDetail />
       </Suspense>
       <SiteFooter />

@@ -94,7 +94,7 @@ export default function ResetPage() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" style={{ minHeight: "calc(100vh - 64px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "2.5rem 1.25rem", background: tokens.surface }}>
+      <main id="main-content" tabIndex={-1} style={{ minHeight: "calc(100vh - 64px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "2.5rem 1.25rem", background: tokens.surface }}>
         <div style={{ width: "100%", maxWidth: 420, background: "#fff", borderRadius: 24, border: `1px solid ${tokens.border}`, boxShadow: "0 20px 60px rgba(26,23,48,0.08)", padding: "clamp(1.75rem, 5vw, 2.75rem)" }}>
           <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.7rem", color: tokens.text, marginBottom: "0.6rem" }}>
             בחירת סיסמה חדשה

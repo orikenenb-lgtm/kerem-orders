@@ -177,7 +177,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
+      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
         <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.6rem,4vw,2.6rem)", color: tokens.text }}>
           {showPrices ? "קטלוג ומחירון" : "קטלוג המוצרים"}
         </h1>
@@ -186,7 +186,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
           {showPrices && vatLabel ? " · המחירים כוללים מע״מ" : ""}
         </p>
 
-        <div style={{ position: "sticky", top: 64, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
+        <div style={{ position: "sticky", top: "var(--kt-header-h, 96px)", zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
           <input
             type="search"
             id="kt-public-search"
@@ -242,7 +242,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                 🔎 לא מצאנו התאמה מדויקת ל־“{query}” — אלה המוצרים הכי דומים:
               </div>
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem", marginTop: "1rem" }}>
               {products.map((p, i) => {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
                 return (
@@ -265,7 +265,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                         not a fixed height), object-fit contain so no toy is
                         ever cropped or stretched, small inner padding, one
                         background for photographed-on-white images. */}
-                    <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "2.6rem", padding: 8 }}>
+                    <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
                       <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} />
                     </div>
                     <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", margin: 0 }}>{p.name}</h3>

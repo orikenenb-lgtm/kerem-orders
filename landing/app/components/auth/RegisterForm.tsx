@@ -412,13 +412,12 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
           {submittedEmail ? (
             <div ref={successRef} tabIndex={-1} role="status" aria-live="polite" style={{ display: "grid", gap: "1rem", fontFamily: tokens.assistant, color: tokens.body, outline: "none" }}>
               <p style={{ fontSize: "1.05rem", lineHeight: 1.6 }}>
-                שלחנו אליכם קישור לאימות כתובת המייל
-                {" "}
-                <span dir="ltr" style={{ fontWeight: 700, color: tokens.text }}>{submittedEmail}</span>.
-                יש לפתוח את הקישור לפני ההתחברות.
+                החשבון נפתח עבור{" "}
+                <span dir="ltr" style={{ fontWeight: 700, color: tokens.text }}>{submittedEmail}</span>
+                {" "}— אפשר להתחבר עכשיו.
               </p>
               <p style={{ fontSize: "0.95rem", color: tokens.body }}>
-                לא קיבלתם? בדקו את תיקיית הספאם, או נסו להתחבר לאחר האימות.
+                שמרו את כתובת המייל והסיסמה — איתן מתחברים בכל פעם.
               </p>
               <button type="button" onClick={() => onSwitch("login")} style={primaryBtn(false)}>
                 מעבר להתחברות

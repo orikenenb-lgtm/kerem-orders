@@ -33,7 +33,7 @@ export default function AdminProductBrowser({
   searchLabel,
   renderAction,
   highlight,
-  stickyTop = 64,
+  stickyTop = "var(--kt-header-h, 96px)",
   onTotal,
 }: {
   searchLabel: string;
@@ -41,7 +41,7 @@ export default function AdminProductBrowser({
   renderAction: (p: BrowserProduct) => React.ReactNode;
   /** Draw the card with an accent border (e.g. already in the collection). */
   highlight?: (p: BrowserProduct) => boolean;
-  stickyTop?: number;
+  stickyTop?: number | string;
   onTotal?: (n: number) => void;
 }) {
   const [input, setInput] = useState("");
@@ -84,7 +84,10 @@ export default function AdminProductBrowser({
     setBusy(true);
     let q = supabase.from("products").select(PROD_COLS, { count: "exact" }).eq("is_active", true);
     if (activeCat !== "all") q = q.eq("category", activeCat);
-    const s = query.trim();
+    // Same sanitisation every other search screen applies: a raw "," or "("
+    // breaks the or() filter and PostgREST answers 400; "%" would smuggle in
+    // an extra LIKE wildcard.
+    const s = query.trim().replace(/[,()%]/g, " ").trim();
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
     const { data, count, error } = await q
       .order("name", { ascending: true })
@@ -125,7 +128,7 @@ export default function AdminProductBrowser({
 
   return (
     <>
-      <div style={{ position: "sticky", top: stickyTop, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0" }}>
+      <div style={{ position: "sticky", top: stickyTop, zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0" }}>
         <input
           type="search"
           aria-label={searchLabel}
@@ -166,7 +169,7 @@ export default function AdminProductBrowser({
         </p>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem", marginTop: "1rem" }}>
             {products.map((p) => (
               <div
                 key={p.id}

@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
+import SiteFooter from "../components/SiteFooter";
 import ProductImage from "../components/ProductImage";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
-import { tokens, ils, discountPct, applyDiscount } from "../../lib/ui";
+import { tokens, ils, discountPct, disabledBtn } from "../../lib/ui";
 import { buildPriceMap, resolvePrice, hasSpecialPrice, type PriceMap, type PriceOverrideRow } from "../../lib/pricing";
 import { featureFlags } from "../../lib/featureFlags";
-import { VAT_RATE } from "../../lib/config";
+import { VAT_RATE, MIN_ORDER_FALLBACK } from "../../lib/config";
 import { resolveQuantity, stepOf, describeQuantity, pluralPack } from "../../lib/quantity";
 import { orderExactFirst } from "../../lib/searchRank";
 import { readCart } from "../../lib/cart";
@@ -106,7 +107,7 @@ export default function CatalogPage() {
   const [placed, setPlaced] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
-  const [minOrder, setMinOrder] = useState(0);
+  const [minOrder, setMinOrder] = useState(MIN_ORDER_FALLBACK);
   const [vatLabel, setVatLabel] = useState(true);
 
   // The customer's fixed discount (0 when none / column not present yet).
@@ -153,7 +154,12 @@ export default function CatalogPage() {
       .in("key", ["min_order_total", "prices_include_vat"])
       .then(({ data }) => {
         const rows = (data ?? []) as { key: string; value: string }[];
-        setMinOrder(Number(rows.find((r) => r.key === "min_order_total")?.value) || 0);
+        // Fail CLOSED. This used to be `|| 0`, and every guard downstream reads
+        // `minOrder > 0 && …` — so a failed or slow settings read silently removed
+        // the minimum entirely: no warning, no progress bar, and an enabled submit
+        // button on a ₪50 cart that the database would then reject.
+        const n = Number(rows.find((r) => r.key === "min_order_total")?.value);
+        setMinOrder(Number.isFinite(n) && n > 0 ? n : MIN_ORDER_FALLBACK);
         const vat = rows.find((r) => r.key === "prices_include_vat")?.value;
         setVatLabel(vat === undefined || vat === "true" || vat === "1");
       });
@@ -581,9 +587,10 @@ export default function CatalogPage() {
     return (
       <>
         <SiteHeader />
-        <main id="main-content" style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
+        <main id="main-content" tabIndex={-1} style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
           טוען…
         </main>
+        <SiteFooter />
       </>
     );
   }
@@ -592,7 +599,7 @@ export default function CatalogPage() {
     return (
       <>
         <SiteHeader />
-        <main id="main-content" style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
+        <main id="main-content" tabIndex={-1} style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
           <div style={{ fontSize: "4rem", marginBottom: "1rem" }}>🎉</div>
           <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "2rem", color: tokens.text, marginBottom: "0.6rem" }}>ההזמנה נשלחה!</h1>
           <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginBottom: "2rem" }}>
@@ -610,7 +617,7 @@ export default function CatalogPage() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
+      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
         <section
           style={{
             position: "relative",
@@ -656,7 +663,7 @@ export default function CatalogPage() {
           </div>
         )}
 
-        <div style={{ position: "sticky", top: 92, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
+        <div style={{ position: "sticky", top: "var(--kt-header-h, 96px)", zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
           <input
             type="search"
             id="kt-catalog-search"
@@ -739,7 +746,7 @@ export default function CatalogPage() {
                 🔎 לא מצאנו התאמה מדויקת ל־“{query}” — אלה המוצרים הכי דומים:
               </div>
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem", marginTop: "1rem" }}>
               {products.map((p, i) => {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
                 const qty = cart[p.id]?.qty ?? 0;
@@ -1006,7 +1013,7 @@ export default function CatalogPage() {
                         מינימום הזמנה: {ils(minOrder)} · חסרים עוד {ils(minOrder - cartTotal)}
                       </div>
                     )}
-                    <button disabled style={{ ...solidBtn, width: "100%", padding: "0.95rem", opacity: 0.5, cursor: "default" }}>
+                    <button disabled style={{ ...disabledBtn, width: "100%", padding: "0.95rem", fontSize: "0.88rem", marginTop: 0 }}>
                       שליחת הזמנה למנהל
                     </button>
                   </>
@@ -1071,6 +1078,7 @@ function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped, labe
   );
 }
 
-const solidBtn: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.88rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.7rem 1.3rem", borderRadius: 999, cursor: "pointer" };
+// Solid accent, not the rainbow: white on the yellow stop measured 1.60:1.
+const solidBtn: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.88rem", color: "#fff", background: tokens.accent, border: "none", padding: "0.7rem 1.3rem", borderRadius: 999, cursor: "pointer" };
 const ghostBtn: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.88rem", color: tokens.accent, background: "#fff", border: `1px solid ${tokens.border}`, padding: "0.7rem 1.3rem", borderRadius: 999, cursor: "pointer" };
 const miniInp: React.CSSProperties = { fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.6rem 0.75rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text, width: "100%" };

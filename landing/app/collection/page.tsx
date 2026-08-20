@@ -130,7 +130,7 @@ function CollectionCatalog() {
 
   if (known === false) {
     return (
-      <main id="main-content" style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
+      <main id="main-content" tabIndex={-1} style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
         <div style={{ fontSize: "3rem", marginBottom: "1rem" }} aria-hidden="true">🧸</div>
         <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.6rem", color: tokens.text, marginBottom: "0.6rem" }}>
           הקטלוג המבוקש לא נמצא
@@ -143,7 +143,7 @@ function CollectionCatalog() {
   }
 
   return (
-    <main id="main-content" style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
+    <main id="main-content" tabIndex={-1} style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
       <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.6rem,4vw,2.6rem)", color: tokens.text }}>
         {collectionName || "קטלוג מותאם"}
       </h1>
@@ -157,7 +157,7 @@ function CollectionCatalog() {
         </p>
       )}
 
-      <div style={{ position: "sticky", top: 64, zIndex: 20, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
+      <div style={{ position: "sticky", top: "var(--kt-header-h, 96px)", zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
         <input
           type="search"
           aria-label="חיפוש מוצר בקטלוג המותאם"
@@ -181,7 +181,7 @@ function CollectionCatalog() {
         </p>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem", marginTop: "1rem" }}>
             {products.map((p) => (
               <button
                 key={p.id}
