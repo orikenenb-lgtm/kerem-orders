@@ -52,7 +52,11 @@ t("email casing/spacing is normalized so it cannot bypass later checks", () => {
   assert.equal(normalizeEmail(undefined), "");
 });
 
-t("public signup never pre-confirms the address", () => {
+t("NOT LIVE — the stricter no-pre-confirm posture stays internally consistent", () => {
+  // The deployed function passes email_confirm: true on purpose so a new
+  // customer can log in immediately. This pins the helpers that would be used
+  // if the owner ever turns on confirmation emails; it is not a claim about
+  // what production does.
   assert.equal(EMAIL_CONFIRM_ON_PUBLIC_SIGNUP, false);
   assert.equal(parseSignup({ email: "x@y.com", password: "password1" }).emailConfirm, false);
 });
@@ -67,7 +71,9 @@ t("input validation rejects bad email and weak/oversized passwords", () => {
   assert.equal(isAcceptablePassword("1234567"), false);
 });
 
-t("errors never reveal whether an account exists (no enumeration)", () => {
+t("NOT LIVE — publicSignupError's messages reveal nothing about existence", () => {
+  // The deployed function returns a friendly "already registered" instead, so
+  // this covers the helper, not the live response. See supabase/functions/signup/lib.ts.
   // A duplicate address and a generic failure must produce the SAME response.
   const dup = publicSignupError("signup_failed");
   const genFail = publicSignupError("signup_failed");
@@ -83,9 +89,9 @@ t("errors never reveal whether an account exists (no enumeration)", () => {
   }
 });
 
-t("repeated automated signups are gated (rate_limited maps to 429)", () => {
-  // The edge function requires a Turnstile token and relies on Auth's per-IP
-  // limits; the rate-limited response is a generic 429.
+t("rate_limited maps to a generic 429", () => {
+  // The live function verifies the Turnstile token; Auth's own per-IP limiter
+  // is what throttles a flood. This pins the generic 429 shape.
   assert.equal(publicSignupError("rate_limited").status, 429);
 });
 

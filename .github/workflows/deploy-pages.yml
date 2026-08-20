@@ -72,8 +72,8 @@ jobs:
       # Toys site (landing/out). Nothing from docs/ or any other directory is
       # ever copied in — an earlier version of this workflow copied the whole
       # docs/ directory (internal AUDIT/HANDOVER/QA/ROLLBACK documents
-      # included) to a public /crps path. The CRPS presentation source files
-      # remain in the repo but are NOT published.
+      # included) to a public /crps path. Those presentation files have since
+      # been removed from the repository entirely — see docs/security-notes.md.
       # NOTE: since v4 hidden files (dotfiles) are excluded from the artifact
       # by default — verified that landing/out contains none, so nothing is
       # lost by the upgrade.

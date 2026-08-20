@@ -1,21 +1,32 @@
-// PURE, unit-tested decision helpers for the PROPOSED secure signup function.
-// No Deno APIs, no network — exercised from landing/tests/signup.test.mjs so
-// the security rules run in CI.
+// PURE, unit-tested decision helpers for the signup function. No Deno APIs, no
+// network — exercised from landing/tests/signup.test.mjs so the security rules
+// run in CI.
 //
-// ⚠️ PROVENANCE: this is a PROPOSED REPLACEMENT for the deployed `signup`
-// function, written from its contract to FIX known weaknesses. It is NOT the
-// deployed source. Deploy only via docs/edge-functions-runbook.md, owner-gated.
+// Read the split carefully, because not every rule in this file is live.
 //
-// Security invariants encoded here (see the tests):
-//  1. A user can NEVER become manager by submitting a particular email — role
-//     is decided server-side, later, after ownership is verified; public
-//     signup always yields "customer".
-//  2. A client-supplied role/ is_manager/ admin field in the body is ignored.
+// ENFORCED BY THE DEPLOYED FUNCTION (index.ts):
+//  1. A user can NEVER become manager by submitting a particular email — public
+//     signup always yields "customer". (resolveRole)
+//  2. A client-supplied role / is_manager / admin field in the body is ignored.
 //  3. Email is normalized (trim + lowercase) so casing/spacing cannot bypass
-//     any later uniqueness or allow-list check.
-//  4. Public signup must NOT pre-confirm the address — email ownership is
-//     proven through Supabase Auth's confirmation email.
-//  5. Errors are generic and never reveal whether an account already exists.
+//     any later uniqueness or allow-list check. (normalizeEmail, isValidEmail)
+//  4. The Cloudflare Turnstile token is verified server-side, with the action
+//     and production-hostname checks. (isTurnstileVerifyAcceptable)
+//
+// NOT LIVE — a stricter posture kept here, and tested, for the day the owner
+// turns on confirmation emails. index.ts deliberately does neither:
+//  5. EMAIL_CONFIRM_ON_PUBLIC_SIGNUP / parseSignup say public signup must not
+//     pre-confirm the address. The live function DOES pre-confirm
+//     (email_confirm: true) so a new customer can log in immediately, and the
+//     registration screen's success copy says exactly that. Switching this on
+//     requires SMTP to be configured and that copy to be rewritten first.
+//  6. publicSignupError's uniform messages hide whether an account exists. The
+//     live function instead tells a returning buyer his address is already
+//     registered, which is an enumeration signal traded for not stranding him.
+//
+// parseSignup also applies an 8-character password floor; the live function and
+// the registration form both use 6. Raising the floor is a product decision,
+// not a code change to make quietly.
 
 export const CUSTOMER_ROLE = "customer" as const;
 
@@ -46,8 +57,9 @@ export function resolveRole(_body: Record<string, unknown>): typeof CUSTOMER_ROL
   return CUSTOMER_ROLE;
 }
 
-/** Public signup never pre-confirms — the confirmation email proves the
- *  address belongs to the registrant. */
+/** The stricter posture: public signup would not pre-confirm, and the
+ *  confirmation email would prove the address belongs to the registrant.
+ *  NOT WIRED UP — index.ts passes email_confirm: true. See the header. */
 export const EMAIL_CONFIRM_ON_PUBLIC_SIGNUP = false;
 
 export type SignupErrorKind =
