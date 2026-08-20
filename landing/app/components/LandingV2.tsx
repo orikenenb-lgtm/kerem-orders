@@ -25,7 +25,7 @@ export default function LandingV2() {
   }, []);
 
   return (
-    <main id="main-content" className="lv2-main">
+    <main id="main-content" tabIndex={-1} className="lv2-main">
       {/* soft decorative blobs — static, aria-hidden, low intensity */}
       <div aria-hidden="true" className="lv2-blob lv2-blob-a" />
       <div aria-hidden="true" className="lv2-blob lv2-blob-b" />

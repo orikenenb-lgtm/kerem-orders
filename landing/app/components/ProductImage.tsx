@@ -1,5 +1,7 @@
 "use client";
 
+import { tokens } from "../../lib/ui";
+
 // THE product image. Every screen that shows a product photo renders this
 // component, so the whole site shares ONE fallback chain (lib/imageFallback.ts):
 //
@@ -102,13 +104,34 @@ export default function ProductImage({
   };
 
   if (failed) {
+    // Own the placeholder here rather than inheriting a font-size from whatever
+    // card happens to wrap us. Two call sites set 2.6rem and two set nothing, so
+    // the same "no image" state rendered as a 42px teddy on one screen and a
+    // 16px speck floating in a 327px white square on another. Rivhit photos do
+    // fail, so this is a state customers really see.
     return (
       <span
         role="img"
         aria-label="תמונת המוצר אינה זמינה"
-        style={placeholderStyle}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "0.35rem",
+          width: "100%",
+          height: "100%",
+          background: tokens.surface,
+          color: tokens.dim,
+          fontSize: "clamp(1.8rem, 24%, 3.25rem)",
+          lineHeight: 1,
+          ...placeholderStyle,
+        }}
       >
-        🧸
+        <span aria-hidden="true">🧸</span>
+        <span aria-hidden="true" style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", lineHeight: 1.2 }}>
+          אין תמונה
+        </span>
       </span>
     );
   }
@@ -133,7 +156,10 @@ export default function ProductImage({
       decoding="async"
       onLoad={() => setPhase("loaded")}
       onError={onError}
-      style={{ width: "100%", height: "100%", objectFit: "contain", ...imgStyle, transform }}
+      // While a failed attempt waits for the next one, the element is still in
+      // the DOM. Without this it renders the broken-image glyph and the alt text
+      // at the card's 2.6rem font size, clipped mid-word — for 1.5s per card.
+      style={{ width: "100%", height: "100%", objectFit: "contain", fontSize: 0, color: "transparent", ...imgStyle, transform }}
     />
   );
 }

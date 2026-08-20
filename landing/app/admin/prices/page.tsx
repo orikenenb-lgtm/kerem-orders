@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
+import SiteFooter from "../../components/SiteFooter";
 import AdminProductBrowser, { type BrowserProduct } from "../components/AdminProductBrowser";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
@@ -105,7 +106,7 @@ export default function PricesAdminPage() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 5rem" }}>
+      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 5rem" }}>
         <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "0.8rem" }}>
           <Link href="/admin" style={{ color: tokens.accent, textDecoration: "none" }}>ניהול</Link> · מחירים
         </div>
@@ -171,6 +172,7 @@ export default function PricesAdminPage() {
           onError={(msg) => setErr(msg)}
         />
       )}
+      <SiteFooter />
     </>
   );
 }
@@ -188,9 +190,15 @@ function PriceEditor({ product, existing, customers, customerName, managerId, on
 }) {
   const [scope, setScope] = useState<"all" | "some">("all");
   const [newPrice, setNewPrice] = useState("");
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  // Seed from the customers who already have a price on this product: an empty
+  // set meant the manager had to re-pick from memory, and anyone they forgot
+  // silently kept their old price (the delete is scoped to `picked`).
+  const [picked, setPicked] = useState<Set<string>>(
+    () => new Set((existing?.customers ?? []).map((o) => o.user_id!).filter(Boolean))
+  );
   const [saving, setSaving] = useState(false);
   const [localErr, setLocalErr] = useState("");
+  const [confirmFree, setConfirmFree] = useState(false);
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -218,9 +226,21 @@ function PriceEditor({ product, existing, customers, customerName, managerId, on
 
   const priceNum = Number(newPrice);
   const priceValid = newPrice.trim() !== "" && Number.isFinite(priceNum) && priceNum >= 0;
+  // A price of 0 makes the product free, and the order trigger accepts it, so
+  // nothing downstream would catch a slip. Anything under an agora rounds to 0
+  // too. Both need the manager to say so out loud.
+  const wouldBeFree = priceValid && Math.round(priceNum * 100) / 100 === 0;
+  // A price wildly above the Rivhit list price is almost always a typo (a
+  // missing decimal point). Warn, but never block — a real repricing is legal.
+  const listPrice = Number(product.price) || 0;
+  const suspiciouslyHigh = priceValid && listPrice > 0 && priceNum > listPrice * 5;
 
   const save = async () => {
     if (!priceValid || saving) return;
+    if (wouldBeFree && !confirmFree) {
+      setLocalErr("מחיר 0 יהפוך את המוצר לחינם. סמנו את האישור אם זו הכוונה.");
+      return;
+    }
     if (scope === "some" && picked.size === 0) {
       setLocalErr("בחרו לפחות לקוח אחד, או עברו ל״כל הלקוחות״.");
       return;
@@ -237,10 +257,18 @@ function PriceEditor({ product, existing, customers, customerName, managerId, on
     let del = supabase.from("price_overrides").delete().eq("product_id", product.id);
     del = scope === "all" ? del.is("user_id", null) : del.in("user_id", [...picked]);
     const { error: delErr } = await del;
-    if (delErr) { setSaving(false); setLocalErr("השמירה נכשלה."); return; }
+    if (delErr) { setSaving(false); setLocalErr("השמירה נכשלה — שום דבר לא השתנה."); return; }
     const { error } = await supabase.from("price_overrides").insert(rows);
     setSaving(false);
-    if (error) { setLocalErr("השמירה נכשלה."); return; }
+    if (error) {
+      // The delete already went through, so the old price is gone. Saying only
+      // "save failed" would read as "nothing changed" — which is the opposite of
+      // what happened. Say it plainly and reload so the screen stops showing a
+      // price that no longer exists.
+      setLocalErr("השמירה נכשלה והמחיר הקודם כבר הוסר. הזינו מחיר ושמרו שוב.");
+      onError("השמירה נכשלה באמצע — המחיר הקודם הוסר. הזינו אותו מחדש.");
+      return;
+    }
     onSaved(
       scope === "all"
         ? `${product.name}: ${ils(rounded)} לכל הלקוחות.`
@@ -297,7 +325,7 @@ function PriceEditor({ product, existing, customers, customerName, managerId, on
                   {customerName(o.user_id!)}: <strong>{ils(o.price)}</strong>{" "}
                   <span style={{ color: tokens.dim }}>(מחיר סופי)</span>
                 </span>
-                <button onClick={() => cancelOverride(o)} style={miniBtn}>ביטול</button>
+                <button onClick={() => cancelOverride(o)} style={miniBtn}>מחיקת המחיר</button>
               </div>
             ))}
           </div>
@@ -307,12 +335,38 @@ function PriceEditor({ product, existing, customers, customerName, managerId, on
           <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text }}>מחיר חדש (₪)</span>
           <input
             value={newPrice}
-            onChange={(e) => setNewPrice(e.target.value.replace(/[^\d.]/g, ""))}
+            // A comma must become a decimal point, not vanish: stripping it turned
+            // "12,50" into 1250 — a 100x price — with the comma disappearing as you
+            // typed, so nobody watching the keyboard would notice. Hebrew and Arabic
+            // keyboards both put a comma next to the dot in the decimal keypad.
+            onChange={(e) =>
+              setNewPrice(
+                e.target.value
+                  .replace(/[\u066B\u060C,]/g, ".")
+                  .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+                  .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+                  .replace(/[^\d.]/g, "")
+                  .replace(/^(\d*\.\d*).*$/, "$1")
+              )
+            }
+            dir="ltr"
             inputMode="decimal"
             placeholder="לדוגמה: 12.50"
             style={{ fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.65rem 0.8rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
           />
         </label>
+
+        {wouldBeFree && (
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontFamily: tokens.assistant, fontSize: "0.9rem", color: "#8A4A00", cursor: "pointer" }}>
+            <input type="checkbox" checked={confirmFree} onChange={(e) => setConfirmFree(e.target.checked)} />
+            אני מאשר/ת שהמוצר יהיה חינם (₪0) עבור מי שנבחר.
+          </label>
+        )}
+        {suspiciouslyHigh && (
+          <p role="status" style={{ fontFamily: tokens.assistant, fontSize: "0.88rem", color: "#8A4A00", margin: 0 }}>
+            ⚠ המחיר גבוה פי {Math.round(priceNum / listPrice)} מהמחיר ברווחית ({ils(listPrice)}). בדקו שלא חסרה נקודה עשרונית.
+          </p>
+        )}
 
         <fieldset style={{ border: "none", padding: 0, margin: 0, display: "grid", gap: "0.4rem" }}>
           <legend style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text, padding: 0 }}>על מי המחיר חל?</legend>

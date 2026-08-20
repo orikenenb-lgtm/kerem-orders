@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../components/SiteHeader";
+import SiteFooter from "../components/SiteFooter";
 import ProductImage from "../components/ProductImage";
 import { StatusBadge } from "../components/StatusBadge";
 import { supabase } from "../../lib/supabaseClient";
@@ -47,9 +48,10 @@ export default function AdminPage() {
     return (
       <>
         <SiteHeader />
-        <main id="main-content" style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
+        <main id="main-content" tabIndex={-1} style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
           טוען…
         </main>
+        <SiteFooter />
       </>
     );
   }
@@ -57,7 +59,7 @@ export default function AdminPage() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.5rem,4vw,3rem) clamp(1rem,4vw,2.5rem)" }}>
+      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.5rem,4vw,3rem) clamp(1rem,4vw,2.5rem)" }}>
         <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.8rem,4vw,2.6rem)", color: tokens.text, marginBottom: "1.2rem" }}>
           ניהול
         </h1>
@@ -244,10 +246,21 @@ function OrdersTab() {
                       )}
                     </span>
                   ) : (
-                    <button onClick={() => pushToRivhit(o.id)} disabled={pushingId === o.id}
-                      style={{ ...ghostBtn, padding: "0.4rem 0.9rem", fontSize: "0.78rem", opacity: pushingId === o.id ? 0.6 : 1 }}>
-                      {pushingId === o.id ? "שולח…" : "שלח לרווחית ↗"}
-                    </button>
+                    // rivhit_error is stored on the row and re-read after every push,
+                    // but it was never rendered — so an order that FAILED to reach
+                    // Rivhit looked exactly like one nobody had tried to send, and the
+                    // stored reason was lost on the next reload.
+                    <span style={{ display: "grid", gap: "0.3rem", justifyItems: "start" }}>
+                      <button onClick={() => pushToRivhit(o.id)} disabled={pushingId === o.id}
+                        style={{ ...ghostBtn, padding: "0.4rem 0.9rem", fontSize: "0.78rem", opacity: pushingId === o.id ? 0.6 : 1 }}>
+                        {pushingId === o.id ? "שולח…" : o.rivhit_error ? "נסו לשלוח שוב ↗" : "שלח לרווחית ↗"}
+                      </button>
+                      {o.rivhit_error && (
+                        <span style={{ fontFamily: tokens.assistant, fontSize: "0.75rem", color: "#C0143C", maxWidth: 320 }}>
+                          ⚠ השליחה נכשלה: {o.rivhit_error}
+                        </span>
+                      )}
+                    </span>
                   )}
                 </div>
               </div>

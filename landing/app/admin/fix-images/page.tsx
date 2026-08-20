@@ -13,6 +13,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
+import SiteFooter from "../../components/SiteFooter";
 import ProductImage, { type ProductImageStatus } from "../../components/ProductImage";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
@@ -195,9 +196,10 @@ export default function FixImagesPage() {
     return (
       <>
         <SiteHeader />
-        <main id="main-content" style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
+        <main id="main-content" tabIndex={-1} style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
           טוען…
         </main>
+        <SiteFooter />
       </>
     );
   }
@@ -214,7 +216,7 @@ export default function FixImagesPage() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" style={{ maxWidth: 1200, margin: "0 auto", padding: "clamp(1rem,3vw,2rem) clamp(0.8rem,3vw,2rem) 4rem" }}>
+      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1200, margin: "0 auto", padding: "clamp(1rem,3vw,2rem) clamp(0.8rem,3vw,2rem) 4rem" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: "1rem", flexWrap: "wrap" }}>
           <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.5rem,4vw,2.2rem)", color: tokens.text }}>
             תיקון תמונות

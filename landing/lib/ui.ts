@@ -51,22 +51,54 @@ export const applyDiscount = (price: number, d: number): number => {
   return Math.max(p > 0 ? 1 : 0, agorot) / 100;
 };
 
+/**
+ * The primary action on a screen: sign in, open an account, add to cart, send
+ * the order.
+ *
+ * This used to be white text on `tokens.rainbow`. Measured against each stop,
+ * white ran 1.60:1 (#FFC400) to 5.00:1 (#8A3FFC) — only the purple end cleared
+ * the 4.5:1 minimum, so roughly 85% of the button width failed WCAG 1.4.3 on
+ * every form in the store. The rainbow is now reserved for the wordmark, and
+ * the button uses the theme's own accent, which measures 4.76:1 on white.
+ *
+ * `busy` no longer fades a gradient to a pale smear — a disabled primary button
+ * gets a real flat state (see disabledBtn) instead of an opacity multiplier.
+ */
 export function primaryBtn(busy: boolean): CSSProperties {
+  if (busy) return { ...disabledBtn, marginTop: "0.4rem" };
   return {
     fontFamily: tokens.rubik,
     fontWeight: 700,
     fontSize: "0.95rem",
     letterSpacing: "0.04em",
     color: "#fff",
-    background: tokens.rainbow,
-    border: "none",
+    background: tokens.accent,
+    border: "1.5px solid transparent",
     padding: "0.95rem 1.5rem",
     borderRadius: 999,
-    cursor: busy ? "default" : "pointer",
-    opacity: busy ? 0.7 : 1,
+    cursor: "pointer",
     marginTop: "0.4rem",
   };
 }
+
+/**
+ * A blocked action, stated rather than dimmed. Fading a saturated multi-hue
+ * gradient to 50% produced pale yellow with white text on top — the checkout
+ * button was unreadable for most of a shopping session, since the cart sits
+ * below the ₪3,500 minimum until the very end.
+ */
+export const disabledBtn: CSSProperties = {
+  fontFamily: tokens.rubik,
+  fontWeight: 700,
+  fontSize: "0.95rem",
+  letterSpacing: "0.04em",
+  color: tokens.dim,
+  background: tokens.surface,
+  border: `1.5px solid ${tokens.border}`,
+  padding: "0.95rem 1.5rem",
+  borderRadius: 999,
+  cursor: "not-allowed",
+};
 
 /**
  * A button that has to read as a text link — used inside the auth screen,

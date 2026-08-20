@@ -45,8 +45,11 @@ export default function AuthShell({ initial = "login" }: { initial?: AuthTab }) 
     setTab(next);
     try {
       const url = new URL(window.location.href);
-      if (next === "login") url.searchParams.delete("tab");
-      else url.searchParams.set("tab", next);
+      // Always write the tab explicitly. Deleting the param is only correct when
+      // the path is /login/ — on /register/ or /forgot/ it left the URL pointing
+      // at the old tab, so a refresh threw the customer back and discarded what
+      // they had typed.
+      url.searchParams.set("tab", next);
       window.history.replaceState(null, "", url.toString());
     } catch {
       /* ignore — the tab still switched */
@@ -59,7 +62,7 @@ export default function AuthShell({ initial = "login" }: { initial?: AuthTab }) 
     <>
       <SiteHeader />
       <main
-        id="main-content"
+        id="main-content" tabIndex={-1}
         style={{
           minHeight: "calc(100vh - 64px)",
           display: "flex",

@@ -55,3 +55,15 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* One visible focus ring everywhere.
+   Only the landing page defined :focus-visible, so every other route fell back
+   to the user-agent default — a thin dark outline that disappears against the
+   accent-coloured primary buttons. The white inner ring keeps it visible on
+   dark fills, the dark outer ring on light ones. */
+:focus-visible {
+  outline: 3px solid var(--kt-text, #1A1730);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #fff;
+  border-radius: 4px;
+}

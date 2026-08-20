@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../lib/auth";
 import { tokens } from "../../lib/ui";
@@ -65,6 +65,31 @@ export default function SiteHeader() {
   // this one key; on any failure fall back to the config constant.
   const [minOrder, setMinOrder] = useState(MIN_ORDER_FALLBACK);
 
+  // The header is sticky, and so are the catalogue filter bars underneath it.
+  // Those bars used to hard-code `top: 64`, but this header is never 64px tall:
+  // it measures 93px on a desktop and 123-167px on a phone (the trust strip and
+  // the nav both wrap), and it wins on z-index — so on a phone the search field
+  // was painted over completely and the catalogue could not be searched once
+  // you had scrolled into the grid. Publish the real height instead and let
+  // every sticky bar sit on top of it.
+  const headerRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const publish = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 0) document.documentElement.style.setProperty("--kt-header-h", `${h}px`);
+    };
+    publish();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", publish);
+      return () => window.removeEventListener("resize", publish);
+    }
+    const obs = new ResizeObserver(publish);
+    obs.observe(el);
+    return () => obs.disconnect();
+  });
+
   useEffect(() => {
     getMinOrderTotal().then(setMinOrder);
   }, []);
@@ -78,7 +103,7 @@ export default function SiteHeader() {
   } as const;
 
   return (
-    <header style={{ position: "sticky", top: 0, zIndex: 50 }}>
+    <header ref={headerRef} style={{ position: "sticky", top: 0, zIndex: 50 }}>
       {/* רצועת אמון עליונה — מסר שירות + פרטי קשר (אם הוזנו) */}
       <div
         style={{

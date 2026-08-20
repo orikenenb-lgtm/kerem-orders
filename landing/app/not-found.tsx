@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { tokens } from "../lib/ui";
+import SiteFooter from "./components/SiteFooter";
 import { BUSINESS_NAME } from "../lib/config";
 
 // Hebrew 404. Next exports this as out/404.html, which GitHub Pages serves
@@ -23,8 +24,9 @@ export default function NotFound() {
   } as const;
 
   return (
-    <main
-      id="main-content"
+    <>
+      <main
+      id="main-content" tabIndex={-1}
       style={{
         minHeight: "100vh",
         display: "flex",
@@ -117,5 +119,7 @@ export default function NotFound() {
         {BUSINESS_NAME}
       </p>
     </main>
+      <SiteFooter />
+    </>
   );
 }
