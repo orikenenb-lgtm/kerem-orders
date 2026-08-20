@@ -13,7 +13,7 @@ import { buildPriceMap, resolvePrice, hasSpecialPrice, type PriceMap, type Price
 import { featureFlags } from "../../lib/featureFlags";
 import { VAT_RATE, MIN_ORDER_FALLBACK } from "../../lib/config";
 import { resolveQuantity, stepOf, describeQuantity, pluralPack } from "../../lib/quantity";
-import { orderExactFirst } from "../../lib/searchRank";
+import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
 import { readCart } from "../../lib/cart";
 
 type Product = {
@@ -230,7 +230,7 @@ export default function CatalogPage() {
     const gen = filterGen.current;
     setLoadingProducts(true);
     if (page === 0) setFuzzyNote(false);
-    const s = query.trim().replace(/[,()%]/g, " ").trim();
+    const s = sanitizeQuery(query);
     if (s.length >= 2) {
       // smart typo-tolerant search (trigram-ranked in the database)
       const { data, error: rpcErr } = await supabase.rpc("search_products", {

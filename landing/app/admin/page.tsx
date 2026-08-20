@@ -12,6 +12,7 @@ import { useAuth } from "../../lib/auth";
 import { tokens, ils, discountPct } from "../../lib/ui";
 import { featureFlags } from "../../lib/featureFlags";
 import { stepOf } from "../../lib/quantity";
+import { sanitizeQuery } from "../../lib/searchRank";
 
 type OrderItem = { id: string; product_name: string; product_sku: string; unit_price: number; quantity: number };
 type Order = {
@@ -422,7 +423,7 @@ function ProductsTab() {
 
   const load = useCallback(async () => {
     setBusy(true);
-    const s = query.trim().replace(/[,()%]/g, " ").trim();
+    const s = sanitizeQuery(query);
     let q = supabase.from("products").select("id,name,price,sku,picture_link,stock_quantity,rotation_override,display_qty,display_name,carton_qty,min_order_qty,order_step,sell_by", { count: "exact" }).eq("is_active", true);
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
     const { data, count, error } = await q.order("name").range(0, 49);

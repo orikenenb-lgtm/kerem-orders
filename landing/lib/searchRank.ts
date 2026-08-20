@@ -28,6 +28,22 @@
 // Normalization mirrors what a person considers "the same text": final letters
 // folded (ם→מ etc.), punctuation and doubled spaces dropped, case ignored.
 
+/** Strip the characters that mean something to PostgREST or to LIKE before a
+ *  query string is sent as a filter value.
+ *
+ *  `,` `(` `)` are PostgREST's `or=` separators; `%` and `_` are LIKE
+ *  wildcards. `%` was already being removed everywhere, but `_` was not — so
+ *  "לג_" quietly matched לגו, לגז and anything else with one character there,
+ *  and the customer had no way to tell why. Six screens had their own copy of
+ *  this line and one of them (the admin browser) had none at all until
+ *  recently; there is one copy now.
+ *
+ *  Removed characters become a space rather than nothing, so "כדור,סל" stays
+ *  two words instead of becoming one nonexistent one. */
+export function sanitizeQuery(raw: string): string {
+  return (raw || "").trim().replace(/[,()%_]/g, " ").replace(/\s+/g, " ").trim();
+}
+
 const FINALS: Record<string, string> = { "ך": "כ", "ם": "מ", "ן": "נ", "ף": "פ", "ץ": "צ" };
 
 export function normalizeHe(s: string): string {
