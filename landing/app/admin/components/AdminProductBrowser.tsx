@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ProductImage from "../../components/ProductImage";
 import { supabase } from "../../../lib/supabaseClient";
 import { tokens } from "../../../lib/ui";
+import { sanitizeQuery } from "../../../lib/searchRank";
 
 export type BrowserProduct = {
   id: string;
@@ -87,7 +88,7 @@ export default function AdminProductBrowser({
     // Same sanitisation every other search screen applies: a raw "," or "("
     // breaks the or() filter and PostgREST answers 400; "%" would smuggle in
     // an extra LIKE wildcard.
-    const s = query.trim().replace(/[,()%]/g, " ").trim();
+    const s = sanitizeQuery(query);
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
     const { data, count, error } = await q
       .order("name", { ascending: true })

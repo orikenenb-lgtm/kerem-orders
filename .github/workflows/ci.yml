@@ -4,7 +4,12 @@
 name: CI
 
 on:
+  # `ready_for_review` is listed explicitly because it is NOT in the default set
+  # (opened, synchronize, reopened). Without it a pull request opened as a draft
+  # and later marked ready runs no checks at all on that transition — which is
+  # exactly the moment someone is about to merge it.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:

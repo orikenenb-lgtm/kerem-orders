@@ -7,7 +7,9 @@
 // Read path: the catalog_collection RPC alone (anon). It returns display-safe
 // columns; price arrives ONLY when the collection was created with
 // show_prices=true, so a prices-off link never even receives numbers.
-// An unknown/deactivated slug returns zero rows → friendly "not found" state.
+// An unknown or deactivated slug returns zero rows → friendly "not found"
+// state. A LIVE collection with no products returns one header-only row
+// instead, so "empty catalogue" and "wrong link" are different screens.
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -16,10 +18,11 @@ import SiteFooter from "../components/SiteFooter";
 import ProductImage from "../components/ProductImage";
 import { supabase } from "../../lib/supabaseClient";
 import { tokens, ils } from "../../lib/ui";
-import { orderExactFirst } from "../../lib/searchRank";
+import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
 
 type CollectionProduct = {
-  id: string;
+  /** Null on the single header-only row a live-but-empty collection returns. */
+  id: string | null;
   name: string;
   category: string | null;
   picture_link: string;
@@ -72,7 +75,7 @@ function CollectionCatalog() {
     const seq = ++loadSeq.current;
     const gen = filterGen.current;
     setLoading(true);
-    const s = query.trim().replace(/[,()%]/g, " ").trim();
+    const s = sanitizeQuery(query);
     const { data, error } = await supabase.rpc("catalog_collection", {
       cslug: slug,
       q: s || null,
@@ -83,7 +86,15 @@ function CollectionCatalog() {
     if (error) { setLoadErr(true); setLoading(false); return; }
     if (page > 0 && gen !== gridGen.current) { setPage(0); return; }
     setLoadErr(false);
-    const rows = orderExactFirst(((data as CollectionProduct[]) ?? []), s);
+    // A LIVE collection with nothing to show returns exactly one header-only
+    // row — id null, total 0 — carrying the name, show_prices and discount. It
+    // is what lets this page say "this catalogue is empty" instead of "this
+    // link is wrong", which is what an empty collection used to tell a customer
+    // the owner had just sent the link to. It also keeps the header when a
+    // search inside a real catalogue finds nothing.
+    const raw = (data as CollectionProduct[]) ?? [];
+    const header = raw.find((r) => r.id === null) ?? null;
+    const rows = orderExactFirst(raw.filter((r) => r.id !== null), s);
     setProducts((prev) => {
       if (page === 0) return rows;
       const seen = new Set(prev.map((p) => p.id));
@@ -91,17 +102,18 @@ function CollectionCatalog() {
     });
     gridGen.current = gen;
     setEndReached(rows.length < PAGE_SIZE);
-    if (rows.length > 0) {
+    const head = rows[0] ?? header;
+    if (head) {
       setKnown(true);
-      setCollectionName(rows[0].collection_name);
-      setShowPrices(rows[0].show_prices);
-      setDiscount(Number(rows[0].discount_percent) || 0);
-      setTotal(Number(rows[0].total ?? 0));
+      setCollectionName(head.collection_name);
+      setShowPrices(head.show_prices);
+      setDiscount(Number(head.discount_percent) || 0);
+      setTotal(Number(rows[0]?.total ?? 0));
     } else if (page === 0) {
-      // No rows: unknown slug OR a search with no hits. Without a search this
-      // means the link is wrong/empty; with one, keep the header and show the
-      // regular "not found" line.
-      if (!s) setKnown(false);
+      // Still nothing at all: the slug is unknown or the collection was turned
+      // off. Those two stay indistinguishable on purpose — no way to probe
+      // which slugs exist.
+      setKnown(false);
       setTotal(0);
     }
     setLoading(false);
@@ -177,7 +189,9 @@ function CollectionCatalog() {
         </div>
       ) : products.length === 0 ? (
         <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>
-          לא נמצאו מוצרים{query ? ` עבור “${query}”` : ""}.
+          {query
+            ? `לא נמצאו מוצרים עבור “${query}”.`
+            : "הקטלוג הזה עדיין ריק. נוסיף אליו מוצרים בקרוב — הקישור עצמו תקין וימשיך לעבוד."}
         </p>
       ) : (
         <>
