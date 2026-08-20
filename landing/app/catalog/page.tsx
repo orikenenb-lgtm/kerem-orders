@@ -828,6 +828,16 @@ export default function CatalogPage() {
                       // name-parse stays as fallback. Flag off: name-parse only.
                       const dbCarton = ffQty ? Math.floor(Number(p.carton_qty) || 0) : 0;
                       const carton = dbCarton >= 2 ? dbCarton : cartonSize(p.name);
+                      // What the button will ACTUALLY put in the cart. A carton
+                      // is not always a whole number of packs — e.g. a carton of
+                      // 100 on a product sold in packs of 8 — and setQty rounds
+                      // up to the next whole pack. The button used to promise
+                      // the raw carton figure and quietly charge for the rounded
+                      // one; on the worst product in the catalogue that was
+                      // ₪240 more than the label said. Label the real number.
+                      const cartonUnits = carton
+                        ? (ffQty ? resolveQuantity(p, carton).units : carton)
+                        : null;
                       if (qty === 0) {
                         return (
                           <>
@@ -835,10 +845,16 @@ export default function CatalogPage() {
                               {/* Flag on: one press adds one whole step (setQty
                                   normalizes anyway). Flag off: step === 1. */}
                               <button onClick={() => setQty(p, step)} style={{ ...solidBtn, flex: 1, padding: "0.55rem" }}>הוספה</button>
-                              {carton && (
-                                <button onClick={() => setQty(p, carton)} title={`הוספת קרטון של ${carton} יחידות`}
+                              {carton && cartonUnits && (
+                                <button
+                                  onClick={() => setQty(p, cartonUnits)}
+                                  title={
+                                    cartonUnits === carton
+                                      ? `הוספת קרטון של ${carton} יחידות`
+                                      : `קרטון = ${carton} יחידות, והמוצר נמכר ב${pluralPack(packName, 2)} שלמים — יתווספו ${cartonUnits} יחידות`
+                                  }
                                   style={{ ...ghostBtn, flex: 1, padding: "0.55rem 0.4rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
-                                  📦 קרטון ({carton})
+                                  📦 קרטון ({cartonUnits.toLocaleString("he-IL")})
                                 </button>
                               )}
                             </div>
@@ -864,10 +880,10 @@ export default function CatalogPage() {
                               {qtyNotes[p.id]}
                             </div>
                           )}
-                          {carton && (
-                            <button onClick={() => setQty(p, qty + carton)}
+                          {carton && cartonUnits && (
+                            <button onClick={() => setQty(p, qty + cartonUnits)}
                               style={{ ...ghostBtn, padding: "0.4rem", fontSize: "0.75rem" }}>
-                              📦 ‎+ קרטון ({carton})
+                              📦 ‎+ קרטון ({cartonUnits.toLocaleString("he-IL")})
                             </button>
                           )}
                         </div>
