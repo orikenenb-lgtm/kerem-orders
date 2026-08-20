@@ -206,6 +206,13 @@ export default function CollectionsAdminPage() {
     // card used to be.
     requestAnimationFrame(() => {
       document.getElementById(`col-${id}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+      // Move focus with the eye. Whichever control closed the panel — Escape,
+      // or the bar at the bottom — has just been unmounted or left behind, and
+      // a keyboard user would otherwise land back on <body> and have to tab
+      // through the entire page again to reach the card he was editing.
+      // preventScroll so this does not fight the smooth scroll above.
+      const toggle = document.getElementById(`col-toggle-${id}`) as HTMLButtonElement | null;
+      toggle?.focus({ preventScroll: true });
     });
   }, []);
 
@@ -278,6 +285,58 @@ export default function CollectionsAdminPage() {
           padding: `clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) ${openId ? "9rem" : "5rem"}`,
         }}
       >
+        {/* The way back, always on screen.
+            While a collection is open the page below it is the entire 962-product
+            catalogue with infinite scroll, so every control at the top of the card
+            — including "סגירת עריכה" — is unreachable without scrolling back up
+            past everything just added. This bar is fixed to the bottom of the
+            viewport for exactly as long as a collection is open, and it doubles as
+            the live count, which otherwise also lives far below the fold.
+
+            It is rendered HERE, at the top of <main>, and not next to the footer
+            where it visually sits. Being position:fixed the DOM position costs
+            nothing visually, but it decides two things that are not free: the bar
+            was tab stop 63 of 69, behind every product card in the catalogue, and
+            it sat outside every landmark, so a screen-reader user browsing by
+            region never reached it at all. */}
+        {openCollectionRow && (
+          <div
+            role="region"
+            aria-label="הקטלוג שנערך כרגע"
+            style={{
+              position: "fixed", insetInline: 0, bottom: 0, zIndex: 90,
+              background: "rgba(255,255,255,0.97)", backdropFilter: "blur(8px)",
+              borderTop: `1px solid ${tokens.border}`,
+              boxShadow: "0 -6px 20px rgba(20,16,32,0.10)",
+              padding: "0.7rem clamp(1rem,4vw,2.5rem)",
+              paddingBottom: "max(0.7rem, env(safe-area-inset-bottom))",
+              display: "flex", alignItems: "center", gap: "0.8rem", flexWrap: "wrap",
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 150 }}>
+              <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: tokens.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {openCollectionRow.name}
+              </div>
+              <div style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>
+                {membersBusy
+                  ? "טוען…"
+                  : `${members.length.toLocaleString("he-IL")} מוצרים בקטלוג`}
+              </div>
+            </div>
+            <button
+              onClick={() => closeCollection(openId)}
+              style={{
+                fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem",
+                color: "#fff", background: tokens.accent, border: "none",
+                padding: "0.7rem 1.2rem", borderRadius: 999, cursor: "pointer",
+                minHeight: 44, whiteSpace: "nowrap",
+              }}
+            >
+              סיום ← חזרה לרשימה
+            </button>
+          </div>
+        )}
+
         <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "0.8rem" }}>
           <Link href="/admin" style={{ color: tokens.accent, textDecoration: "none" }}>ניהול</Link> · קטלוגים ללקוחות
         </div>
@@ -299,8 +358,10 @@ export default function CollectionsAdminPage() {
             onKeyDown={(e) => { if (e.key === "Enter") createCollection(); }}
             style={{ flex: 1, minWidth: 220, fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.7rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
           />
-          <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.body, cursor: "pointer" }}>
-            <input type="checkbox" checked={newPrices} onChange={(e) => setNewPrices(e.target.checked)} />
+          <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", minHeight: 44, fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.body, cursor: "pointer" }}>
+            {/* The default checkbox renders 13x13 — half the WCAG 2.2 AA minimum.
+                The label is clickable too, but the box is what a finger aims at. */}
+            <input type="checkbox" checked={newPrices} onChange={(e) => setNewPrices(e.target.checked)} style={{ width: 24, height: 24, accentColor: tokens.accent, cursor: "pointer" }} />
             להציג מחירים בקישור
           </label>
           <button onClick={createCollection} disabled={creating || !newName.trim()} style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.7rem 1.4rem", borderRadius: 999, cursor: "pointer", opacity: creating || !newName.trim() ? 0.6 : 1 }}>
@@ -321,7 +382,10 @@ export default function CollectionsAdminPage() {
         ) : (
           <div style={{ display: "grid", gap: "0.9rem", marginTop: "1.4rem" }}>
             {collections.map((c) => (
-              <div key={c.id} id={`col-${c.id}`} style={{ border: `1px solid ${openId === c.id ? tokens.accent : tokens.border}`, borderRadius: 16, background: "#fff", padding: "1rem" }}>
+              // minWidth: 0 — a grid item defaults to min-width:auto and will not
+              // shrink below the min-content width of what is inside it. What is
+              // inside here, once the editor opens, is the whole product browser.
+              <div key={c.id} id={`col-${c.id}`} style={{ minWidth: 0, border: `1px solid ${openId === c.id ? tokens.accent : tokens.border}`, borderRadius: 16, background: "#fff", padding: "1rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.8rem", flexWrap: "wrap" }}>
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>
@@ -338,7 +402,7 @@ export default function CollectionsAdminPage() {
                   <button onClick={() => toggleActive(c)} style={{ ...miniBtn, color: c.is_active ? "#C0143C" : "#1A7A4D" }}>
                     {c.is_active ? "כיבוי הקישור" : "הפעלת הקישור"}
                   </button>
-                  <button onClick={() => openCollection(c)} aria-expanded={openId === c.id} style={{ ...miniBtn, background: openId === c.id ? tokens.accent : "#fff", color: openId === c.id ? "#fff" : tokens.text }}>
+                  <button id={`col-toggle-${c.id}`} onClick={() => openCollection(c)} aria-expanded={openId === c.id} aria-controls={openId === c.id ? `col-editor-${c.id}` : undefined} style={{ ...miniBtn, background: openId === c.id ? tokens.accent : "#fff", color: openId === c.id ? "#fff" : tokens.text }}>
                     {openId === c.id ? "סגירת עריכה" : "עריכת מוצרים"}
                   </button>
                 </div>
@@ -393,14 +457,26 @@ export default function CollectionsAdminPage() {
                 </div>
 
                 {openId === c.id && (
-                  <div style={{ borderTop: `1px solid ${tokens.border}`, marginTop: "0.9rem", paddingTop: "0.9rem" }}>
+                  <div
+                    id={`col-editor-${c.id}`}
+                    role="group"
+                    aria-label={`עריכת המוצרים בקטלוג ${c.name}`}
+                    style={{ borderTop: `1px solid ${tokens.border}`, marginTop: "0.9rem", paddingTop: "0.9rem" }}
+                  >
                     {/* The whole catalogue, shown immediately — same grid,
                         categories, search and infinite scroll the customer
                         sees. Cards already in this collection are outlined and
                         offer הסרה instead of הוספה. */}
+                    {/* No stickyTop override. It used to be 0, which pinned the
+                        search box and the category chips to the very top of the
+                        viewport — underneath the site header, which is fixed,
+                        opaque and z-50 against the browser's z-40. The moment
+                        the manager scrolled, the only way to find one product
+                        among 962 was covered and stopped taking clicks. The
+                        component's default already offsets by the real header
+                        height. */}
                     <AdminProductBrowser
                       searchLabel="חיפוש מוצר להוספה (שם / קוד / ברקוד)"
-                      stickyTop={0}
                       highlight={(p) => memberIds.has(p.id)}
                       renderAction={(p) => {
                         const inCol = memberIds.has(p.id);
@@ -443,50 +519,15 @@ export default function CollectionsAdminPage() {
         )}
       </main>
 
-      {/* The way back, always on screen.
-          While a collection is open the page below it is the entire 962-product
-          catalogue with infinite scroll, so every control at the top of the card
-          — including "סגירת עריכה" — is unreachable without scrolling back up
-          past everything just added. This bar is fixed to the bottom of the
-          viewport for exactly as long as a collection is open, and it doubles as
-          the live count, which otherwise also lives far below the fold. */}
-      {openCollectionRow && (
-        <div
-          style={{
-            position: "fixed", insetInline: 0, bottom: 0, zIndex: 90,
-            background: "rgba(255,255,255,0.97)", backdropFilter: "blur(8px)",
-            borderTop: `1px solid ${tokens.border}`,
-            boxShadow: "0 -6px 20px rgba(20,16,32,0.10)",
-            padding: "0.7rem clamp(1rem,4vw,2.5rem)",
-            paddingBottom: "max(0.7rem, env(safe-area-inset-bottom))",
-            display: "flex", alignItems: "center", gap: "0.8rem", flexWrap: "wrap",
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 150 }}>
-            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: tokens.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {openCollectionRow.name}
-            </div>
-            <div style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>
-              {membersBusy
-                ? "טוען…"
-                : `${members.length.toLocaleString("he-IL")} מוצרים בקטלוג`}
-            </div>
-          </div>
-          <button
-            onClick={() => closeCollection(openId)}
-            style={{
-              fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem",
-              color: "#fff", background: tokens.accent, border: "none",
-              padding: "0.7rem 1.2rem", borderRadius: 999, cursor: "pointer",
-              minHeight: 44, whiteSpace: "nowrap",
-            }}
-          >
-            סיום ← חזרה לרשימה
-          </button>
-        </div>
-      )}
-
-      <SiteFooter />
+      {/* The fixed bar sits over whatever is at the bottom of the viewport, and
+          at the bottom of the DOCUMENT that is the footer — so while a
+          collection was open the bar covered the phone number and the copyright
+          and they could not be reached at all. main's own 9rem reserve does not
+          help here because the footer comes after main. Reserve the same room
+          under the footer for exactly as long as the bar exists. */}
+      <div style={{ paddingBottom: openId ? "9rem" : 0 }}>
+        <SiteFooter />
+      </div>
     </>
   );
 }

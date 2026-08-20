@@ -94,12 +94,21 @@ export default function SiteHeader() {
     getMinOrderTotal().then(setMinOrder);
   }, []);
 
+  // The padding and minHeight are the tap target, not decoration. Measured at
+  // 390x844 these links were 34x20, 75x20 and 29x20 CSS pixels — under the
+  // WCAG 2.2 AA minimum of 24x24, on the primary navigation of a site whose
+  // buyers order from a phone. The text is unchanged; only the hit area grew.
   const navLink = {
     fontFamily: tokens.assistant,
     fontWeight: 600,
     fontSize: "0.95rem",
     color: tokens.text,
     textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    minHeight: 24,
+    padding: "0.3rem 0.4rem",
+    margin: "-0.3rem -0.4rem",
   } as const;
 
   return (
@@ -135,8 +144,10 @@ export default function SiteHeader() {
                 💬 וואטסאפ
               </a>
             )}
+            {/* 91x17 measured — under the 24x24 minimum, on the one link in the
+                trust strip that a buyer taps to place an order by phone. */}
             {CONTACT.phone && (
-              <a href={`tel:${CONTACT.phone}`} dir="ltr" style={{ color: "#fff", textDecoration: "none", fontWeight: 700 }}>
+              <a href={`tel:${CONTACT.phone}`} dir="ltr" style={{ color: "#fff", textDecoration: "none", fontWeight: 700, display: "inline-flex", alignItems: "center", minHeight: 24, padding: "0.15rem 0" }}>
                 📞 {CONTACT.phone}
               </a>
             )}

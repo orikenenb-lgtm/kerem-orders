@@ -10,6 +10,13 @@ on:
   # exactly the moment someone is about to merge it.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  # main itself was never verified. Every check ran on the PR head and nothing
+  # ran on the merge result, so a semantic conflict between two PRs that each
+  # passed alone — one renames an export, the other adds a caller of the old
+  # name — landed on main green and was found by the deploy, or by a customer.
+  # This job does not deploy; it only says whether main is currently sound.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -41,8 +48,14 @@ jobs:
           cache-dependency-path: landing/package-lock.json
       - name: Install (clean)
         run: npm ci
+      # A warning ratchet, not a warning ban. `eslint .` exits 0 on warnings, so
+      # this step could not fail no matter what was pushed — it was decoration.
+      # The repo carries 33 known warnings today (mostly react-hooks
+      # set-state-in-effect in older screens); the bound is set to exactly that,
+      # so the 34th fails the build and the number can only be walked down.
+      # Lower this when warnings are fixed; do not raise it to make CI green.
       - name: Lint
-        run: npm run lint
+        run: npm run lint -- --max-warnings 33
       - name: Unit tests
         run: npm test
       - name: Type check

@@ -72,6 +72,11 @@ export default function CustomersAdminPage() {
 
   const [people, setPeople] = useState<Person[]>([]);
   const [stats, setStats] = useState<Map<string, OrderStat>>(new Map());
+  // Whether the order history came back at all. Without this the screen has no
+  // way to tell "this customer has never ordered" from "the orders query
+  // failed", and it showed the first for both — which is a lie about the
+  // business, on the screen the owner would use to decide who to call.
+  const [statsFailed, setStatsFailed] = useState(false);
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState("");
   const [input, setInput] = useState("");
@@ -112,10 +117,19 @@ export default function CustomersAdminPage() {
     // Order history per person. The manager can already read every order on
     // /admin, so this adds no access — it just saves him from cross-checking
     // two screens to answer "did this customer ever order?".
-    const { data: orders } = await supabase
+    const { data: orders, error: ordersErr } = await supabase
       .from("orders")
       .select("user_id,total,created_at,status");
     if (!mountedRef.current) return;
+    if (ordersErr) {
+      // The customer list itself loaded, so keep showing it — just stop
+      // claiming anything about who has ordered.
+      setStatsFailed(true);
+      setStats(new Map());
+      setBusy(false);
+      return;
+    }
+    setStatsFailed(false);
     const m = new Map<string, OrderStat>();
     for (const o of ((orders ?? []) as { user_id: string | null; total: number | string | null; created_at: string; status: string | null }[])) {
       if (!o.user_id) continue;
@@ -223,7 +237,11 @@ export default function CustomersAdminPage() {
                     </span>
                   )}
                   <span style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim, whiteSpace: "nowrap" }}>
-                    {st ? `${st.orders.toLocaleString("he-IL")} הזמנות · ${ils(st.total)}` : "עוד לא הזמין"}
+                    {statsFailed
+                      ? "היסטוריית ההזמנות לא נטענה"
+                      : st
+                        ? `${st.orders.toLocaleString("he-IL")} הזמנות · ${ils(st.total)}`
+                        : "עוד לא הזמין"}
                   </span>
                   <button
                     onClick={() => setOpenId(open ? null : p.id)}

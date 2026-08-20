@@ -18,11 +18,17 @@ export default function SiteFooter() {
   }, []);
 
   const col: React.CSSProperties = { display: "flex", flexDirection: "column", gap: "0.55rem" };
+  // Same reason as the header nav: measured 91x17, under the WCAG 2.2 AA 24x24
+  // minimum. The footer phone number is how a wholesale buyer actually calls.
   const link: React.CSSProperties = {
     fontFamily: tokens.assistant,
     fontSize: "0.9rem",
     color: tokens.body,
     textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    minHeight: 24,
+    padding: "0.2rem 0",
   };
   const head: React.CSSProperties = {
     fontFamily: tokens.rubik,

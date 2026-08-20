@@ -129,7 +129,17 @@ export default function AdminProductBrowser({
 
   return (
     <>
-      <div style={{ position: "sticky", top: stickyTop, zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0" }}>
+      {/* minWidth: 0 is load-bearing, not tidiness. The category chip row below
+          is a flex row of nowrap buttons; its min-content width is the sum of
+          every chip, and a flex/grid item defaults to min-width:auto — meaning
+          it refuses to shrink below that. Wherever this component is dropped
+          inside a grid or flex parent, the parent inherits a ~1600px floor from
+          the chips alone. On /admin/collections that widened the document to
+          1588–1782px at EVERY viewport, and body{overflow-x:hidden} made the
+          overflow unreachable: a blank white screen at 1024 and below, and the
+          right-hand side simply cut off at 1440. The chips still scroll
+          horizontally; they just no longer set the page width. */}
+      <div style={{ minWidth: 0, position: "sticky", top: stickyTop, zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0" }}>
         <input
           type="search"
           aria-label={searchLabel}
@@ -139,7 +149,7 @@ export default function AdminProductBrowser({
           style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.8rem 1rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
         />
         {categories.length > 0 && (
-          <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+          <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", minWidth: 0, gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
             {[{ category: "all", n: 0 }, ...orderedCats].map((c) => {
               const active = activeCat === c.category;
               return (
@@ -180,7 +190,11 @@ export default function AdminProductBrowser({
                 <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
                   <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} imgStyle={{ width: "100%", height: "100%", objectFit: "contain" }} />
                 </div>
-                <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", margin: 0 }}>{p.name}</h3>
+                {/* Clamped to three lines. Rivhit names run to 120 characters, and one
+                    long name stretched its card to 453px against 300px for its
+                    neighbours — which stretches the whole grid row. title keeps the
+                    full name one hover away; the product page always shows it. */}
+                <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, overflow: "hidden", margin: 0 }} title={p.name}>{p.name}</h3>
                 <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }} dir="ltr">{p.sku || "—"}</div>
                 {renderAction(p)}
               </div>

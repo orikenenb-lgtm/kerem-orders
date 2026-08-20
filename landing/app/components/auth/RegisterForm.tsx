@@ -432,7 +432,16 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
               marginBottom: "1.6rem",
             }}
           >
-            כמה פרטים וסיימתם — לאחר ההרשמה נשלח קישור לאימות כתובת המייל.
+            {/* This used to promise a verification link. None is ever sent:
+                the signup function creates the account with email_confirm true
+                precisely so a new customer can log in on the spot, and SMTP has
+                never been exercised on this project. A promise the system does
+                not keep sends the buyer to look for a mail that will not come
+                and makes him doubt the account was created at all — so the copy
+                now says what actually happens, which is also the better offer.
+                If confirmation mail is ever turned on, this sentence and the
+                success screen below both have to change with it. */}
+            כמה פרטים וסיימתם — ואפשר להתחבר ולהזמין מיד, בלי לחכות לאישור במייל.
           </p>
 
           <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
@@ -450,13 +459,14 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
                   type="tel"
                   inputMode="tel"
                   autoComplete="tel"
+                  dir="ltr"
                   required
                 />
                 {phoneHint}
-                <Field label="אימייל" mark="req" value={form.email} onChange={set("email")} type="email" inputMode="email" autoComplete="email" required />
+                <Field label="אימייל" mark="req" value={form.email} onChange={set("email")} type="email" inputMode="email" autoComplete="email" dir="ltr" required />
                 {/* No autocomplete token exists for a VAT number — leave it off
                     rather than teach the browser a wrong mapping. */}
-                <Field label="עוסק מורשה / ח.פ" mark="req" value={form.vat_number} onChange={set("vat_number")} inputMode="numeric" autoComplete="off" required />
+                <Field label="עוסק מורשה / ח.פ" mark="req" value={form.vat_number} onChange={set("vat_number")} inputMode="numeric" autoComplete="off" dir="ltr" required />
                 <Field label="עיר" mark="req" value={form.city} onChange={set("city")} list="kt-city-list" autoComplete="address-level2" required />
                 <datalist id="kt-city-list">
                   {CITY_LIST.map((c) => (
@@ -474,7 +484,7 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
                   autoComplete="address-line2"
                   required
                 />
-                <Field label="מיקוד" mark="opt" value={form.zip_code} onChange={set("zip_code")} inputMode="numeric" autoComplete="postal-code" />
+                <Field label="מיקוד" mark="opt" value={form.zip_code} onChange={set("zip_code")} inputMode="numeric" autoComplete="postal-code" dir="ltr" />
                 <AreaField
                   label="הערות למשלוח"
                   mark="opt"
@@ -497,10 +507,10 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
               <>
                 <Field label="שם העסק / החנות" value={form.business_name} onChange={set("business_name")} autoComplete="organization" required />
                 <Field label="שם איש קשר" value={form.full_name} onChange={set("full_name")} autoComplete="name" required />
-                <Field label="עוסק מורשה / ח.פ" value={form.vat_number} onChange={set("vat_number")} inputMode="numeric" autoComplete="off" required />
-                <Field label="טלפון" value={form.phone} onChange={set("phone")} type="tel" inputMode="tel" autoComplete="tel" />
+                <Field label="עוסק מורשה / ח.פ" value={form.vat_number} onChange={set("vat_number")} inputMode="numeric" autoComplete="off" dir="ltr" required />
+                <Field label="טלפון" value={form.phone} onChange={set("phone")} type="tel" inputMode="tel" autoComplete="tel" dir="ltr" />
                 {phoneHint}
-                <Field label="אימייל" value={form.email} onChange={set("email")} type="email" inputMode="email" autoComplete="email" required />
+                <Field label="אימייל" value={form.email} onChange={set("email")} type="email" inputMode="email" autoComplete="email" dir="ltr" required />
                 <PasswordField label="סיסמה (לפחות 6 תווים)" value={form.password} onChange={set("password")} autoComplete="new-password" minLength={6} required />
                 <PasswordField
                   label="אימות סיסמה"
@@ -576,6 +586,12 @@ function LabelMark({ mark }: { mark?: "req" | "opt" }) {
   return null;
 }
 
+// dir="ltr" is passed explicitly by every caller whose value is not Hebrew —
+// email, phone, ח.פ, מיקוד. On an RTL page a bare input inherits rtl, and the
+// browser then renders "0501234567" with the caret jumping to the wrong end and
+// "name@gmail.com" as ".name@gmail<caret>com" while it is being typed. The
+// characters stored are right; what the customer sees while typing is not, and
+// he retypes a correct address thinking he mistyped it.
 function Field({
   label,
   mark,
