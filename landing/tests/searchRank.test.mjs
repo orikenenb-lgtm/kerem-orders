@@ -15,7 +15,7 @@ const js = ts.transpileModule(src, {
 const tmp = mkdtempSync(join(tmpdir(), "rank-"));
 const mod = join(tmp, "searchRank.mjs");
 writeFileSync(mod, js);
-const { normalizeHe, orderExactFirst } = await import(pathToFileURL(mod).href);
+const { normalizeHe, orderExactFirst, sanitizeQuery } = await import(pathToFileURL(mod).href);
 
 let n = 0;
 const t = (name, fn) => { fn(); n++; console.log("✓", name); };
@@ -85,5 +85,25 @@ t("Latin brand search is case-insensitive", () => {
   const out = orderExactFirst(rows, "lego").map((r) => r.name);
   assert.equal(out[0], "LEGO City 60380");
 });
+
+t("sanitizeQuery removes PostgREST separators and BOTH LIKE wildcards", () => {
+  // `%` was always stripped; `_` was not, so "לג_" silently matched לגו, לגז
+  // and anything else with one character in that position.
+  assert.equal(sanitizeQuery("לג_"), "לג");
+  assert.equal(sanitizeQuery("לג%"), "לג");
+  assert.equal(sanitizeQuery("a_b%c"), "a b c");
+  // PostgREST's or= separators.
+  assert.equal(sanitizeQuery("כדור,סל"), "כדור סל");
+  assert.equal(sanitizeQuery("(בובה)"), "בובה");
+  // Removed characters become a space, not nothing, so two words stay two.
+  assert.equal(sanitizeQuery("לגו,נינגה"), "לגו נינגה");
+  // Collapsing and trimming.
+  assert.equal(sanitizeQuery("  לגו   ניר  "), "לגו ניר");
+  assert.equal(sanitizeQuery("%_,()"), "");
+  assert.equal(sanitizeQuery(""), "");
+  // Ordinary text is untouched.
+  assert.equal(sanitizeQuery("ברבי 1/6"), "ברבי 1/6");
+});
+
 
 console.log(`\n${n} searchRank tests passed`);

@@ -6,7 +6,7 @@ import SiteFooter from "./SiteFooter";
 import { supabase } from "../../lib/supabaseClient";
 import ProductImage from "./ProductImage";
 import { tokens, ils } from "../../lib/ui";
-import { orderExactFirst } from "../../lib/searchRank";
+import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
 
 // Shared public, read-only catalog (no login, no ordering) behind both
 // public links:
@@ -115,7 +115,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
     const gen = filterGen.current;
     setLoadingProducts(true);
     if (page === 0) setFuzzyNote(false);
-    const s = query.trim().replace(/[,()%]/g, " ").trim();
+    const s = sanitizeQuery(query);
     const { data, error } = await supabase.rpc(rpcName, {
       q: s || null,
       cat: activeCat,

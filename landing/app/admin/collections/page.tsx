@@ -79,9 +79,16 @@ export default function CollectionsAdminPage() {
     else if (!isManager) router.replace("/catalog");
   }, [loading, session, isManager, router]);
 
+  // The skeleton is for the FIRST load only. Every add and every remove calls
+  // this to refresh the member counts, and flipping `busy` back on swapped the
+  // whole list for "טוען…" — which unmounted <AdminProductBrowser> and threw
+  // away its search text, its category chip and its scroll position. Building a
+  // 50-item catalogue meant paying that reset 50 times. Refreshes now update
+  // the counts underneath a list that never disappears.
+  const loadedOnceRef = useRef(false);
   const loadCollections = useCallback(async () => {
     if (!isManager) return;
-    setBusy(true);
+    if (!loadedOnceRef.current) setBusy(true);
     const { data, error } = await supabase
       .from("collections")
       .select("id,slug,name,show_prices,discount_percent,is_active,created_at, collection_products(count)")
@@ -94,6 +101,7 @@ export default function CollectionsAdminPage() {
       ...r,
       n: r.collection_products?.[0]?.count ?? 0,
     })));
+    loadedOnceRef.current = true;
     setBusy(false);
   }, [isManager]);
 
@@ -129,8 +137,19 @@ export default function CollectionsAdminPage() {
   // stored on the collection and applied server-side inside catalog_collection,
   // so it covers products added later too — no need to re-apply, and no
   // per-product rows to keep in sync.
+  // The typed value used to be clamped: "-15" lost its minus and became 15%,
+  // and "150" became 99.99% — a near-free price list from one slip of the
+  // keyboard, reported back as a success ("הנחה של 99.99% הוחלה"). Out-of-range
+  // input is refused now, and a very large discount has to be confirmed, so a
+  // typo cannot quietly become the price a chain buyer sees.
   const setDiscount = async (c: Collection, pct: number) => {
-    const d = Math.max(0, Math.min(99.99, Math.round(pct * 100) / 100));
+    if (!Number.isFinite(pct) || pct < 0 || pct > 99.99) {
+      setErr("אחוז ההנחה חייב להיות בין 0 ל־99.99.");
+      return;
+    }
+    const d = Math.round(pct * 100) / 100;
+    if (d > 50 && !confirm(`הנחה של ${d}% על כל המוצרים בקטלוג "${c.name}" — זה כמעט חינם. להמשיך?`)) return;
+    setErr("");
     const { error } = await supabase.from("collections").update({ discount_percent: d }).eq("id", c.id);
     if (error) { setErr("שמירת ההנחה נכשלה."); return; }
     setNotice(d > 0
@@ -308,8 +327,12 @@ export default function CollectionsAdminPage() {
                       defaultValue={Number(c.discount_percent) || ""}
                       onKeyDown={(e) => {
                         if (e.key !== "Enter") return;
-                        const v = Number((e.target as HTMLInputElement).value.replace(/[^\d.]/g, ""));
-                        if (Number.isFinite(v)) setDiscount(c, v);
+                        // Do NOT strip characters before parsing: stripping the
+                        // minus is what turned "-15" into a 15% discount. Take
+                        // the value as typed and let setDiscount refuse it.
+                        const raw = (e.target as HTMLInputElement).value.trim().replace("٫", ".").replace(",", ".");
+                        if (raw === "") { setDiscount(c, 0); return; }
+                        setDiscount(c, Number(raw));
                       }}
                       inputMode="decimal"
                       placeholder="%"

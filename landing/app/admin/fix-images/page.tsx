@@ -19,6 +19,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
 import { isDirectFallbackAllowed } from "../../../lib/imageFallback";
 import { tokens } from "../../../lib/ui";
+import { sanitizeQuery } from "../../../lib/searchRank";
 
 type Row = {
   id: string;
@@ -114,7 +115,7 @@ export default function FixImagesPage() {
       .eq("is_active", true)
       .neq("picture_link", "");
     if (onlyTodo) q = q.eq("orient_human_ok", false);
-    const s = query.trim().replace(/[,()%]/g, " ").trim();
+    const s = sanitizeQuery(query);
     if (s) q = q.ilike("name", `%${s}%`);
     if (cursorRef.current) q = q.gt("id", cursorRef.current);
 
