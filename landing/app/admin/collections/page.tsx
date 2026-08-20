@@ -193,12 +193,42 @@ export default function CollectionsAdminPage() {
     setMembers(((data ?? []) as unknown as Joined[]).map((r) => r.products).filter((p): p is ProductRow => !!p));
   }, []);
 
+  // Closing has to bring the manager back to the collection he was editing.
+  // Opening one renders the whole 962-product catalogue with infinite scroll
+  // underneath it, so by the time he has picked his products the "סגירת עריכה"
+  // button is thousands of pixels above him and there is no way out except
+  // scrolling all the way back up. Close now scrolls the card back into view.
+  const closeCollection = useCallback((id: string | null) => {
+    setOpenId(null);
+    setMembers([]);
+    if (!id) return;
+    // After the panel unmounts, not before — otherwise we scroll to where the
+    // card used to be.
+    requestAnimationFrame(() => {
+      document.getElementById(`col-${id}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  }, []);
+
   const openCollection = (c: Collection) => {
-    if (openId === c.id) { setOpenId(null); setMembers([]); return; }
+    if (openId === c.id) { closeCollection(c.id); return; }
     setOpenId(c.id);
     setMembers([]);
     loadMembers(c.id);
   };
+
+  // Escape is the other way out, and the one a keyboard user reaches for.
+  useEffect(() => {
+    if (!openId) return;
+    const onKey = (e: KeyboardEvent) => {
+      // Not while typing in the search box — Escape clears a search field
+      // natively and stealing it would be worse than useless.
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      if (e.key === "Escape") closeCollection(openId);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openId, closeCollection]);
 
   const addProduct = async (p: ProductRow) => {
     if (!openId) return;
@@ -227,6 +257,9 @@ export default function CollectionsAdminPage() {
     loadCollections();
   };
 
+  // The collection the bottom bar is describing (null when nothing is open).
+  const openCollectionRow = openId ? collections.find((c) => c.id === openId) ?? null : null;
+
   if (loading || !isManager) return null;
 
   const memberIds = new Set(members.map((m) => m.id));
@@ -234,7 +267,17 @@ export default function CollectionsAdminPage() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 5rem" }}>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        style={{
+          maxWidth: 1100,
+          margin: "0 auto",
+          // Extra room at the bottom while the fixed back bar is up, so it
+          // never covers the last row of the product list.
+          padding: `clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) ${openId ? "9rem" : "5rem"}`,
+        }}
+      >
         <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "0.8rem" }}>
           <Link href="/admin" style={{ color: tokens.accent, textDecoration: "none" }}>ניהול</Link> · קטלוגים ללקוחות
         </div>
@@ -278,7 +321,7 @@ export default function CollectionsAdminPage() {
         ) : (
           <div style={{ display: "grid", gap: "0.9rem", marginTop: "1.4rem" }}>
             {collections.map((c) => (
-              <div key={c.id} style={{ border: `1px solid ${openId === c.id ? tokens.accent : tokens.border}`, borderRadius: 16, background: "#fff", padding: "1rem" }}>
+              <div key={c.id} id={`col-${c.id}`} style={{ border: `1px solid ${openId === c.id ? tokens.accent : tokens.border}`, borderRadius: 16, background: "#fff", padding: "1rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.8rem", flexWrap: "wrap" }}>
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>
@@ -399,6 +442,50 @@ export default function CollectionsAdminPage() {
           </div>
         )}
       </main>
+
+      {/* The way back, always on screen.
+          While a collection is open the page below it is the entire 962-product
+          catalogue with infinite scroll, so every control at the top of the card
+          — including "סגירת עריכה" — is unreachable without scrolling back up
+          past everything just added. This bar is fixed to the bottom of the
+          viewport for exactly as long as a collection is open, and it doubles as
+          the live count, which otherwise also lives far below the fold. */}
+      {openCollectionRow && (
+        <div
+          style={{
+            position: "fixed", insetInline: 0, bottom: 0, zIndex: 90,
+            background: "rgba(255,255,255,0.97)", backdropFilter: "blur(8px)",
+            borderTop: `1px solid ${tokens.border}`,
+            boxShadow: "0 -6px 20px rgba(20,16,32,0.10)",
+            padding: "0.7rem clamp(1rem,4vw,2.5rem)",
+            paddingBottom: "max(0.7rem, env(safe-area-inset-bottom))",
+            display: "flex", alignItems: "center", gap: "0.8rem", flexWrap: "wrap",
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 150 }}>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: tokens.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {openCollectionRow.name}
+            </div>
+            <div style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>
+              {membersBusy
+                ? "טוען…"
+                : `${members.length.toLocaleString("he-IL")} מוצרים בקטלוג`}
+            </div>
+          </div>
+          <button
+            onClick={() => closeCollection(openId)}
+            style={{
+              fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem",
+              color: "#fff", background: tokens.accent, border: "none",
+              padding: "0.7rem 1.2rem", borderRadius: 999, cursor: "pointer",
+              minHeight: 44, whiteSpace: "nowrap",
+            }}
+          >
+            סיום ← חזרה לרשימה
+          </button>
+        </div>
+      )}
+
       <SiteFooter />
     </>
   );
