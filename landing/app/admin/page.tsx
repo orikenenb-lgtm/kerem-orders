@@ -552,6 +552,13 @@ function ProductsTab() {
         </div>
         <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
           <div>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>לקוחות</div>
+            <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>כל מי שרשום במערכת — חיפוש לפי שם עסק, איש קשר, טלפון, אימייל או ח״פ, עם כתובת המשלוח וההזמנות של כל אחד.</div>
+          </div>
+          <Link href="/admin/customers" style={{ ...ghostBtn, textDecoration: "none", whiteSpace: "nowrap" }}>רשימת הלקוחות ←</Link>
+        </div>
+        <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+          <div>
             <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>שינוי מחירים</div>
             <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>מחיר לכל הלקוחות או ללקוחות מסוימים — נשמר בנפרד ממחיר רווחית, הסנכרון לא מוחק אותו.</div>
           </div>
