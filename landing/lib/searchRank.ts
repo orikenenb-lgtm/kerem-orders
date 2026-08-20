@@ -20,10 +20,16 @@
 //   • Rows already on screen are never reshuffled by later pages (by design —
 //     a grid that reorders under the user's finger is worse than imperfect
 //     ordering).
-// Making exact matches rank first GLOBALLY requires changing the
-// search_products / catalog_public* RPCs to boost literal-substring hits in
-// SQL — a Supabase change that is explicitly out of scope for this branch.
-// Nothing is hidden in any case.
+// In practice the cross-page caveat is mostly theoretical: the RPCs score a
+// literal substring hit at 1.0, so real matches already sort first globally.
+//
+// What this module could never fix was the size of the result SET, not its
+// order. The RPCs kept every row scoring >= 0.18, so "ברבי" returned 377 rows
+// for 8 real products and "בובה" returned 42% of the catalogue; a page-local
+// re-rank floats the real matches to the top of page 1 and leaves 350+
+// irrelevant rows below them forever. That threshold is now 0.30, measured
+// against the live catalogue — see the search_products migration. This file
+// is about ordering; the filtering belongs in SQL.
 //
 // Normalization mirrors what a person considers "the same text": final letters
 // folded (ם→מ etc.), punctuation and doubled spaces dropped, case ignored.
