@@ -27,13 +27,17 @@ type Product = {
   rank?: number;
   total?: number;
   // Manual clockwise rotation override (0/90/180/270) for photos crooked
-  // without EXIF. Nullable; the search_products RPC does not return it, so
-  // RPC-sourced rows leave it undefined → treated as 0 (no rotation).
+  // without EXIF. Nullable.
   rotation_override?: number | null;
-  // Wave 3 quantity-model columns (ff_display_quantities). Optional because the
-  // search_products RPC returns its own column set WITHOUT them — for
-  // RPC-sourced rows they are undefined, so resolveQuantity/stepOf treat those
-  // rows as unit products (step 1). Acceptable until the RPC is extended.
+  // Wave 3 quantity-model columns (ff_display_quantities). search_products now
+  // returns these alongside the browse query, so a product found by search and
+  // the same product found by browsing step, price and add identically. They
+  // stay optional only because the type is shared with older cart lines.
+  //
+  // They were NOT returned before, and that was a real money bug: 382 of 962
+  // active products are sold by the pack, and without display_qty the client
+  // read every search result as a single unit — same product, two prices, and
+  // a quantity silently rewritten at the last click.
   unit_name?: string | null;
   display_qty?: number | null;
   display_name?: string | null;
