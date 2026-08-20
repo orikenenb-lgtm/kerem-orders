@@ -774,7 +774,11 @@ export default function CatalogPage() {
                       </span>
                     </Link>
                     <Link href={`/product/?id=${p.id}`} style={{ textDecoration: "none" }}>
-                      <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em" }}>{p.name}</h3>
+                      {/* Clamped to three lines. Rivhit names run to 120 characters, and one
+                          long name stretched its card to 453px against 300px for its
+                          neighbours — which stretches the whole grid row. title keeps the
+                          full name one hover away; the product page always shows it. */}
+                      <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, overflow: "hidden" }} title={p.name}>{p.name}</h3>
                     </Link>
                     <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{p.sku || "—"}</span></div>
                     {displaySold && (
@@ -853,7 +857,14 @@ export default function CatalogPage() {
                                       ? `הוספת קרטון של ${carton} יחידות`
                                       : `קרטון = ${carton} יחידות, והמוצר נמכר ב${pluralPack(packName, 2)} שלמים — יתווספו ${cartonUnits} יחידות`
                                   }
-                                  style={{ ...ghostBtn, flex: 1, padding: "0.55rem 0.4rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
+                                  // No whiteSpace:nowrap. This button is 92px of
+                                  // unbreakable text inside a 136px grid column
+                                  // at 320px, and it was the single thing making
+                                  // /catalog 339px wide there — 19px of every
+                                  // screen clipped, including the logo, the phone
+                                  // link and the first category chip, with no way
+                                  // to scroll to them. Two lines beats cut off.
+                                  style={{ ...ghostBtn, flex: 1, padding: "0.55rem 0.4rem", fontSize: "0.8rem", lineHeight: 1.15 }}>
                                   📦 קרטון ({cartonUnits.toLocaleString("he-IL")})
                                 </button>
                               )}

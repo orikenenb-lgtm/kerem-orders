@@ -268,7 +268,11 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                     <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
                       <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} />
                     </div>
-                    <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", margin: 0 }}>{p.name}</h3>
+                    {/* Clamped to three lines. Rivhit names run to 120 characters, and one
+                        long name stretched its card to 453px against 300px for its
+                        neighbours — which stretches the whole grid row. title keeps the
+                        full name one hover away; the product page always shows it. */}
+                    <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, overflow: "hidden", margin: 0 }} title={p.name}>{p.name}</h3>
                     {p.category && (
                       <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>{p.category}</div>
                     )}

@@ -358,8 +358,10 @@ export default function CollectionsAdminPage() {
             onKeyDown={(e) => { if (e.key === "Enter") createCollection(); }}
             style={{ flex: 1, minWidth: 220, fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.7rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
           />
-          <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.body, cursor: "pointer" }}>
-            <input type="checkbox" checked={newPrices} onChange={(e) => setNewPrices(e.target.checked)} />
+          <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", minHeight: 44, fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.body, cursor: "pointer" }}>
+            {/* The default checkbox renders 13x13 — half the WCAG 2.2 AA minimum.
+                The label is clickable too, but the box is what a finger aims at. */}
+            <input type="checkbox" checked={newPrices} onChange={(e) => setNewPrices(e.target.checked)} style={{ width: 24, height: 24, accentColor: tokens.accent, cursor: "pointer" }} />
             להציג מחירים בקישור
           </label>
           <button onClick={createCollection} disabled={creating || !newName.trim()} style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.7rem 1.4rem", borderRadius: 999, cursor: "pointer", opacity: creating || !newName.trim() ? 0.6 : 1 }}>
@@ -380,7 +382,10 @@ export default function CollectionsAdminPage() {
         ) : (
           <div style={{ display: "grid", gap: "0.9rem", marginTop: "1.4rem" }}>
             {collections.map((c) => (
-              <div key={c.id} id={`col-${c.id}`} style={{ border: `1px solid ${openId === c.id ? tokens.accent : tokens.border}`, borderRadius: 16, background: "#fff", padding: "1rem" }}>
+              // minWidth: 0 — a grid item defaults to min-width:auto and will not
+              // shrink below the min-content width of what is inside it. What is
+              // inside here, once the editor opens, is the whole product browser.
+              <div key={c.id} id={`col-${c.id}`} style={{ minWidth: 0, border: `1px solid ${openId === c.id ? tokens.accent : tokens.border}`, borderRadius: 16, background: "#fff", padding: "1rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.8rem", flexWrap: "wrap" }}>
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>
@@ -514,7 +519,15 @@ export default function CollectionsAdminPage() {
         )}
       </main>
 
-      <SiteFooter />
+      {/* The fixed bar sits over whatever is at the bottom of the viewport, and
+          at the bottom of the DOCUMENT that is the footer — so while a
+          collection was open the bar covered the phone number and the copyright
+          and they could not be reached at all. main's own 9rem reserve does not
+          help here because the footer comes after main. Reserve the same room
+          under the footer for exactly as long as the bar exists. */}
+      <div style={{ paddingBottom: openId ? "9rem" : 0 }}>
+        <SiteFooter />
+      </div>
     </>
   );
 }
