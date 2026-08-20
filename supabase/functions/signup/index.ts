@@ -36,14 +36,15 @@
 //    worth removing; here the alternative is telling a wholesale buyer his
 //    signup worked when it did not, and then watching him fail to log in.
 //
-//  * Turnstile FAILS OPEN when TURNSTILE_SECRET is unset or Cloudflare is
-//    unreachable, and fails CLOSED only when Cloudflare explicitly rejects the
-//    token. A misconfigured or briefly-unreachable captcha must not be able to
-//    take registration offline; a token Cloudflare says is bad is a real
-//    signal and is refused. Every outcome is logged, never the token.
+//  * Turnstile fails CLOSED only on positive evidence that the TOKEN is bad —
+//    missing, invalid, replayed, or solved for another action or hostname. An
+//    unset secret, a secret not paired with the site key this build uses, a
+//    malformed request and a Cloudflare outage all fail OPEN. An operator
+//    mistake must not be able to take registration offline for every real
+//    customer. Cloudflare's error codes are logged; the token never is.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import { isTurnstileVerifyAcceptable, normalizeEmail, isValidEmail } from './lib.ts'
+import { classifySiteverify, normalizeEmail, isValidEmail } from './lib.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -65,16 +66,20 @@ const opt = (v: unknown, max = 200): string | null => {
   return s === '' ? null : s
 }
 
-type CaptchaOutcome = 'ok' | 'rejected' | 'unconfigured' | 'unreachable'
+type CaptchaOutcome =
+  | { verdict: 'ok' | 'bad_token' | 'unconfigured' | 'unreachable' | 'misconfigured'; codes?: string[] }
 
-/** Check the Turnstile token with Cloudflare. Returns WHY, not just yes/no, so
- *  the caller can refuse a token Cloudflare rejected while still letting a
- *  registration through when the gate itself is unavailable. The secret and the
- *  token are never logged. */
+/** Check the Turnstile token with Cloudflare and report WHY, not just yes/no.
+ *  A signup is refused ONLY on positive evidence that the token is bad; a
+ *  missing secret, a secret that is not paired with the site key the site was
+ *  built with, a malformed request or a Cloudflare outage all let the
+ *  registration through, because an operator mistake must not be able to take
+ *  registration offline. Cloudflare's error codes are logged (they name the
+ *  problem and are not sensitive); the secret and the token never are. */
 async function checkTurnstile(token: unknown, remoteIp: string | null): Promise<CaptchaOutcome> {
   const secret = Deno.env.get('TURNSTILE_SECRET')
-  if (!secret) return 'unconfigured'
-  if (typeof token !== 'string' || token === '') return 'rejected'
+  if (!secret) return { verdict: 'unconfigured' }
+  if (typeof token !== 'string' || token === '') return { verdict: 'bad_token' }
   const allowTest = Deno.env.get('TURNSTILE_ENV') === 'test'
   try {
     const params = new URLSearchParams({ secret, response: token })
@@ -86,13 +91,13 @@ async function checkTurnstile(token: unknown, remoteIp: string | null): Promise<
       signal: AbortSignal.timeout(5000),
     })
     const data = await r.json()
-    return isTurnstileVerifyAcceptable(data, { allowTest, expectedAction: 'signup' })
-      ? 'ok'
-      : 'rejected'
+    const verdict = classifySiteverify(data, { allowTest, expectedAction: 'signup' })
+    const codes = Array.isArray(data?.['error-codes']) ? data['error-codes'].map(String) : []
+    return { verdict, codes }
   } catch {
     // Network error, timeout, or a non-JSON body: the gate is down, not the
     // caller's fault. Let the registration through and record it.
-    return 'unreachable'
+    return { verdict: 'unreachable' }
   }
 }
 
@@ -114,8 +119,8 @@ Deno.serve(async (req) => {
 
     const remoteIp = req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for')
     const captcha = await checkTurnstile(body?.turnstileToken, remoteIp)
-    console.log(JSON.stringify({ evt: 'signup', captcha }))
-    if (captcha === 'rejected') {
+    console.log(JSON.stringify({ evt: 'signup', captcha: captcha.verdict, codes: captcha.codes ?? [] }))
+    if (captcha.verdict === 'bad_token') {
       return json({ error: 'אימות האבטחה נכשל, נסו שוב.' }, 400)
     }
 

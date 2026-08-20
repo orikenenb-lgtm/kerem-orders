@@ -11,7 +11,9 @@
 //  3. Email is normalized (trim + lowercase) so casing/spacing cannot bypass
 //     any later uniqueness or allow-list check. (normalizeEmail, isValidEmail)
 //  4. The Cloudflare Turnstile token is verified server-side, with the action
-//     and production-hostname checks. (isTurnstileVerifyAcceptable)
+//     and production-hostname checks (isTurnstileVerifyAcceptable), and the
+//     failure is classified so that only a genuinely bad token refuses a
+//     signup — an operator misconfiguration never does. (classifySiteverify)
 //
 // NOT LIVE — a stricter posture kept here, and tested, for the day the owner
 // turns on confirmation emails. index.ts deliberately does neither:
@@ -121,6 +123,50 @@ export function isTurnstileVerifyAcceptable(
   const host = (data.hostname || "").toLowerCase();
   if (!host || host === "localhost" || host === "127.0.0.1" || host === "[::1]") return false;
   return host === TURNSTILE_PROD_HOSTNAME;
+}
+
+/** Why a siteverify response was not acceptable — the distinction that decides
+ *  whether a registration is refused or let through.
+ *
+ *  Cloudflare's error codes split cleanly into "the caller's token is bad" and
+ *  "our own configuration or Cloudflare itself is the problem". Only the first
+ *  group is evidence about the person registering. If the secret is wrong, or
+ *  is not paired with the site key the site was built with, or Cloudflare has
+ *  an internal error, refusing the signup would take registration offline for
+ *  every real customer because of an operator mistake — so those fail OPEN and
+ *  are logged loudly instead.
+ *
+ *  Unknown codes are treated as misconfiguration (fail open) on the same
+ *  principle: only refuse when there is positive evidence against the caller. */
+export type CaptchaVerdict = "ok" | "bad_token" | "misconfigured";
+
+// Only codes that describe the TOKEN. Everything else Cloudflare can return
+// — missing-input-secret, invalid-input-secret, invalid-parsed-secret,
+// invalid-widget-id, bad-request, internal-error — describes our own
+// configuration or Cloudflare's health, and must not cost a customer his
+// registration.
+const CALLER_FAULT_CODES = new Set([
+  "missing-input-response",
+  "invalid-input-response",
+  "timeout-or-duplicate",
+]);
+
+export function classifySiteverify(
+  data: SiteverifyResponse | null | undefined,
+  opts: { allowTest: boolean; expectedAction?: string },
+): CaptchaVerdict {
+  // A response we cannot read at all tells us nothing about the caller.
+  if (!data || typeof data !== "object") return "misconfigured";
+  if (isTurnstileVerifyAcceptable(data, opts)) return "ok";
+  if (data.success === true) {
+    // Cloudflare accepted the token but the action or hostname did not match
+    // what this site expects — that IS evidence against the caller (a token
+    // solved on someone else's page, or for a different widget).
+    return "bad_token";
+  }
+  const codes = Array.isArray(data["error-codes"]) ? data["error-codes"] : [];
+  if (codes.length === 0) return "misconfigured";
+  return codes.some((c) => CALLER_FAULT_CODES.has(String(c))) ? "bad_token" : "misconfigured";
 }
 
 export type ParsedSignup =
