@@ -130,7 +130,9 @@ t("a valid solve from the real site passes", () => {
 });
 
 t("a bad TOKEN refuses the signup", () => {
-  for (const code of ["missing-input-response", "invalid-input-response", "timeout-or-duplicate"]) {
+  // Only the two codes a key mismatch can never produce: no token at all, and
+  // a token already spent.
+  for (const code of ["missing-input-response", "timeout-or-duplicate"]) {
     assert.equal(classifySiteverify({ success: false, "error-codes": [code] }, OPTS), "bad_token", code);
   }
   // Solved, but for another action or on someone else's page — still the
@@ -147,6 +149,12 @@ t("OUR misconfiguration never refuses a signup", () => {
                       "invalid-widget-id", "bad-request", "internal-error"]) {
     assert.equal(classifySiteverify({ success: false, "error-codes": [code] }, OPTS), "misconfigured", code);
   }
+  // invalid-input-response belongs here too, and this is the assertion that
+  // matters most. Cloudflare returns it BOTH for a junk token AND for a good
+  // token checked against a secret paired with a different site key — the most
+  // likely Turnstile misconfiguration there is. Refusing on it would turn away
+  // every real customer while blaming them in the log.
+  assert.equal(classifySiteverify({ success: false, "error-codes": ["invalid-input-response"] }, OPTS), "misconfigured");
   // Unreadable, empty, or unrecognised responses fall the same way.
   assert.equal(classifySiteverify(null, OPTS), "misconfigured");
   assert.equal(classifySiteverify(undefined, OPTS), "misconfigured");
@@ -159,6 +167,32 @@ t("a mixed response refuses if any code blames the token", () => {
     classifySiteverify({ success: false, "error-codes": ["internal-error", "timeout-or-duplicate"] }, OPTS),
     "bad_token",
   );
+  // …but invalid-input-response never tips a mixed response into a refusal.
+  assert.equal(
+    classifySiteverify({ success: false, "error-codes": ["internal-error", "invalid-input-response"] }, OPTS),
+    "misconfigured",
+  );
+});
+
+// ---- The guard that actually protects production ----
+//
+// The role tests above exercise resolveRole() in lib.ts. The DEPLOYED function
+// does not import resolveRole — it hardcodes the role in index.ts. So an
+// escalation hole could be opened in index.ts and every one of those tests
+// would stay green. This reads the real deployed source instead.
+t("the LIVE signup source can only ever produce a customer", () => {
+  const live = readFileSync(join(here, "..", "..", "supabase", "functions", "signup", "index.ts"), "utf8");
+  // The role that reaches the profiles upsert is a literal, not derived.
+  assert.match(live, /const\s+role\s*=\s*['"]customer['"]/,
+    "index.ts must hardcode the customer role");
+  // Nothing may read a role-ish field off the request body.
+  for (const bad of ["body.role", "body?.role", "body.is_manager", "body?.is_manager",
+                     "body.admin", "body?.admin"]) {
+    assert.ok(!live.includes(bad), `index.ts must not read ${bad} from the request`);
+  }
+  // The email-based promotion that used to grant manager must not come back.
+  assert.ok(!/MANAGER_EMAIL/.test(live), "index.ts must not reintroduce MANAGER_EMAIL");
+  assert.ok(!/['"]manager['"]/.test(live), "index.ts must not mention the manager role at all");
 });
 
 
