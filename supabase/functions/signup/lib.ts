@@ -12,8 +12,10 @@
 //     any later uniqueness or allow-list check. (normalizeEmail, isValidEmail)
 //  4. The Cloudflare Turnstile token is verified server-side, with the action
 //     and production-hostname checks (isTurnstileVerifyAcceptable), and the
-//     failure is classified so that only a genuinely bad token refuses a
-//     signup — an operator misconfiguration never does. (classifySiteverify)
+//     failure is classified so that a signup is refused ONLY on evidence a key
+//     mismatch could not have produced — no token at all, or a spent one.
+//     (classifySiteverify). Everything else, including a token Cloudflare calls
+//     invalid, lets the registration through and is logged.
 //
 // NOT LIVE — a stricter posture kept here, and tested, for the day the owner
 // turns on confirmation emails. index.ts deliberately does neither:
@@ -140,14 +142,32 @@ export function isTurnstileVerifyAcceptable(
  *  principle: only refuse when there is positive evidence against the caller. */
 export type CaptchaVerdict = "ok" | "bad_token" | "misconfigured";
 
-// Only codes that describe the TOKEN. Everything else Cloudflare can return
-// — missing-input-secret, invalid-input-secret, invalid-parsed-secret,
-// invalid-widget-id, bad-request, internal-error — describes our own
-// configuration or Cloudflare's health, and must not cost a customer his
-// registration.
+// Codes that can ONLY mean the caller is at fault.
+//
+// `invalid-input-response` is deliberately NOT in this set, and that is the
+// whole point of this file. Cloudflare returns it in two very different
+// situations that it does not distinguish:
+//
+//   1. the token really is junk — a bot, or a replayed page; and
+//   2. the token is a perfectly good solve, but TURNSTILE_SECRET belongs to a
+//      DIFFERENT widget than the NEXT_PUBLIC_TURNSTILE_SITE_KEY the site was
+//      built with.
+//
+// Case 2 is the single most likely operator mistake with Turnstile, and if this
+// code refuses on it then every real customer is turned away at registration
+// while the log blames them for it. That is exactly the failure this classifier
+// was written to prevent, so treating the code as conclusive proof of case 1
+// defeats its own purpose.
+//
+// It also means a probe cannot be used to prove the pair matches: sending a
+// deliberately-bad token yields `invalid-input-response` whether the secret is
+// correctly paired or not. The only proof is a real solve from the real form
+// logging `captcha: "ok"` — see the note in index.ts.
+//
+// So this set keeps only the two codes a key mismatch can never produce:
+// a request with NO token at all, and a token already spent.
 const CALLER_FAULT_CODES = new Set([
   "missing-input-response",
-  "invalid-input-response",
   "timeout-or-duplicate",
 ]);
 
@@ -166,7 +186,11 @@ export function classifySiteverify(
   }
   const codes = Array.isArray(data["error-codes"]) ? data["error-codes"] : [];
   if (codes.length === 0) return "misconfigured";
-  return codes.some((c) => CALLER_FAULT_CODES.has(String(c))) ? "bad_token" : "misconfigured";
+  if (codes.some((c) => CALLER_FAULT_CODES.has(String(c)))) return "bad_token";
+  // Everything left over — including invalid-input-response — could be our
+  // configuration as easily as the caller's token. Let the registration
+  // through and log it; never refuse a paying customer on an ambiguity.
+  return "misconfigured";
 }
 
 export type ParsedSignup =
