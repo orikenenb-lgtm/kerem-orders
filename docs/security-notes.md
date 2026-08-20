@@ -61,9 +61,43 @@ and path (`landing/lib/imageFallback.ts`).
 
 ## Auth / signup
 
-A secure **proposed** replacement for the deployed `signup` lives in
-`supabase/functions/signup/` (clearly labeled proposed; not the deployed
-source). It never grants manager by email, never pre-confirms a public signup,
-ignores client-supplied role fields, returns account-existence-neutral errors,
-and requires a Turnstile token. Deployment is owner-gated
-(`docs/edge-functions-runbook.md`).
+`supabase/functions/signup/` is now the DEPLOYED source, not a proposal. Two
+weaknesses were fixed and the rest of the contract was left alone on purpose:
+
+* **No manager promotion by email.** The previous deployed function granted the
+  `manager` role to whoever typed the owner's address into the signup form —
+  an unauthenticated admin takeover for the price of knowing one email address.
+  Public signup now always yields `customer`, and client-supplied
+  `role`/`is_manager`/`admin` fields are ignored.
+* **The captcha is verified.** The registration form had been solving a
+  Cloudflare Turnstile challenge and sending the token; the function discarded
+  it. It is now checked against siteverify with the action and production
+  hostname checks. It fails OPEN when `TURNSTILE_SECRET` is unset or Cloudflare
+  is unreachable (a broken gate must not take registration offline) and fails
+  CLOSED when Cloudflare explicitly rejects the token.
+
+Deliberately unchanged, and therefore still true of production:
+
+* `email_confirm: true` — accounts are created already confirmed so a new
+  customer can log in immediately, which is what the registration screen
+  promises. Turning on confirmation emails needs SMTP configured and that copy
+  rewritten first.
+* The "this address is already registered" message is an account-enumeration
+  signal. It is kept because the alternative strands a returning wholesale
+  buyer who is told his signup succeeded when it did not.
+
+`lib.ts` still carries the stricter no-pre-confirm / enumeration-neutral
+helpers, labeled NOT LIVE, for the day those decisions change.
+
+## Removed from the repository
+
+`crps-presentation/`, `docs/crps-hilit.pdf` and `docs/index.html` were a private
+medical presentation naming a private individual, sitting in a **public**
+repository. They have been removed from the working tree.
+
+**They are still in the git history and remain publicly fetchable from it.**
+Removing them from the tip stops casual discovery; it does not undo publication.
+Fully erasing them needs one of two owner decisions, neither of which was taken
+unilaterally: rewrite history (`git filter-repo` + a force push, which
+invalidates every existing clone and open PR), or make the repository private.
+

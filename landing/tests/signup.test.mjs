@@ -1,6 +1,7 @@
-// Security tests for the PROPOSED secure signup helpers
-// (supabase/functions/signup/lib.ts). Plain node, same transpile harness as
-// the other suites, so these invariants run in CI.
+// Security tests for the signup helpers (supabase/functions/signup/lib.ts).
+// Plain node, same transpile harness as the other suites, so these invariants
+// run in CI. lib.ts marks which rules the deployed function enforces and which
+// are the stricter not-live posture; the test names here say the same.
 import { strict as assert } from "node:assert";
 import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,7 +19,7 @@ writeFileSync(join(tmp, "lib.mjs"), js);
 const {
   CUSTOMER_ROLE, normalizeEmail, isValidEmail, isAcceptablePassword,
   resolveRole, EMAIL_CONFIRM_ON_PUBLIC_SIGNUP, publicSignupError, parseSignup,
-  isTurnstileVerifyAcceptable, TURNSTILE_PROD_HOSTNAME,
+  isTurnstileVerifyAcceptable, TURNSTILE_PROD_HOSTNAME, classifySiteverify,
 } = await import(pathToFileURL(join(tmp, "lib.mjs")).href);
 
 let n = 0;
@@ -52,7 +53,11 @@ t("email casing/spacing is normalized so it cannot bypass later checks", () => {
   assert.equal(normalizeEmail(undefined), "");
 });
 
-t("public signup never pre-confirms the address", () => {
+t("NOT LIVE — the stricter no-pre-confirm posture stays internally consistent", () => {
+  // The deployed function passes email_confirm: true on purpose so a new
+  // customer can log in immediately. This pins the helpers that would be used
+  // if the owner ever turns on confirmation emails; it is not a claim about
+  // what production does.
   assert.equal(EMAIL_CONFIRM_ON_PUBLIC_SIGNUP, false);
   assert.equal(parseSignup({ email: "x@y.com", password: "password1" }).emailConfirm, false);
 });
@@ -67,7 +72,9 @@ t("input validation rejects bad email and weak/oversized passwords", () => {
   assert.equal(isAcceptablePassword("1234567"), false);
 });
 
-t("errors never reveal whether an account exists (no enumeration)", () => {
+t("NOT LIVE — publicSignupError's messages reveal nothing about existence", () => {
+  // The deployed function returns a friendly "already registered" instead, so
+  // this covers the helper, not the live response. See supabase/functions/signup/lib.ts.
   // A duplicate address and a generic failure must produce the SAME response.
   const dup = publicSignupError("signup_failed");
   const genFail = publicSignupError("signup_failed");
@@ -83,9 +90,9 @@ t("errors never reveal whether an account exists (no enumeration)", () => {
   }
 });
 
-t("repeated automated signups are gated (rate_limited maps to 429)", () => {
-  // The edge function requires a Turnstile token and relies on Auth's per-IP
-  // limits; the rate-limited response is a generic 429.
+t("rate_limited maps to a generic 429", () => {
+  // The live function verifies the Turnstile token; Auth's own per-IP limiter
+  // is what throttles a flood. This pins the generic 429 shape.
   assert.equal(publicSignupError("rate_limited").status, 429);
 });
 
@@ -113,5 +120,46 @@ t("siteverify: test mode relaxes the hostname check but still requires success",
   assert.equal(isTurnstileVerifyAcceptable({ success: true, hostname: "localhost" }, { allowTest: true }), true);
   assert.equal(isTurnstileVerifyAcceptable({ success: false, hostname: "localhost" }, { allowTest: true }), false);
 });
+
+// ---- Which captcha failures may refuse a registration ----
+const OPTS = { allowTest: false, expectedAction: "signup" };
+const GOOD = { success: true, hostname: TURNSTILE_PROD_HOSTNAME, action: "signup" };
+
+t("a valid solve from the real site passes", () => {
+  assert.equal(classifySiteverify(GOOD, OPTS), "ok");
+});
+
+t("a bad TOKEN refuses the signup", () => {
+  for (const code of ["missing-input-response", "invalid-input-response", "timeout-or-duplicate"]) {
+    assert.equal(classifySiteverify({ success: false, "error-codes": [code] }, OPTS), "bad_token", code);
+  }
+  // Solved, but for another action or on someone else's page — still the
+  // caller's problem, not ours.
+  assert.equal(classifySiteverify({ ...GOOD, action: "login" }, OPTS), "bad_token");
+  assert.equal(classifySiteverify({ ...GOOD, hostname: "evil.example.com" }, OPTS), "bad_token");
+  assert.equal(classifySiteverify({ ...GOOD, hostname: "localhost" }, OPTS), "bad_token");
+});
+
+t("OUR misconfiguration never refuses a signup", () => {
+  // The whole point: a wrong or unpaired secret, a malformed request, or a
+  // Cloudflare outage must not take registration offline for real customers.
+  for (const code of ["missing-input-secret", "invalid-input-secret", "invalid-parsed-secret",
+                      "invalid-widget-id", "bad-request", "internal-error"]) {
+    assert.equal(classifySiteverify({ success: false, "error-codes": [code] }, OPTS), "misconfigured", code);
+  }
+  // Unreadable, empty, or unrecognised responses fall the same way.
+  assert.equal(classifySiteverify(null, OPTS), "misconfigured");
+  assert.equal(classifySiteverify(undefined, OPTS), "misconfigured");
+  assert.equal(classifySiteverify({ success: false }, OPTS), "misconfigured");
+  assert.equal(classifySiteverify({ success: false, "error-codes": ["some-future-code"] }, OPTS), "misconfigured");
+});
+
+t("a mixed response refuses if any code blames the token", () => {
+  assert.equal(
+    classifySiteverify({ success: false, "error-codes": ["internal-error", "timeout-or-duplicate"] }, OPTS),
+    "bad_token",
+  );
+});
+
 
 console.log(`\n${n} signup tests passed`);
