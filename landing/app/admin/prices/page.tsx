@@ -166,7 +166,6 @@ export default function PricesAdminPage() {
           existing={ovMap.get(editing.id) ?? { customers: [] }}
           customers={customers}
           customerName={customerName}
-          managerId={session?.user.id ?? null}
           onClose={() => setEditing(null)}
           onSaved={(msg) => { setNotice(msg); loadOverrides(); }}
           onError={(msg) => setErr(msg)}
@@ -178,12 +177,14 @@ export default function PricesAdminPage() {
 }
 
 // Focused editor dialog: price + who it applies to + the prices already set.
-function PriceEditor({ product, existing, customers, customerName, managerId, onClose, onSaved, onError }: {
+// `managerId` used to be threaded in so the client could stamp updated_by.
+// set_price_override records auth.uid() server-side instead, which the caller
+// cannot misreport, so the prop is gone.
+function PriceEditor({ product, existing, customers, customerName, onClose, onSaved, onError }: {
   product: ProductRow;
   existing: { global?: OverrideRow; customers: OverrideRow[] };
   customers: CustomerRow[];
   customerName: (id: string) => string;
-  managerId: string | null;
   onClose: () => void;
   onSaved: (msg: string) => void;
   onError: (msg: string) => void;
@@ -248,25 +249,28 @@ function PriceEditor({ product, existing, customers, customerName, managerId, on
     setSaving(true);
     setLocalErr("");
     const rounded = Math.round(priceNum * 100) / 100;
-    const rows: { product_id: string; user_id: string | null; price: number; updated_by: string | null }[] =
-      scope === "all"
-        ? [{ product_id: product.id, user_id: null, price: rounded, updated_by: managerId }]
-        : [...picked].map((uid) => ({ product_id: product.id, user_id: uid, price: rounded, updated_by: managerId }));
-    // The unique indexes are partial (one WHERE user_id IS NULL, one WHERE it
-    // is not), which upsert's ON CONFLICT cannot target — so replace instead.
-    let del = supabase.from("price_overrides").delete().eq("product_id", product.id);
-    del = scope === "all" ? del.is("user_id", null) : del.in("user_id", [...picked]);
-    const { error: delErr } = await del;
-    if (delErr) { setSaving(false); setLocalErr("השמירה נכשלה — שום דבר לא השתנה."); return; }
-    const { error } = await supabase.from("price_overrides").insert(rows);
+    // One RPC, one transaction. This used to be a DELETE round trip followed by
+    // an INSERT round trip: in between, the product had no override at all, and
+    // if the INSERT failed — dropped connection, a customer id that no longer
+    // existed, the tab closed — the old price was gone with nothing put back
+    // and the screen could only apologise afterwards. set_price_override still
+    // replaces rather than upserts (the unique indexes are partial, one WHERE
+    // user_id IS NULL and one WHERE it is not, which ON CONFLICT cannot
+    // target), but both statements now succeed or fail together.
+    //
+    // The manager check lives inside the function, which is SECURITY DEFINER —
+    // it is the gate, not the RLS policy.
+    const { error } = await supabase.rpc("set_price_override", {
+      p_product_id: product.id,
+      p_price: rounded,
+      p_user_ids: scope === "all" ? null : [...picked],
+    });
     setSaving(false);
     if (error) {
-      // The delete already went through, so the old price is gone. Saying only
-      // "save failed" would read as "nothing changed" — which is the opposite of
-      // what happened. Say it plainly and reload so the screen stops showing a
-      // price that no longer exists.
-      setLocalErr("השמירה נכשלה והמחיר הקודם כבר הוסר. הזינו מחיר ושמרו שוב.");
-      onError("השמירה נכשלה באמצע — המחיר הקודם הוסר. הזינו אותו מחדש.");
+      // Truthful again: nothing was written, so the previous price is still
+      // exactly where it was.
+      setLocalErr("השמירה נכשלה — המחיר הקודם נשאר כפי שהיה. נסו שוב.");
+      onError("השמירה נכשלה. שום דבר לא השתנה.");
       return;
     }
     onSaved(
