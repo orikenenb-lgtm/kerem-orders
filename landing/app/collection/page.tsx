@@ -217,16 +217,24 @@ function CollectionCatalog() {
                 {p.category && (
                   <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>{p.category}</div>
                 )}
-                {showPrices && p.price != null && (
-                  <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem", flexWrap: "wrap" }}>
-                    <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: discount > 0 ? "#1A7A4D" : tokens.text }}>
-                      {ils(Number(p.price) || 0)}
-                    </span>
-                    {discount > 0 && p.list_price != null && (
-                      <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(Number(p.list_price) || 0)}</s>
-                    )}
-                  </div>
-                )}
+                {showPrices && p.price != null && (() => {
+                  // Green + strikethrough are decided per ROW, not by the
+                  // collection discount: a per-product custom price (Wave:
+                  // collection_products.price_override) is cheaper than list
+                  // with no discount set, and is NOT derived from the discount
+                  // when one is. price < list_price is the one honest test.
+                  const cheaper = p.list_price != null && Number(p.price) < Number(p.list_price);
+                  return (
+                    <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem", flexWrap: "wrap" }}>
+                      <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: cheaper ? "#1A7A4D" : tokens.text }}>
+                        {ils(Number(p.price) || 0)}
+                      </span>
+                      {cheaper && (
+                        <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(Number(p.list_price) || 0)}</s>
+                      )}
+                    </div>
+                  );
+                })()}
               </button>
             ))}
           </div>
@@ -339,15 +347,20 @@ function CollectionPreview({ product, showPrice, onClose }: {
             קטגוריה: {product.category}
           </p>
         )}
-        {showPrice && product.price != null && (
-          <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.35rem", color: Number(product.discount_percent) > 0 ? "#1A7A4D" : tokens.text, margin: 0 }}>
-            {ils(Number(product.price) || 0)}
-            {Number(product.discount_percent) > 0 && product.list_price != null && (
-              <s style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.9rem", color: tokens.dim }}> {ils(Number(product.list_price) || 0)}</s>
-            )}
-            <span style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.85rem", color: tokens.dim }}> · כולל מע״מ</span>
-          </p>
-        )}
+        {showPrice && product.price != null && (() => {
+          // Same per-row rule as the grid: cheaper-than-list decides the
+          // green and the strikethrough, whatever produced the price.
+          const cheaper = product.list_price != null && Number(product.price) < Number(product.list_price);
+          return (
+            <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.35rem", color: cheaper ? "#1A7A4D" : tokens.text, margin: 0 }}>
+              {ils(Number(product.price) || 0)}
+              {cheaper && (
+                <s style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.9rem", color: tokens.dim }}> {ils(Number(product.list_price) || 0)}</s>
+              )}
+              <span style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.85rem", color: tokens.dim }}> · כולל מע״מ</span>
+            </p>
+          );
+        })()}
       </div>
     </div>
   );
