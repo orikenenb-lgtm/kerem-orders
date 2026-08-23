@@ -33,6 +33,13 @@ type Collection = {
 // but keeping the same shape means members and search results render alike.
 type ProductRow = BrowserProduct;
 
+// A member additionally knows its two price layers: the exact price set for
+// THIS collection (col_price, from collection_products.price_override) and the
+// manager's global price for everyone (glob_price, from price_overrides).
+// Both are needed to tell the manager the truth: what the customer in this
+// link will actually see, and what he would have seen without the override.
+type MemberRow = ProductRow & { col_price: number | null; glob_price: number | null };
+
 // Unguessable link token: 12 chars, URL-safe, from the browser CSPRNG.
 function makeSlug(): string {
   const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -64,7 +71,7 @@ export default function CollectionsAdminPage() {
 
   // editing state: which collection is open + its member ids
   const [openId, setOpenId] = useState<string | null>(null);
-  const [members, setMembers] = useState<ProductRow[]>([]);
+  const [members, setMembers] = useState<MemberRow[]>([]);
   const [membersBusy, setMembersBusy] = useState(false);
 
   const mountedRef = useRef(true);
@@ -183,14 +190,38 @@ export default function CollectionsAdminPage() {
       // Select every column BrowserProduct declares — the rows are typed as
       // that shape, so a short select would leave price/category undefined at
       // runtime while the types claim otherwise.
-      .select("sort_order, products(id,name,sku,price,category,picture_link,rotation_override)")
+      .select("sort_order, price_override, products(id,name,sku,price,category,picture_link,rotation_override)")
       .eq("collection_id", collectionId)
       .order("sort_order", { ascending: true });
     if (!mountedRef.current) return;
+    if (error) { setMembersBusy(false); setErr("טעינת מוצרי הקטלוג נכשלה."); return; }
+    type Joined = { sort_order: number; price_override: number | string | null; products: ProductRow | null };
+    const rows = ((data ?? []) as unknown as Joined[]).filter((r): r is Joined & { products: ProductRow } => !!r.products);
+
+    // The manager's GLOBAL per-product prices (price_overrides, user_id null).
+    // Without them the "regular price" shown next to the custom-price editor
+    // would be the raw Rivhit price — a number the customer never sees when a
+    // global override exists, which makes the comparison a lie exactly where
+    // the manager is deciding a price. One extra query, members only.
+    const ids = rows.map((r) => r.products.id);
+    const globs = new Map<string, number>();
+    if (ids.length > 0) {
+      const { data: po } = await supabase
+        .from("price_overrides")
+        .select("product_id, price")
+        .is("user_id", null)
+        .in("product_id", ids);
+      for (const o of (po ?? []) as { product_id: string; price: number | string }[]) {
+        globs.set(o.product_id, Number(o.price));
+      }
+    }
+    if (!mountedRef.current) return;
     setMembersBusy(false);
-    if (error) { setErr("טעינת מוצרי הקטלוג נכשלה."); return; }
-    type Joined = { sort_order: number; products: ProductRow | null };
-    setMembers(((data ?? []) as unknown as Joined[]).map((r) => r.products).filter((p): p is ProductRow => !!p));
+    setMembers(rows.map((r) => ({
+      ...r.products,
+      col_price: r.price_override == null ? null : Number(r.price_override),
+      glob_price: globs.get(r.products.id) ?? null,
+    })));
   }, []);
 
   // Closing has to bring the manager back to the collection he was editing.
@@ -248,8 +279,11 @@ export default function CollectionsAdminPage() {
       if (!/duplicate|unique/i.test(error.message)) setErr("הוספת המוצר נכשלה.");
       return;
     }
-    setMembers((m) => [...m, p]);
-    loadCollections(); // refresh counts
+    setMembers((m) => [...m, { ...p, col_price: null, glob_price: null }]);
+    // Refresh in the background: the count on the card, and the member's
+    // glob_price (the optimistic row above assumes it has none).
+    loadCollections();
+    loadMembers(openId);
   };
 
   const removeProduct = async (p: ProductRow) => {
@@ -264,12 +298,138 @@ export default function CollectionsAdminPage() {
     loadCollections();
   };
 
+  // ---- per-product price in THIS collection --------------------------------
+  // One editor at a time: which product's price is being edited, and the raw
+  // text as typed. The value is parsed only on save — never clamped or
+  // stripped first (D-014: stripping the minus is what turned "-15" into 15).
+  //
+  // The key is "card:<id>" / "row:<id>", not the bare product id: the same
+  // product renders BOTH as a browser card and as a member row, and a bare id
+  // opened two identical editors at once — two autofocus inputs mirroring one
+  // draft. The editor opens only where the manager clicked.
+  const [priceEditId, setPriceEditId] = useState<string | null>(null);
+  const [priceDraft, setPriceDraft] = useState("");
+  const [priceBusy, setPriceBusy] = useState(false);
+
+  const startPriceEdit = (m: MemberRow, src: "card" | "row") => {
+    setPriceEditId(`${src}:${m.id}`);
+    setPriceDraft(m.col_price != null ? String(m.col_price) : "");
+  };
+
+  const saveColPrice = async (m: MemberRow) => {
+    if (!openId || priceBusy) return;
+    const raw = priceDraft.trim().replace("٫", ".").replace(",", ".");
+    let value: number | null;
+    if (raw === "") {
+      // Empty means "back to the regular price" — the one deliberate way to
+      // clear an override, so a typo cannot do it by accident.
+      value = null;
+    } else {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) { setErr("מחיר לא תקין — מספר בלבד, למשל 12.90"); return; }
+      if (n <= 0) { setErr("מחיר מותאם חייב להיות גדול מאפס. כדי לחזור למחיר הרגיל — משאירים ריק ושומרים."); return; }
+      if (n > 999999) { setErr("המחיר גבוה מדי."); return; }
+      value = Math.round(n * 100) / 100; // agorot, like every price in the system
+      const list = m.glob_price ?? m.price;
+      // A price under a tenth of the regular one is almost always a missing
+      // digit (1.29 for 12.90). Confirm with both numbers in the question.
+      if (list > 0 && value < list * 0.1 &&
+          !window.confirm(`המחיר שהוקלד — ₪${value.toLocaleString("he-IL")} — נמוך מעשירית מהמחיר הרגיל (₪${list.toLocaleString("he-IL")}). לקבוע אותו בכל זאת?`)) {
+        return;
+      }
+    }
+    setPriceBusy(true);
+    // .select() so we can tell "saved" from "matched no row" (product removed
+    // from the collection in another tab): PostgREST reports both as success.
+    const { data, error } = await supabase
+      .from("collection_products")
+      .update({ price_override: value })
+      .eq("collection_id", openId)
+      .eq("product_id", m.id)
+      .select("product_id");
+    if (!mountedRef.current) return;
+    setPriceBusy(false);
+    if (error || !data || data.length === 0) {
+      setErr("שמירת המחיר נכשלה — המחיר הקודם נשאר כפי שהיה.");
+      return;
+    }
+    setErr("");
+    setMembers((ms) => ms.map((x) => (x.id === m.id ? { ...x, col_price: value } : x)));
+    setPriceEditId(null);
+    setNotice(value == null
+      ? `"${m.name}" חזר למחיר הרגיל.`
+      : `נקבע מחיר ₪${value.toLocaleString("he-IL")} ל"${m.name}" בקטלוג הזה בלבד.`);
+  };
+
   // The collection the bottom bar is describing (null when nothing is open).
   const openCollectionRow = openId ? collections.find((c) => c.id === openId) ?? null : null;
 
   if (loading || !isManager) return null;
 
   const memberIds = new Set(members.map((m) => m.id));
+  const membersById = new Map(members.map((m) => [m.id, m]));
+
+  // What the customer opening THIS link will pay for a member product —
+  // the same chain the catalog_collection RPC computes, kept in one place so
+  // the number the manager sees while pricing is the number the link shows.
+  const effectivePrice = (m: MemberRow): number => {
+    if (m.col_price != null) return m.col_price;
+    const list = m.glob_price ?? m.price;
+    const d = Number(openCollectionRow?.discount_percent) || 0;
+    if (d <= 0) return list;
+    return Math.max(list > 0 ? 0.01 : 0, Math.round(list * (100 - d)) / 100);
+  };
+
+  const priceEditor = (m: MemberRow) => (
+    <div style={{ display: "grid", gap: "0.3rem" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+        <input
+          autoFocus
+          dir="ltr"
+          inputMode="decimal"
+          aria-label={`מחיר מותאם ל${m.name}`}
+          placeholder={`₪${(m.glob_price ?? m.price).toLocaleString("he-IL")}`}
+          value={priceDraft}
+          onChange={(e) => setPriceDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); saveColPrice(m); }
+            // Escape closes the editor, not the whole collection — the page
+            // handler already ignores keys typed inside inputs.
+            if (e.key === "Escape") setPriceEditId(null);
+          }}
+          style={{ width: 84, fontFamily: tokens.assistant, fontSize: "0.9rem", padding: "0.4rem 0.5rem", borderRadius: 8, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
+        />
+        <button onClick={() => saveColPrice(m)} disabled={priceBusy} style={{ ...miniBtn, background: "#1A7A4D", color: "#fff", border: "none", opacity: priceBusy ? 0.6 : 1 }}>
+          {priceBusy ? "שומר…" : "שמירה"}
+        </button>
+        <button onClick={() => setPriceEditId(null)} style={miniBtn}>ביטול</button>
+      </div>
+      <span style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>
+        ריק = חזרה למחיר הרגיל
+        {Number(openCollectionRow?.discount_percent) > 0 ? " · מחיר מותאם הוא סופי — הנחת הקטלוג לא חלה עליו" : ""}
+      </span>
+      {openCollectionRow && !openCollectionRow.show_prices && (
+        <span style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: "#C0143C" }}>
+          ⚠ הקישור מוגדר בלי מחירים — המחיר ייראה רק אם מדליקים ״להציג מחירים״.
+        </span>
+      )}
+    </div>
+  );
+
+  // One line of truth about a member's price: the custom one when set, the
+  // regular one (after the collection discount) when not.
+  const priceLine = (m: MemberRow) => (
+    m.col_price != null ? (
+      <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", color: "#1A7A4D" }}>
+        ₪{m.col_price.toLocaleString("he-IL")} · מחיר מותאם
+      </span>
+    ) : (
+      <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim }}>
+        ₪{effectivePrice(m).toLocaleString("he-IL")}
+        {Number(openCollectionRow?.discount_percent) > 0 ? ` (אחרי הנחת ${Number(openCollectionRow?.discount_percent)}%)` : ""}
+      </span>
+    )
+  );
 
   return (
     <>
@@ -479,14 +639,42 @@ export default function CollectionsAdminPage() {
                       searchLabel="חיפוש מוצר להוספה (שם / קוד / ברקוד)"
                       highlight={(p) => memberIds.has(p.id)}
                       renderAction={(p) => {
-                        const inCol = memberIds.has(p.id);
+                        const mem = membersById.get(p.id);
+                        if (!mem) {
+                          return (
+                            <button
+                              onClick={() => addProduct(p)}
+                              style={{ marginTop: "auto", width: "100%", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", border: "none", padding: "0.55rem 0.9rem", borderRadius: 12, color: "#fff", background: "#1A7A4D" }}
+                            >
+                              + הוספה לקטלוג
+                            </button>
+                          );
+                        }
+                        // In the collection: the price this link will show,
+                        // a way to change it, and a way out.
                         return (
-                          <button
-                            onClick={() => (inCol ? removeProduct(p) : addProduct(p))}
-                            style={{ marginTop: "auto", width: "100%", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", border: "none", padding: "0.55rem 0.9rem", borderRadius: 12, color: "#fff", background: inCol ? "#C0143C" : "#1A7A4D" }}
-                          >
-                            {inCol ? "הסרה מהקטלוג" : "+ הוספה לקטלוג"}
-                          </button>
+                          <div style={{ marginTop: "auto", display: "grid", gap: "0.35rem" }}>
+                            {priceEditId === `card:${p.id}` ? priceEditor(mem) : (
+                              <>
+                                {priceLine(mem)}
+                                <div style={{ display: "flex", gap: "0.35rem" }}>
+                                  <button
+                                    onClick={() => startPriceEdit(mem, "card")}
+                                    style={{ flex: 1, fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", border: `1px solid ${tokens.border}`, padding: "0.5rem 0.4rem", borderRadius: 12, color: tokens.text, background: "#fff", minHeight: 40 }}
+                                  >
+                                    ₪ שינוי מחיר
+                                  </button>
+                                  <button
+                                    onClick={() => removeProduct(p)}
+                                    aria-label={`הסרת ${p.name} מהקטלוג`}
+                                    style={{ flex: 1, fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", border: "none", padding: "0.5rem 0.4rem", borderRadius: 12, color: "#fff", background: "#C0143C", minHeight: 40 }}
+                                  >
+                                    הסרה
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
                         );
                       }}
                     />
@@ -501,12 +689,18 @@ export default function CollectionsAdminPage() {
                     ) : (
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: "0.5rem", marginTop: "0.5rem" }}>
                         {members.map((p) => (
-                          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.35rem 0.5rem" }}>
+                          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", border: `1px solid ${p.col_price != null ? "#1A7A4D" : tokens.border}`, borderRadius: 10, padding: "0.35rem 0.5rem" }}>
                             <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
                               <ProductImage pictureLink={p.picture_link} name={p.name} width={480} rotation={p.rotation_override ?? 0} imgStyle={{ width: "100%", height: "100%", objectFit: "contain" }} />
                             </div>
-                            <div style={{ flex: 1, minWidth: 0, fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                            <button onClick={() => removeProduct(p)} aria-label={`הסרת ${p.name} מהקטלוג`} style={{ ...miniBtn, padding: "0.25rem 0.5rem", color: "#C0143C" }}>✕</button>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                              {priceEditId !== `row:${p.id}` && priceLine(p)}
+                            </div>
+                            {priceEditId === `row:${p.id}` ? priceEditor(p) : (
+                              <button onClick={() => startPriceEdit(p, "row")} aria-label={`שינוי מחיר ל${p.name} בקטלוג`} title="שינוי מחיר בקטלוג הזה" style={{ ...miniBtn, padding: "0.25rem 0.5rem", minHeight: 32 }}>₪</button>
+                            )}
+                            <button onClick={() => removeProduct(p)} aria-label={`הסרת ${p.name} מהקטלוג`} style={{ ...miniBtn, padding: "0.25rem 0.5rem", minHeight: 32, color: "#C0143C" }}>✕</button>
                           </div>
                         ))}
                       </div>
