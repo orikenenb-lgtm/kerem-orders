@@ -790,42 +790,29 @@ export default function CatalogPage() {
                         discount presentation entirely — showing a "-10%" badge
                         next to a negotiated price would be a lie, since the
                         discount is not applied on top of it. */}
+                    {/* The price is ALWAYS per unit — the owner's explicit
+                        decision (was: pack-sold products led with a per-display
+                        figure like "לדיספליי: ₪96", which he did not want).
+                        Pack-sold products keep the "מארז = N יחידות" line above
+                        and the "סה״כ: …" summary once a quantity is chosen, so
+                        the buyer still sees what one press adds and what it
+                        costs — but the headline number is the unit price,
+                        labelled ליחידה so it cannot be misread as the pack's. */}
                     {isSpecial(p) ? (
                       <div style={{ display: "flex", alignItems: "baseline", gap: "0.45rem", flexWrap: "wrap" }}>
-                        <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: displaySold ? "1.05rem" : "1.1rem", color: "#1A7A4D" }}>
-                          {displaySold ? `ל${packName}: ` : ""}{ils(unitPrice(p) * (displaySold ? dq : 1))}
+                        <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: "#1A7A4D" }}>
+                          {ils(unitPrice(p))}{displaySold ? <span style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.8rem", color: tokens.dim }}> ליחידה</span> : null}
                         </span>
                         <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#1A7A4D", padding: "0.15rem 0.5rem", borderRadius: 999 }}>מחיר מיוחד</span>
-                        {displaySold && (
-                          <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>· ליחידה: {ils(unitPrice(p))}</span>
-                        )}
                       </div>
-                    ) : displaySold ? (
-                      // Pack-sold price line: per-display figure first (this is
-                      // what one +/- press adds), per-unit after it. The
-                      // strikethrough/badge for discounted customers stays,
-                      // applied to the per-display figure.
-                      discount > 0 ? (
-                        <div style={{ display: "flex", alignItems: "baseline", gap: "0.45rem", flexWrap: "wrap" }}>
-                          <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: "#1A7A4D" }}>ל{packName}: {ils(unitPrice(p) * dq)}</span>
-                          <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(listPrice(p) * dq)}</s>
-                          <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#25C77E", padding: "0.15rem 0.5rem", borderRadius: 999 }}>‎-{discount}%</span>
-                          <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>· ליחידה: {ils(unitPrice(p))}</span>
-                        </div>
-                      ) : (
-                        <div style={{ display: "flex", alignItems: "baseline", gap: "0.45rem", flexWrap: "wrap" }}>
-                          <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>ל{packName}: {ils(unitPrice(p) * dq)}</span>
-                          <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>· ליחידה: {ils(unitPrice(p))}</span>
-                        </div>
-                      )
                     ) : discount > 0 ? (
                       <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
-                        <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: "#1A7A4D" }}>{ils(unitPrice(p))}</span>
+                        <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: "#1A7A4D" }}>{ils(unitPrice(p))}{displaySold ? <span style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.8rem", color: tokens.dim }}> ליחידה</span> : null}</span>
                         <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(listPrice(p))}</s>
                         <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#25C77E", padding: "0.15rem 0.5rem", borderRadius: 999 }}>‎-{discount}%</span>
                       </div>
                     ) : (
-                      <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{ils(unitPrice(p))}</div>
+                      <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{ils(unitPrice(p))}{displaySold ? <span style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.8rem", color: tokens.dim }}> ליחידה</span> : null}</div>
                     )}
                     {(() => {
                       // Wave 3 (flag on): the DB carton_qty wins; the legacy
