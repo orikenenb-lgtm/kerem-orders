@@ -8,6 +8,7 @@ import SiteFooter from "../components/SiteFooter";
 import ProductImage from "../components/ProductImage";
 import { StatusBadge } from "../components/StatusBadge";
 import { supabase } from "../../lib/supabaseClient";
+import { normalizeHe } from "../../lib/searchRank";
 import { useAuth } from "../../lib/auth";
 import { tokens, ils, discountPct } from "../../lib/ui";
 import { featureFlags } from "../../lib/featureFlags";
@@ -940,6 +941,7 @@ const digits = (s: string) => (s || "").replace(/\D/g, "");
 function CustomersTab() {
   const [profiles, setProfiles] = useState<SiteProfile[]>([]);
   const [rivhit, setRivhit] = useState<RivhitCustomer[]>([]);
+  const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
@@ -1001,6 +1003,28 @@ function CustomersTab() {
     setSavingId(null);
   };
 
+  // Search over everything the manager knows a customer by — business name,
+  // contact name, email, phone — AND the name of the linked Rivhit card, so
+  // typing the name as it appears in Rivhit finds the site account too. The
+  // exact same rules as /admin/customers: normalizeHe folds final letters,
+  // punctuation and case (a dashed phone becomes space-separated digit runs,
+  // so it matches however it was typed), and every word must appear
+  // somewhere, in any order.
+  const shown = useMemo(() => {
+    const q = normalizeHe(query);
+    if (!q) return profiles;
+    const words = q.split(" ").filter(Boolean);
+    return profiles.filter((p) => {
+      const linked = p.rivhit_customer_id != null
+        ? rivhit.find((c) => c.rivhit_id === p.rivhit_customer_id)
+        : undefined;
+      const hay = normalizeHe(
+        [p.business_name, p.full_name, p.email, p.phone, linked?.name].filter(Boolean).join(" ")
+      );
+      return words.every((w) => hay.includes(w));
+    });
+  }, [profiles, rivhit, query]);
+
   if (busy) return <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>טוען לקוחות…</p>;
 
   return (
@@ -1021,8 +1045,24 @@ function CustomersTab() {
         </p>
       )}
 
+      <input
+        type="search"
+        aria-label="חיפוש לקוח לפי שם, טלפון או אימייל"
+        placeholder="🔍 חיפוש לקוח — שם העסק / איש קשר / טלפון / אימייל…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.8rem 1rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text, marginBottom: "0.9rem" }}
+      />
+      {query.trim() !== "" && (
+        <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "0.8rem" }}>
+          {shown.length === 0
+            ? "לא נמצא לקוח שמתאים לחיפוש — בודקים איות, או מחפשים לפי הטלפון."
+            : `נמצאו ${shown.length.toLocaleString("he-IL")} מתוך ${profiles.length.toLocaleString("he-IL")}`}
+        </p>
+      )}
+
       <div style={{ display: "grid", gap: "0.8rem" }}>
-        {profiles.map((p) => {
+        {shown.map((p) => {
           const linked = rivhit.find((c) => c.rivhit_id === p.rivhit_customer_id);
           const sug = !p.rivhit_customer_id ? suggestion(p) : undefined;
           return (
