@@ -48,6 +48,19 @@ function makeSlug(): string {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
 }
 
+// Parse a typed price exactly as typed (D-014: never strip before parsing).
+// "" is the deliberate way back to the regular price; 0 is refused so a typo
+// cannot clear an override by accident.
+function parsePriceInput(raw: string): { ok: true; value: number | null } | { ok: false; error: string } {
+  const t = raw.trim().replace("٫", ".").replace(",", ".");
+  if (t === "") return { ok: true, value: null };
+  const n = Number(t);
+  if (!Number.isFinite(n)) return { ok: false, error: "מחיר לא תקין — מספר בלבד, למשל 12.90" };
+  if (n <= 0) return { ok: false, error: "מחיר מותאם חייב להיות גדול מאפס. כדי לחזור למחיר הרגיל — משאירים ריק ושומרים." };
+  if (n > 999999) return { ok: false, error: "המחיר גבוה מדי." };
+  return { ok: true, value: Math.round(n * 100) / 100 }; // agorot, like every price in the system
+}
+
 const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 function collectionUrl(slug: string): string {
@@ -224,12 +237,58 @@ export default function CollectionsAdminPage() {
     })));
   }, []);
 
+  // ---- the pricing screen: one pass over ALL the products, after picking ----
+  // The owner's flow is "first I choose everything, then I price". The inline
+  // ₪ button stays for one-off changes; this mode replaces the product browser
+  // with a quiet list of only the collection's products, every price editable
+  // at once, one save for all of it.
+  const [pricingMode, setPricingMode] = useState(false);
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
+  const [batchBusy, setBatchBusy] = useState(false);
+
+  const draftFor = (m: MemberRow): string =>
+    priceDrafts[m.id] !== undefined ? priceDrafts[m.id] : (m.col_price != null ? String(m.col_price) : "");
+
+  // A row is "changed" when its parsed draft differs from what is saved —
+  // an untouched empty field is NOT a clear, so scrolling past products the
+  // manager never priced can never erase anything.
+  const draftChanged = (m: MemberRow): boolean => {
+    if (priceDrafts[m.id] === undefined) return false;
+    const parsed = parsePriceInput(priceDrafts[m.id]);
+    if (!parsed.ok) return true; // invalid input counts as a change so save surfaces the error
+    return parsed.value !== m.col_price;
+  };
+  const changedCount = pricingMode ? members.filter(draftChanged).length : 0;
+
+  const openPricing = () => {
+    setPriceEditId(null);
+    setPriceDrafts({});
+    setPricingMode(true);
+    setErr("");
+  };
+
+  const closePricing = (force = false): boolean => {
+    if (!force && changedCount > 0 &&
+        !window.confirm(`יש ${changedCount} שינויי מחיר שלא נשמרו — לצאת בלי לשמור?`)) {
+      return false;
+    }
+    setPricingMode(false);
+    setPriceDrafts({});
+    return true;
+  };
+
   // Closing has to bring the manager back to the collection he was editing.
   // Opening one renders the whole 962-product catalogue with infinite scroll
   // underneath it, so by the time he has picked his products the "סגירת עריכה"
   // button is thousands of pixels above him and there is no way out except
   // scrolling all the way back up. Close now scrolls the card back into view.
-  const closeCollection = useCallback((id: string | null) => {
+  // A plain function, not a useCallback: it must see the CURRENT pricing
+  // drafts to ask about unsaved changes, and a memoized version would close
+  // over the first render's empty state and never ask.
+  const closeCollection = (id: string | null) => {
+    // Leaving the whole editor while the pricing screen holds unsaved changes
+    // goes through the same question as leaving the pricing screen itself.
+    if (pricingMode && !closePricing()) return;
     setOpenId(null);
     setMembers([]);
     if (!id) return;
@@ -245,7 +304,7 @@ export default function CollectionsAdminPage() {
       const toggle = document.getElementById(`col-toggle-${id}`) as HTMLButtonElement | null;
       toggle?.focus({ preventScroll: true });
     });
-  }, []);
+  };
 
   const openCollection = (c: Collection) => {
     if (openId === c.id) { closeCollection(c.id); return; }
@@ -255,6 +314,9 @@ export default function CollectionsAdminPage() {
   };
 
   // Escape is the other way out, and the one a keyboard user reaches for.
+  // Deliberately no dependency array: the handler calls plain functions that
+  // read the live pricing drafts, so it re-binds every render instead of
+  // freezing an early closure. One listener swap per render is nothing.
   useEffect(() => {
     if (!openId) return;
     const onKey = (e: KeyboardEvent) => {
@@ -262,11 +324,16 @@ export default function CollectionsAdminPage() {
       // natively and stealing it would be worse than useless.
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-      if (e.key === "Escape") closeCollection(openId);
+      // One layer per press: the pricing screen closes back to the editor
+      // (asking about unsaved changes), only then does the editor close.
+      if (e.key === "Escape") {
+        if (pricingMode) { closePricing(); return; }
+        closeCollection(openId);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openId, closeCollection]);
+  });
 
   const addProduct = async (p: ProductRow) => {
     if (!openId) return;
@@ -316,20 +383,29 @@ export default function CollectionsAdminPage() {
     setPriceDraft(m.col_price != null ? String(m.col_price) : "");
   };
 
+  // The one write path for a collection price, used by the inline editor and
+  // the pricing screen alike. .select() so we can tell "saved" from "matched
+  // no row" (product removed in another tab): PostgREST reports both as
+  // success. Returns whether the row was really written.
+  const writeColPrice = async (productId: string, value: number | null): Promise<boolean> => {
+    if (!openId) return false;
+    const { data, error } = await supabase
+      .from("collection_products")
+      .update({ price_override: value })
+      .eq("collection_id", openId)
+      .eq("product_id", productId)
+      .select("product_id");
+    if (error || !data || data.length === 0) return false;
+    setMembers((ms) => ms.map((x) => (x.id === productId ? { ...x, col_price: value } : x)));
+    return true;
+  };
+
   const saveColPrice = async (m: MemberRow) => {
     if (!openId || priceBusy) return;
-    const raw = priceDraft.trim().replace("٫", ".").replace(",", ".");
-    let value: number | null;
-    if (raw === "") {
-      // Empty means "back to the regular price" — the one deliberate way to
-      // clear an override, so a typo cannot do it by accident.
-      value = null;
-    } else {
-      const n = Number(raw);
-      if (!Number.isFinite(n)) { setErr("מחיר לא תקין — מספר בלבד, למשל 12.90"); return; }
-      if (n <= 0) { setErr("מחיר מותאם חייב להיות גדול מאפס. כדי לחזור למחיר הרגיל — משאירים ריק ושומרים."); return; }
-      if (n > 999999) { setErr("המחיר גבוה מדי."); return; }
-      value = Math.round(n * 100) / 100; // agorot, like every price in the system
+    const parsed = parsePriceInput(priceDraft);
+    if (!parsed.ok) { setErr(parsed.error); return; }
+    const value = parsed.value;
+    if (value != null) {
       const list = m.glob_price ?? m.price;
       // A price under a tenth of the regular one is almost always a missing
       // digit (1.29 for 12.90). Confirm with both numbers in the question.
@@ -339,26 +415,67 @@ export default function CollectionsAdminPage() {
       }
     }
     setPriceBusy(true);
-    // .select() so we can tell "saved" from "matched no row" (product removed
-    // from the collection in another tab): PostgREST reports both as success.
-    const { data, error } = await supabase
-      .from("collection_products")
-      .update({ price_override: value })
-      .eq("collection_id", openId)
-      .eq("product_id", m.id)
-      .select("product_id");
+    const okWrite = await writeColPrice(m.id, value);
     if (!mountedRef.current) return;
     setPriceBusy(false);
-    if (error || !data || data.length === 0) {
+    if (!okWrite) {
       setErr("שמירת המחיר נכשלה — המחיר הקודם נשאר כפי שהיה.");
       return;
     }
     setErr("");
-    setMembers((ms) => ms.map((x) => (x.id === m.id ? { ...x, col_price: value } : x)));
     setPriceEditId(null);
     setNotice(value == null
       ? `"${m.name}" חזר למחיר הרגיל.`
       : `נקבע מחיר ₪${value.toLocaleString("he-IL")} ל"${m.name}" בקטלוג הזה בלבד.`);
+  };
+
+  const saveAllPrices = async () => {
+    if (batchBusy) return;
+    type Change = { m: MemberRow; value: number | null };
+    const changes: Change[] = [];
+    // Validate EVERYTHING before writing ANYTHING — a batch that half-saves
+    // and then errors leaves the manager guessing which prices are live.
+    for (const m of members) {
+      if (!draftChanged(m)) continue;
+      const parsed = parsePriceInput(priceDrafts[m.id] ?? "");
+      if (!parsed.ok) {
+        setErr(`"${m.name}": ${parsed.error} — לא נשמר אף מחיר.`);
+        return;
+      }
+      changes.push({ m, value: parsed.value });
+    }
+    if (changes.length === 0) return;
+    const cheap = changes.filter(({ m, value }) => {
+      const list = m.glob_price ?? m.price;
+      return value != null && list > 0 && value < list * 0.1;
+    });
+    if (cheap.length > 0) {
+      const lines = cheap.map(({ m, value }) =>
+        `${m.name}: ₪${(value as number).toLocaleString("he-IL")} (רגיל ₪${(m.glob_price ?? m.price).toLocaleString("he-IL")})`).join("\n");
+      if (!window.confirm(`${cheap.length === 1 ? "מחיר אחד נמוך" : cheap.length + " מחירים נמוכים"} מעשירית מהמחיר הרגיל:\n${lines}\nלשמור בכל זאת?`)) return;
+    }
+    setBatchBusy(true);
+    let saved = 0;
+    const failed: string[] = [];
+    // Sequential on purpose: tens of rows at most, and one clear failure
+    // report beats a burst of racing PATCHes.
+    for (const { m, value } of changes) {
+      const okWrite = await writeColPrice(m.id, value);
+      if (!mountedRef.current) return;
+      if (okWrite) {
+        saved++;
+        setPriceDrafts((d) => { const nd = { ...d }; delete nd[m.id]; return nd; });
+      } else {
+        failed.push(m.name);
+      }
+    }
+    setBatchBusy(false);
+    if (failed.length > 0) {
+      setErr(`נשמרו ${saved} מחירים, אבל ${failed.length} נכשלו: ${failed.join(", ")} — המחירים הקודמים שלהם נשארו.`);
+    } else {
+      setErr("");
+      setNotice(saved === 1 ? "מחיר אחד נשמר בקטלוג." : `${saved} מחירים נשמרו בקטלוג.`);
+    }
   };
 
   // The collection the bottom bar is describing (null when nothing is open).
@@ -442,7 +559,10 @@ export default function CollectionsAdminPage() {
           margin: "0 auto",
           // Extra room at the bottom while the fixed back bar is up, so it
           // never covers the last row of the product list.
-          padding: `clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) ${openId ? "9rem" : "5rem"}`,
+          // 11rem while a collection is open: the bar now carries up to two
+          // buttons and wraps to two rows on a narrow phone (measured 115px at
+          // 320 with one button), so the reserve leaves room for that.
+          padding: `clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) ${openId ? "11rem" : "5rem"}`,
         }}
       >
         {/* The way back, always on screen.
@@ -483,17 +603,62 @@ export default function CollectionsAdminPage() {
                   : `${members.length.toLocaleString("he-IL")} מוצרים בקטלוג`}
               </div>
             </div>
-            <button
-              onClick={() => closeCollection(openId)}
-              style={{
-                fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem",
-                color: "#fff", background: tokens.accent, border: "none",
-                padding: "0.7rem 1.2rem", borderRadius: 999, cursor: "pointer",
-                minHeight: 44, whiteSpace: "nowrap",
-              }}
-            >
-              סיום ← חזרה לרשימה
-            </button>
+            {pricingMode ? (
+              <>
+                <button
+                  onClick={saveAllPrices}
+                  disabled={changedCount === 0 || batchBusy}
+                  style={{
+                    fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem",
+                    color: "#fff", background: "#1A7A4D", border: "none",
+                    padding: "0.7rem 1.2rem", borderRadius: 999,
+                    cursor: changedCount === 0 || batchBusy ? "default" : "pointer",
+                    opacity: changedCount === 0 || batchBusy ? 0.55 : 1,
+                    minHeight: 44, whiteSpace: "nowrap",
+                  }}
+                >
+                  {batchBusy ? "שומר…" : changedCount > 0 ? `שמירת ${changedCount.toLocaleString("he-IL")} מחירים` : "שמירת מחירים"}
+                </button>
+                <button
+                  onClick={() => closePricing()}
+                  style={{
+                    fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem",
+                    color: tokens.text, background: "#fff", border: `1px solid ${tokens.border}`,
+                    padding: "0.7rem 1.2rem", borderRadius: 999, cursor: "pointer",
+                    minHeight: 44, whiteSpace: "nowrap",
+                  }}
+                >
+                  ← חזרה לבחירת מוצרים
+                </button>
+              </>
+            ) : (
+              <>
+                {members.length > 0 && (
+                  <button
+                    onClick={openPricing}
+                    style={{
+                      fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem",
+                      color: tokens.text, background: "#fff", border: `1px solid ${tokens.border}`,
+                      padding: "0.7rem 1.2rem", borderRadius: 999, cursor: "pointer",
+                      minHeight: 44, whiteSpace: "nowrap",
+                    }}
+                  >
+                    ₪ שינוי מחירים
+                  </button>
+                )}
+                <button
+                  onClick={() => closeCollection(openId)}
+                  style={{
+                    fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem",
+                    color: "#fff", background: tokens.accent, border: "none",
+                    padding: "0.7rem 1.2rem", borderRadius: 999, cursor: "pointer",
+                    minHeight: 44, whiteSpace: "nowrap",
+                  }}
+                >
+                  סיום ← חזרה לרשימה
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -616,7 +781,62 @@ export default function CollectionsAdminPage() {
                   )}
                 </div>
 
-                {openId === c.id && (
+                {openId === c.id && pricingMode && (
+                  <div
+                    id={`col-editor-${c.id}`}
+                    role="group"
+                    aria-label={`שינוי מחירים בקטלוג ${c.name}`}
+                    style={{ borderTop: `1px solid ${tokens.border}`, marginTop: "0.9rem", paddingTop: "0.9rem" }}
+                  >
+                    <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>
+                      ₪ שינוי מחירים — {members.length.toLocaleString("he-IL")} מוצרים
+                    </div>
+                    <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, marginTop: "0.3rem", maxWidth: 620 }}>
+                      עוברים על הרשימה וממלאים מחיר רק למוצרים שרוצים לשנות — שדה שנשאר כפי שהוא לא נוגע בכלום.
+                      מחיר שמוקלד כאן הוא סופי לקטלוג הזה{Number(c.discount_percent) > 0 ? " (ההנחה לא חלה עליו)" : ""}; מחיקת מחיר קיים מחזירה למחיר הרגיל.
+                      השמירה בכפתור שבתחתית המסך.
+                    </p>
+                    {!c.show_prices && (
+                      <p style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C", marginTop: "0.3rem" }}>
+                        ⚠ הקישור מוגדר בלי מחירים — המחירים ייראו ללקוח רק אם מדליקים ״להציג מחירים״.
+                      </p>
+                    )}
+                    <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.9rem" }}>
+                      {members.map((m) => {
+                        const changed = draftChanged(m);
+                        return (
+                          <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", border: `1px solid ${changed ? tokens.accent : m.col_price != null ? "#1A7A4D" : tokens.border}`, borderRadius: 10, padding: "0.45rem 0.6rem", background: "#fff" }}>
+                            <div style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
+                              <ProductImage pictureLink={m.picture_link} name={m.name} width={480} rotation={m.rotation_override ?? 0} imgStyle={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 140 }}>
+                              <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</div>
+                              <div style={{ fontFamily: tokens.assistant, fontSize: "0.75rem", color: tokens.dim }}>
+                                מחיר רגיל: ₪{(m.glob_price ?? m.price).toLocaleString("he-IL")}
+                                {Number(c.discount_percent) > 0 && m.col_price == null ? ` · בקישור אחרי הנחה: ₪${effectivePrice(m).toLocaleString("he-IL")}` : ""}
+                                {m.col_price != null ? " · יש מחיר מותאם" : ""}
+                              </div>
+                            </div>
+                            <label style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                              <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.body }}>מחיר בקטלוג:</span>
+                              <input
+                                dir="ltr"
+                                inputMode="decimal"
+                                aria-label={`מחיר בקטלוג ל${m.name}`}
+                                placeholder="רגיל"
+                                value={draftFor(m)}
+                                onChange={(e) => setPriceDrafts((d) => ({ ...d, [m.id]: e.target.value }))}
+                                style={{ width: 84, fontFamily: tokens.assistant, fontSize: "0.9rem", padding: "0.45rem 0.5rem", borderRadius: 8, border: `1px solid ${changed ? tokens.accent : tokens.border}`, background: tokens.surface, color: tokens.text }}
+                              />
+                            </label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {openId === c.id && !pricingMode && (
                   <div
                     id={`col-editor-${c.id}`}
                     role="group"
@@ -679,8 +899,15 @@ export default function CollectionsAdminPage() {
                       }}
                     />
 
-                    <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", color: tokens.text, marginTop: "1rem" }}>
-                      בקטלוג ({members.length.toLocaleString("he-IL")})
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", marginTop: "1rem" }}>
+                      <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", color: tokens.text }}>
+                        בקטלוג ({members.length.toLocaleString("he-IL")})
+                      </span>
+                      {members.length > 0 && (
+                        <button onClick={openPricing} style={{ ...miniBtn, minHeight: 32 }}>
+                          ₪ שינוי מחירים לכולם
+                        </button>
+                      )}
                     </div>
                     {membersBusy ? (
                       <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>טוען…</p>
@@ -719,7 +946,7 @@ export default function CollectionsAdminPage() {
           and they could not be reached at all. main's own 9rem reserve does not
           help here because the footer comes after main. Reserve the same room
           under the footer for exactly as long as the bar exists. */}
-      <div style={{ paddingBottom: openId ? "9rem" : 0 }}>
+      <div style={{ paddingBottom: openId ? "11rem" : 0 }}>
         <SiteFooter />
       </div>
     </>
