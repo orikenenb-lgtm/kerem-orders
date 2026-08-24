@@ -30,15 +30,23 @@
 -- the next sync (the sync writes is_active=true for every sellable item; the
 -- trigger only ever forces false, it never re-activates by itself).
 
+-- 2026-08-24, owner's follow-up: "כן תעביר גם את לא פעילים לאותו כלל."
+-- The Rivhit group "לא פעילים" is id 9999; the sync's hardcoded fallback
+-- excludes only 999 and the name does not match נגמר — which is exactly how
+-- one product leaked onto the live site under a category named "not active".
+-- The sync keeps upserting that product with is_active:true every 15 minutes,
+-- and this BEFORE trigger overrules it to false on that same write — so it
+-- stays dark without touching the sync function at all.
 create or replace function public.hide_discontinued_products()
 returns trigger
 language plpgsql
 set search_path = public
 as $$
 begin
-  -- Same pattern the sync uses, so the two lines of defense can never
-  -- disagree about what "discontinued" means.
-  if new.category is not null and new.category ~ 'נ[י]?גמר' then
+  -- Two spellings of the same intent: a group whose name contains נגמר/ניגמר
+  -- ("running out"), or one containing לא פעיל ("not active").
+  if new.category is not null
+     and (new.category ~ 'נ[י]?גמר' or new.category like '%לא פעיל%') then
     new.is_active := false;
     new.in_stock := false;
   end if;
@@ -51,6 +59,7 @@ create trigger trg_hide_discontinued
   before insert or update on public.products
   for each row execute function public.hide_discontinued_products();
 
--- Backfill for anything already in such a category (0 rows on deploy day).
-update public.products set is_active = false
- where category ~ 'נ[י]?גמר' and is_active;
+-- Backfill for anything already in such a category (the נגמרים pass found 0;
+-- the לא פעילים pass found exactly one — בובה בן מדברת, rivhit 537).
+update public.products set is_active = false, in_stock = false
+ where (category ~ 'נ[י]?גמר' or category like '%לא פעיל%') and is_active;
