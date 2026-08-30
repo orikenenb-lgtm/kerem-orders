@@ -17,6 +17,7 @@ import AdminProductBrowser, { type BrowserProduct } from "../components/AdminPro
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
 import { tokens } from "../../../lib/ui";
+import { rivhitImg } from "../../../lib/images";
 
 type Collection = {
   id: string;
@@ -38,7 +39,7 @@ type ProductRow = BrowserProduct;
 // manager's global price for everyone (glob_price, from price_overrides).
 // Both are needed to tell the manager the truth: what the customer in this
 // link will actually see, and what he would have seen without the override.
-type MemberRow = ProductRow & { col_price: number | null; glob_price: number | null };
+type MemberRow = ProductRow & { col_price: number | null; glob_price: number | null; barcode: string | null };
 
 // Unguessable link token: 12 chars, URL-safe, from the browser CSPRNG.
 function makeSlug(): string {
@@ -203,12 +204,12 @@ export default function CollectionsAdminPage() {
       // Select every column BrowserProduct declares — the rows are typed as
       // that shape, so a short select would leave price/category undefined at
       // runtime while the types claim otherwise.
-      .select("sort_order, price_override, products(id,name,sku,price,category,picture_link,rotation_override)")
+      .select("sort_order, price_override, products(id,name,sku,price,category,picture_link,rotation_override,barcode)")
       .eq("collection_id", collectionId)
       .order("sort_order", { ascending: true });
     if (!mountedRef.current) return;
     if (error) { setMembersBusy(false); setErr("טעינת מוצרי הקטלוג נכשלה."); return; }
-    type Joined = { sort_order: number; price_override: number | string | null; products: ProductRow | null };
+    type Joined = { sort_order: number; price_override: number | string | null; products: (ProductRow & { barcode?: string | null }) | null };
     const rows = ((data ?? []) as unknown as Joined[]).filter((r): r is Joined & { products: ProductRow } => !!r.products);
 
     // The manager's GLOBAL per-product prices (price_overrides, user_id null).
@@ -232,6 +233,7 @@ export default function CollectionsAdminPage() {
     setMembersBusy(false);
     setMembers(rows.map((r) => ({
       ...r.products,
+      barcode: r.products.barcode ?? null,
       col_price: r.price_override == null ? null : Number(r.price_override),
       glob_price: globs.get(r.products.id) ?? null,
     })));
@@ -243,6 +245,8 @@ export default function CollectionsAdminPage() {
   // with a quiet list of only the collection's products, every price editable
   // at once, one save for all of it.
   const [pricingMode, setPricingMode] = useState(false);
+  // Excel export: null = idle, otherwise "12/50" style progress for the button.
+  const [exporting, setExporting] = useState<string | null>(null);
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [batchBusy, setBatchBusy] = useState(false);
 
@@ -346,7 +350,7 @@ export default function CollectionsAdminPage() {
       if (!/duplicate|unique/i.test(error.message)) setErr("הוספת המוצר נכשלה.");
       return;
     }
-    setMembers((m) => [...m, { ...p, col_price: null, glob_price: null }]);
+    setMembers((m) => [...m, { ...p, barcode: null, col_price: null, glob_price: null }]);
     // Refresh in the background: the count on the card, and the member's
     // glob_price (the optimistic row above assumes it has none).
     loadCollections();
@@ -495,6 +499,43 @@ export default function CollectionsAdminPage() {
     const d = Number(openCollectionRow?.discount_percent) || 0;
     if (d <= 0) return list;
     return Math.max(list > 0 ? 0.01 : 0, Math.round(list * (100 - d)) / 100);
+  };
+
+  // One click: the catalogue he is editing becomes an .xlsx — image, name,
+  // full barcode, the price THIS catalogue shows, and an empty "מחיר רשת"
+  // column to fill by hand. exceljs (~1MB) loads only on the click.
+  const exportExcel = async () => {
+    // membersBusy guards the window right after addProduct: the optimistic row
+    // has no barcode and no global price yet, and an export taken then would
+    // write an sku-less barcode column and a wrong price for that product.
+    if (exporting || membersBusy || !openCollectionRow || members.length === 0) return;
+    setExporting("מכין…");
+    try {
+      const { exportCollectionExcel } = await import("../../../lib/collectionExcel");
+      const { imagesFailed } = await exportCollectionExcel(
+        openCollectionRow.name,
+        members.map((m) => ({
+          name: m.name,
+          // Barcode ONLY — an sku masquerading as a barcode scans wrong at the
+          // warehouse, which is worse than an honestly empty cell.
+          barcode: m.barcode || "",
+          price: effectivePrice(m),
+          // w=480 is the variant every screen already uses, so the CDN cache
+          // is warm; the canvas downscales it for embedding.
+          imageUrl: m.picture_link ? rivhitImg(m.picture_link, 480, m.rotation_override ?? 0) : "",
+        })),
+        (done, total) => setExporting(`${done}/${total} תמונות…`),
+      );
+      setNotice(
+        imagesFailed > 0
+          ? `קובץ האקסל של "${openCollectionRow.name}" ירד — ${members.length.toLocaleString("he-IL")} מוצרים, אבל ${imagesFailed.toLocaleString("he-IL")} תמונות לא נטענו ונשארו ריקות.`
+          : `קובץ האקסל של "${openCollectionRow.name}" ירד — ${members.length.toLocaleString("he-IL")} מוצרים.`,
+      );
+    } catch {
+      setErr("יצירת קובץ האקסל נכשלה — נסו שוב.");
+    } finally {
+      setExporting(null);
+    }
   };
 
   const priceEditor = (m: MemberRow) => (
@@ -906,6 +947,11 @@ export default function CollectionsAdminPage() {
                       {members.length > 0 && (
                         <button onClick={openPricing} style={{ ...miniBtn, minHeight: 32 }}>
                           ₪ שינוי מחירים לכולם
+                        </button>
+                      )}
+                      {members.length > 0 && (
+                        <button onClick={exportExcel} disabled={!!exporting || membersBusy} style={{ ...miniBtn, minHeight: 32, opacity: exporting || membersBusy ? 0.6 : 1 }}>
+                          {exporting ? `⬇ ${exporting}` : "⬇ ייצוא לאקסל"}
                         </button>
                       )}
                     </div>
