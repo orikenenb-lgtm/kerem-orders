@@ -69,7 +69,11 @@ as $function$
                )
              end
            else null end as price,
-           case when b.show_prices then b.list_price else null end as list_price,
+           -- 2026-08-24, owner: a customer must see ONLY the custom price,
+           -- never the one it replaced. For override rows the replaced price
+           -- never leaves the database; discount rows keep it so the
+           -- strikethrough can present the discount.
+           case when b.show_prices and b.col_price is null then b.list_price else null end as list_price,
            b.discount_percent,
            b.collection_name, b.show_prices,
            count(*) over () as total,
