@@ -40,6 +40,10 @@ export default function ImagesReviewPage() {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const [onlyFixed, setOnlyFixed] = useState(false);
+  // Category filter, so the owner can straighten images one tidy category at
+  // a time instead of wading through all 1,000 in one alphabetical soup.
+  const [cat, setCat] = useState("all");
+  const [cats, setCats] = useState<{ category: string; n: number }[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState("");
   const [fixedCount, setFixedCount] = useState(0);
@@ -80,11 +84,24 @@ export default function ImagesReviewPage() {
     if (isManager) loadFixedCount();
   }, [isManager, loadFixedCount]);
 
+  // The same category source every catalogue screen uses, sorted A-to-ת so
+  // the list reads as organized rather than by whatever count happens to be.
+  useEffect(() => {
+    if (!isManager) return;
+    supabase.rpc("catalog_categories").then(({ data }) => {
+      if (!mountedRef.current) return;
+      const list = ((data ?? []) as { category: string; n: number }[])
+        .filter((c) => c.category)
+        .sort((a, b) => a.category.localeCompare(b.category, "he"));
+      setCats(list);
+    });
+  }, [isManager]);
+
   useEffect(() => {
     const t = setTimeout(() => { setQuery(input); setPage(0); }, 350);
     return () => clearTimeout(t);
   }, [input]);
-  useEffect(() => { setPage(0); }, [onlyFixed]);
+  useEffect(() => { setPage(0); }, [onlyFixed, cat]);
 
   // Generation guard: a slower earlier query (search/filter/page) must not
   // overwrite a newer one that already resolved, and nothing setState's after
@@ -101,6 +118,7 @@ export default function ImagesReviewPage() {
       .neq("picture_link", "");
     const s = query.trim();
     if (s) q = q.ilike("name", `%${s}%`);
+    if (cat !== "all") q = q.eq("category", cat);
     if (onlyFixed) q = q.not("rotation_override", "is", null).neq("rotation_override", 0);
     const { data, count, error } = await q
       .order("name", { ascending: true })
@@ -112,7 +130,7 @@ export default function ImagesReviewPage() {
     setRows((data as Row[]) ?? []);
     setTotal(count ?? 0);
     setBusy(false);
-  }, [isManager, query, onlyFixed, page]);
+  }, [isManager, query, onlyFixed, cat, page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -237,7 +255,7 @@ export default function ImagesReviewPage() {
           </button>
         </div>
 
-        <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap", alignItems: "center", margin: "1.2rem 0", position: "sticky", top: 64, zIndex: 10, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "0.6rem 0" }}>
+        <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap", alignItems: "center", margin: "1.2rem 0", position: "sticky", top: "var(--kt-header-h, 96px)", zIndex: 10, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "0.6rem 0" }}>
           <input
             aria-label="חיפוש מוצר לפי שם"
             placeholder="🔍 חיפוש מוצר לפי שם"
@@ -245,6 +263,19 @@ export default function ImagesReviewPage() {
             onChange={(e) => setInput(e.target.value)}
             style={{ flex: "1 1 240px", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.7rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
           />
+          <select
+            aria-label="סינון לפי קטגוריה"
+            value={cat}
+            onChange={(e) => setCat(e.target.value)}
+            style={{ fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.65rem 0.8rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text, maxWidth: 260, minHeight: 44 }}
+          >
+            <option value="all">כל הקטגוריות ({cats.reduce((s, c) => s + c.n, 0).toLocaleString("he-IL")})</option>
+            {cats.map((c) => (
+              <option key={c.category} value={c.category}>
+                {c.category} ({c.n.toLocaleString("he-IL")})
+              </option>
+            ))}
+          </select>
           <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.body, cursor: "pointer" }}>
             <input type="checkbox" checked={onlyFixed} onChange={(e) => setOnlyFixed(e.target.checked)} />
             רק תמונות שסובבו
