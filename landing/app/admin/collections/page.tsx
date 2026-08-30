@@ -247,6 +247,20 @@ export default function CollectionsAdminPage() {
   const [pricingMode, setPricingMode] = useState(false);
   // Excel export: null = idle, otherwise "12/50" style progress for the button.
   const [exporting, setExporting] = useState<string | null>(null);
+
+  // The floating top-left export button renders only where the layout has a
+  // free gutter for it (content is maxWidth:1100 centered, so from ~1240px
+  // there is empty margin on the left). Narrower than that it would cover the
+  // sticky search bar's edge — the exact class of bug fixed in D-018/D-019 —
+  // so phones and tablets keep the copy in the bottom bar instead.
+  const [wideScreen, setWideScreen] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1240px)");
+    const apply = () => setWideScreen(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [batchBusy, setBatchBusy] = useState(false);
 
@@ -538,6 +552,34 @@ export default function CollectionsAdminPage() {
     }
   };
 
+  // Excel's green (#107C41) + a simplified white-tile/green-X mark, so the
+  // button reads as "Excel" from across the room — the owner's explicit ask.
+  // (Drawn inline; we do not ship Microsoft's actual trademarked logo.)
+  const excelButton = (compact = false) => {
+    const disabled = !!exporting || membersBusy;
+    return (
+      <button
+        onClick={exportExcel}
+        disabled={disabled}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: "0.45rem",
+          fontFamily: tokens.rubik, fontWeight: 800, fontSize: compact ? "0.85rem" : "0.9rem",
+          color: "#fff", background: "#107C41", border: "none",
+          padding: compact ? "0.45rem 0.9rem" : "0.65rem 1.1rem", borderRadius: 10,
+          cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1,
+          minHeight: compact ? 36 : 44, whiteSpace: "nowrap",
+          boxShadow: compact ? "none" : "0 2px 10px rgba(16,124,65,0.35)",
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="1" y="1" width="22" height="22" rx="4" fill="#fff" />
+          <text x="12" y="17.5" textAnchor="middle" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="15" fill="#107C41">X</text>
+        </svg>
+        {exporting ? exporting : "ייצוא לאקסל"}
+      </button>
+    );
+  };
+
   const priceEditor = (m: MemberRow) => (
     <div style={{ display: "grid", gap: "0.3rem" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
@@ -688,26 +730,11 @@ export default function CollectionsAdminPage() {
                     ₪ שינוי מחירים
                   </button>
                 )}
-                {/* The export lives HERE, in the always-visible bar. Its first
-                    home was beside the "בקטלוג" header — below the whole
+                {/* The export lives HERE too, in the always-visible bar. Its
+                    first home was beside the "בקטלוג" header — below the whole
                     962-product browser — and the owner refreshed, looked, and
                     reasonably concluded it did not exist. */}
-                {members.length > 0 && (
-                  <button
-                    onClick={exportExcel}
-                    disabled={!!exporting || membersBusy}
-                    style={{
-                      fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem",
-                      color: tokens.text, background: "#fff", border: `1px solid ${tokens.border}`,
-                      padding: "0.7rem 1.2rem", borderRadius: 999,
-                      cursor: exporting || membersBusy ? "default" : "pointer",
-                      opacity: exporting || membersBusy ? 0.6 : 1,
-                      minHeight: 44, whiteSpace: "nowrap",
-                    }}
-                  >
-                    {exporting ? `⬇ ${exporting}` : "⬇ ייצוא לאקסל"}
-                  </button>
-                )}
+                {members.length > 0 && excelButton()}
                 <button
                   onClick={() => closeCollection(openId)}
                   style={{
@@ -792,6 +819,12 @@ export default function CollectionsAdminPage() {
                   <button id={`col-toggle-${c.id}`} onClick={() => openCollection(c)} aria-expanded={openId === c.id} aria-controls={openId === c.id ? `col-editor-${c.id}` : undefined} style={{ ...miniBtn, background: openId === c.id ? tokens.accent : "#fff", color: openId === c.id ? "#fff" : tokens.text }}>
                     {openId === c.id ? "סגירת עריכה" : "עריכת מוצרים"}
                   </button>
+                  {/* marginInlineStart:auto pushes to the inline END — on an
+                      RTL page that is the LEFT edge, where the owner asked the
+                      Excel button to live. Top of the card, no scrolling. */}
+                  {openId === c.id && members.length > 0 && (
+                    <span style={{ marginInlineStart: "auto" }}>{excelButton(true)}</span>
+                  )}
                 </div>
 
                 {/* One-click discount on the whole catalogue. Applies to every
@@ -970,11 +1003,6 @@ export default function CollectionsAdminPage() {
                           ₪ שינוי מחירים לכולם
                         </button>
                       )}
-                      {members.length > 0 && (
-                        <button onClick={exportExcel} disabled={!!exporting || membersBusy} style={{ ...miniBtn, minHeight: 32, opacity: exporting || membersBusy ? 0.6 : 1 }}>
-                          {exporting ? `⬇ ${exporting}` : "⬇ ייצוא לאקסל"}
-                        </button>
-                      )}
                     </div>
                     {membersBusy ? (
                       <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>טוען…</p>
@@ -1006,6 +1034,18 @@ export default function CollectionsAdminPage() {
           </div>
         )}
       </main>
+
+      {/* The owner asked for the Excel button at the TOP-LEFT of the screen.
+          On wide screens the centered 1100px layout leaves an empty left
+          gutter, so the button floats there — fixed under the header, always
+          in view while the editor is open. Below 1240px the gutter vanishes
+          and a floating button would cover the sticky search bar's edge, so
+          the bottom-bar and card-header copies carry it instead. */}
+      {openCollectionRow && wideScreen && members.length > 0 && (
+        <div style={{ position: "fixed", top: "calc(var(--kt-header-h, 96px) + 12px)", left: 12, zIndex: 45 }}>
+          {excelButton()}
+        </div>
+      )}
 
       {/* The fixed bar sits over whatever is at the bottom of the viewport, and
           at the bottom of the DOCUMENT that is the footer — so while a
