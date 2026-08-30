@@ -530,9 +530,15 @@ export default function CollectionsAdminPage() {
         openCollectionRow.name,
         members.map((m) => ({
           name: m.name,
-          // Barcode ONLY — an sku masquerading as a barcode scans wrong at the
-          // warehouse, which is worse than an honestly empty cell.
-          barcode: m.barcode || "",
+          // barcode, then sku. In THIS catalogue the barcode lives in the sku
+          // field: measured live, 0 of 1,010 active products have anything in
+          // products.barcode, while 998 have an sku that is a plain 8-14 digit
+          // EAN (the Rivhit sync fills sku from item_part_num falling back to
+          // barcode). A barcode-only column exported 1,010 empty cells — the
+          // owner opened the file and reported "no barcodes". The earlier
+          // review worry about an sku masquerading as a barcode is real only
+          // for non-numeric skus, which the owner can spot at a glance.
+          barcode: m.barcode || m.sku || "",
           price: effectivePrice(m),
           // w=480 is the variant every screen already uses, so the CDN cache
           // is warm; the canvas downscales it for embedding.
