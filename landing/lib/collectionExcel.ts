@@ -18,36 +18,37 @@ export type ExcelRow = {
   imageUrl: string;
 };
 
-type FetchedImage = { buf: ArrayBuffer; width: number; height: number };
-
-/** Fetch one product image and normalize it to PNG via canvas. The proxy can
- *  serve JPEG or WebP depending on the pipeline; exceljs embeds only
- *  png/jpeg/gif, and drawing through a canvas makes the answer always PNG —
- *  whatever arrived. Downscaled to at most 240px on the long edge: the cell
- *  shows ~68px, and embedding full-size pixels only bloats the file. Returns
- *  null on any failure: a missing picture must never sink the whole export. */
-async function fetchAsPng(url: string): Promise<FetchedImage | null> {
+/** Fetch one product image and normalize it to a SQUARE 240x240 PNG, the
+ *  photo centered on white with its own proportions kept. Square on purpose:
+ *  the picture is anchored to fill its cell with a tl+br anchor (see below),
+ *  and a square source means filling the box can never stretch the photo.
+ *  Canvas also converts whatever the proxy served (JPEG or WebP — exceljs
+ *  embeds only png/jpeg/gif). An 8-second timeout per image so one stuck
+ *  thumbnail cannot stall a 241-product export; any failure returns null —
+ *  a missing picture must never sink the file. */
+async function fetchAsPng(url: string): Promise<ArrayBuffer | null> {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return null;
     const blob = await res.blob();
     const bitmap = await createImageBitmap(blob);
-    const scale = Math.min(1, 240 / Math.max(bitmap.width, bitmap.height, 1));
+    const SIDE = 240;
+    const scale = Math.min(SIDE / Math.max(bitmap.width, 1), SIDE / Math.max(bitmap.height, 1), 1);
     const w = Math.max(1, Math.round(bitmap.width * scale));
     const h = Math.max(1, Math.round(bitmap.height * scale));
     const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = SIDE;
+    canvas.height = SIDE;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     // White ground: catalogue photos assume it, and PNG transparency renders
     // as black in some Excel viewers.
     ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(bitmap, 0, 0, w, h);
+    ctx.fillRect(0, 0, SIDE, SIDE);
+    ctx.drawImage(bitmap, (SIDE - w) / 2, (SIDE - h) / 2, w, h);
     bitmap.close();
     const png = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
-    return png ? { buf: await png.arrayBuffer(), width: w, height: h } : null;
+    return png ? await png.arrayBuffer() : null;
   } catch {
     return null;
   }
@@ -66,8 +67,9 @@ export async function buildCollectionWorkbook(
   // which file is which from the tab itself.
   const sheetName = (collectionName || "קטלוג").replace(/[:\\/?*\[\]]+/g, " ").trim().slice(0, 31) || "קטלוג";
   const ws = wb.addWorksheet(sheetName, {
-    // The whole sheet reads right-to-left, like the site and like the owner.
-    views: [{ rightToLeft: true }],
+    // Right-to-left like the site, and the header row frozen so scrolling 241
+    // products never loses the column names.
+    views: [{ rightToLeft: true, state: "frozen", ySplit: 1 }],
   });
 
   ws.columns = [
@@ -84,9 +86,13 @@ export async function buildCollectionWorkbook(
 
   // Images first, in small batches — one slow thumbnail must not serialize
   // fifty others, and fifty at once would hammer the proxy.
-  const pngs = new Array<FetchedImage | null>(rows.length).fill(null);
+  const pngs = new Array<ArrayBuffer | null>(rows.length).fill(null);
   let done = 0;
-  const BATCH = 6;
+  // 10 at a time: measured against a cold proxy this roughly halves a
+  // 241-product export versus 6, while staying under the edge function's own
+  // in-flight bound (which fast-rejects when saturated — a rejection here
+  // would surface as a missing image, the exact opposite of faster).
+  const BATCH = 10;
   for (let i = 0; i < rows.length; i += BATCH) {
     await Promise.all(rows.slice(i, i + BATCH).map(async (r, j) => {
       if (r.imageUrl) pngs[i + j] = await fetchAsPng(r.imageUrl);
@@ -113,14 +119,19 @@ export async function buildCollectionWorkbook(
 
     const png = pngs[i];
     if (png) {
-      const imgId = wb.addImage({ buffer: png.buf, extension: "png" });
-      // Fit inside a 68px box KEEPING the photo's own proportions — a forced
-      // square stretches every landscape carton and portrait blister pack.
-      const fit = 68 / Math.max(png.width, png.height, 1);
-      // Anchor inside the תמונה cell of THIS row (0-based col/row).
+      const imgId = wb.addImage({ buffer: png, extension: "png" });
+      // tl+br BOTH inside the תמונה column, so the picture is clamped to its
+      // own cell's rectangle. The earlier tl+ext (pixel offset) anchor is
+      // exactly the form Excel misplaces on right-to-left sheets — pictures
+      // drifted over the text columns and the owner reported "you can't see
+      // everything". A cell-bounded anchor follows the cell wherever the
+      // sheet direction puts it. The source PNG is square, so filling the
+      // near-square box cannot stretch the photo.
+      // exceljs's TS type for a tl+br range demands the full internal Anchor
+      // shape, but the documented public form is plain {col,row} — cast.
       ws.addImage(imgId, {
-        tl: { col: 0.1, row: row.number - 1 + 0.05 },
-        ext: { width: Math.max(1, Math.round(png.width * fit)), height: Math.max(1, Math.round(png.height * fit)) },
+        tl: { col: 0.06, row: row.number - 1 + 0.06 } as unknown as ExcelJS.Anchor,
+        br: { col: 0.94, row: row.number - 0.06 } as unknown as ExcelJS.Anchor,
         editAs: "oneCell",
       });
     }
