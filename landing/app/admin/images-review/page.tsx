@@ -92,7 +92,9 @@ export default function ImagesReviewPage() {
       if (!mountedRef.current) return;
       const list = ((data ?? []) as { category: string; n: number }[])
         .filter((c) => c.category)
-        .sort((a, b) => a.category.localeCompare(b.category, "he"));
+        // Busiest first — the SAME order the catalogue and the product
+        // browser show, so the row reads identically everywhere.
+        .sort((a, b) => b.n - a.n);
       setCats(list);
     });
   }, [isManager]);
@@ -263,19 +265,6 @@ export default function ImagesReviewPage() {
             onChange={(e) => setInput(e.target.value)}
             style={{ flex: "1 1 240px", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.7rem 0.9rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
           />
-          <select
-            aria-label="סינון לפי קטגוריה"
-            value={cat}
-            onChange={(e) => setCat(e.target.value)}
-            style={{ fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.65rem 0.8rem", borderRadius: 12, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text, maxWidth: 260, minHeight: 44 }}
-          >
-            <option value="all">כל הקטגוריות ({cats.reduce((s, c) => s + c.n, 0).toLocaleString("he-IL")})</option>
-            {cats.map((c) => (
-              <option key={c.category} value={c.category}>
-                {c.category} ({c.n.toLocaleString("he-IL")})
-              </option>
-            ))}
-          </select>
           <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.body, cursor: "pointer" }}>
             <input type="checkbox" checked={onlyFixed} onChange={(e) => setOnlyFixed(e.target.checked)} />
             רק תמונות שסובבו
@@ -283,6 +272,28 @@ export default function ImagesReviewPage() {
           <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>
             {total.toLocaleString("he-IL")} תמונות
           </span>
+          {/* The category row, EXACTLY as the rest of the site draws it —
+              the owner asked for the same look as the regular catalogue:
+              pill buttons, busiest category first, scrolling sideways.
+              minWidth:0 keeps the nowrap chips from setting the page width
+              (the D-018 lesson). */}
+          {cats.length > 0 && (
+            <div role="group" aria-label="סינון לפי קטגוריה" style={{ flexBasis: "100%", display: "flex", minWidth: 0, gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.2rem" }}>
+              {[{ category: "all", n: 0 }, ...cats].map((c) => {
+                const active = cat === c.category;
+                return (
+                  <button
+                    key={c.category}
+                    onClick={() => setCat(c.category)}
+                    aria-pressed={active}
+                    style={{ whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", padding: "0.45rem 1rem", borderRadius: 999, cursor: "pointer", border: `1px solid ${active ? "transparent" : tokens.border}`, background: active ? tokens.accent : "#fff", color: active ? "#fff" : tokens.body }}
+                  >
+                    {c.category === "all" ? "הכל" : `${c.category} (${c.n.toLocaleString("he-IL")})`}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {saveErr && <p role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C" }}>{saveErr}</p>}
