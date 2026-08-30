@@ -600,10 +600,11 @@ export default function CollectionsAdminPage() {
           margin: "0 auto",
           // Extra room at the bottom while the fixed back bar is up, so it
           // never covers the last row of the product list.
-          // 11rem while a collection is open: the bar now carries up to two
-          // buttons and wraps to two rows on a narrow phone (measured 115px at
-          // 320 with one button), so the reserve leaves room for that.
-          padding: `clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) ${openId ? "11rem" : "5rem"}`,
+          // 12rem while a collection is open: the bar carries up to three
+          // buttons and wraps on a narrow phone — measured 172px at 320px,
+          // so 11rem (176px) left only 4px of headroom before the bar would
+          // start covering the last product row.
+          padding: `clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) ${openId ? "12rem" : "5rem"}`,
         }}
       >
         {/* The way back, always on screen.
@@ -685,6 +686,26 @@ export default function CollectionsAdminPage() {
                     }}
                   >
                     ₪ שינוי מחירים
+                  </button>
+                )}
+                {/* The export lives HERE, in the always-visible bar. Its first
+                    home was beside the "בקטלוג" header — below the whole
+                    962-product browser — and the owner refreshed, looked, and
+                    reasonably concluded it did not exist. */}
+                {members.length > 0 && (
+                  <button
+                    onClick={exportExcel}
+                    disabled={!!exporting || membersBusy}
+                    style={{
+                      fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem",
+                      color: tokens.text, background: "#fff", border: `1px solid ${tokens.border}`,
+                      padding: "0.7rem 1.2rem", borderRadius: 999,
+                      cursor: exporting || membersBusy ? "default" : "pointer",
+                      opacity: exporting || membersBusy ? 0.6 : 1,
+                      minHeight: 44, whiteSpace: "nowrap",
+                    }}
+                  >
+                    {exporting ? `⬇ ${exporting}` : "⬇ ייצוא לאקסל"}
                   </button>
                 )}
                 <button
@@ -992,7 +1013,7 @@ export default function CollectionsAdminPage() {
           and they could not be reached at all. main's own 9rem reserve does not
           help here because the footer comes after main. Reserve the same room
           under the footer for exactly as long as the bar exists. */}
-      <div style={{ paddingBottom: openId ? "11rem" : 0 }}>
+      <div style={{ paddingBottom: openId ? "12rem" : 0 }}>
         <SiteFooter />
       </div>
     </>
