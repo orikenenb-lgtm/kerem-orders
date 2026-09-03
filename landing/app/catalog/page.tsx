@@ -793,7 +793,7 @@ export default function CatalogPage() {
                     <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{(ffCardV2 ? (p.barcode || p.sku) : p.sku) || "—"}</span></div>
                     {displaySold && (
                       <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.78rem", color: tokens.body }}>
-                        {packName} = {dq.toLocaleString("he-IL")} יחידות{ffCardV2 ? ` · ${ils(unitPrice(p) * dq)} ל${packName}` : ""}
+                        {packName} = {dq.toLocaleString("he-IL")} יחידות
                       </div>
                     )}
                     {/* A price the manager set for THIS customer replaces the

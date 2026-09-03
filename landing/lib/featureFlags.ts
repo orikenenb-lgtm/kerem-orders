@@ -31,9 +31,10 @@ export const featureFlags = {
   /** Wave 7: new visual theme (tokens.css). */
   ff_new_theme: true,
   /** 3B wave 1: the redesigned product card — a calm neutral frame (colour
-   *  reserved for meaning, not a per-index rainbow border), the pack price on
-   *  the pack line, barcode||sku on the code line (matching the Excel export),
-   *  and a 2-line name clamp (the longest live product name is 54 chars).
+   *  reserved for meaning, not a per-index rainbow border), barcode||sku on the
+   *  code line (matching the Excel export), and a 2-line name clamp (the longest
+   *  live product name is 54 chars). The headline price stays PER UNIT — the
+   *  owner's standing decision; no whole-pack total is shown.
    *  DEFAULT OFF: with it off the card renders byte-identical to before, so
    *  merging this changes nothing in production until the owner flips it on
    *  after reviewing the staging screenshots. Rollback = set back to false. */
