@@ -30,3 +30,14 @@ supabase/functions-deployed/
 *-BACKUP-*.zip
 *.deployed-source/
 
+# Database dumps. A `supabase db dump` of this project contains all 553
+# customers with names, phones, emails and VAT numbers — and this repository is
+# PUBLIC. Dumps belong OUTSIDE the project folder (docs/upgrade/05-owner-checklist.md);
+# these patterns are the second line of defence against an untargeted `git add -A`.
+# The hand-written mirrors in supabase/*.sql and the schema-only, data-free
+# snapshot backups/schema-before.sql are deliberate and stay tracked.
+kerem-*.sql
+*-dump.sql
+db-dump*.sql
+*.dump
+*.pgdump
