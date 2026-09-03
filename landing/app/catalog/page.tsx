@@ -61,6 +61,9 @@ const PAGE_SIZE = 24;
 const ffQty = featureFlags.ff_display_quantities;
 // Wave 5: minimum-order progress bar + VAT breakdown in the cart drawer.
 const ffMinVat = featureFlags.ff_min_order_vat_ui;
+// 3B wave 1: redesigned product card (neutral frame, pack price, 2-line name,
+// barcode||sku). Off = byte-identical to the previous card.
+const ffCardV2 = featureFlags.ff_card_v2;
 
 // Wave 3: rebuild a quantity-model view of a stored cart line. Only
 // display_qty/display_name are persisted; min_order_qty/order_step are not —
@@ -761,7 +764,7 @@ export default function CatalogPage() {
                 const displaySold = ffQty && step > 1 && dq > 1;
                 const packName = (p.display_name || "מארז").trim() || "מארז";
                 return (
-                  <div key={p.id} className="kt-card" style={{ border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                  <div key={p.id} className="kt-card" style={{ border: `1px solid ${tokens.border}`, borderTop: ffCardV2 ? `1px solid ${tokens.border}` : `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
@@ -774,16 +777,23 @@ export default function CatalogPage() {
                       </span>
                     </Link>
                     <Link href={`/product/?id=${p.id}`} style={{ textDecoration: "none" }}>
-                      {/* Clamped to three lines. Rivhit names run to 120 characters, and one
-                          long name stretched its card to 453px against 300px for its
-                          neighbours — which stretches the whole grid row. title keeps the
-                          full name one hover away; the product page always shows it. */}
-                      <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, overflow: "hidden" }} title={p.name}>{p.name}</h3>
+                      {/* Clamped to keep every card the same height. Rivhit names run
+                          long, and one long name stretched its card to 453px against 300px
+                          for its neighbours — which stretches the whole grid row. title
+                          keeps the full name one hover away; the product page always shows
+                          it. ff_card_v2: 2 lines (the longest live name is 54 chars, so a
+                          third line was almost always empty) reclaims a row of vertical
+                          space. */}
+                      <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: ffCardV2 ? "2.5em" : "2.3em", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: ffCardV2 ? 2 : 3, overflow: "hidden" }} title={p.name}>{p.name}</h3>
                     </Link>
-                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{p.sku || "—"}</span></div>
+                    {/* ff_card_v2: prefer the barcode, fall back to sku — the same rule the
+                        Excel export uses. Today every active product's barcode is empty and
+                        the EAN lives in sku, so this reads identically now, but it keeps the
+                        card and the export in step if barcodes are ever populated. */}
+                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{(ffCardV2 ? (p.barcode || p.sku) : p.sku) || "—"}</span></div>
                     {displaySold && (
                       <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.78rem", color: tokens.body }}>
-                        {packName} = {dq.toLocaleString("he-IL")} יחידות
+                        {packName} = {dq.toLocaleString("he-IL")} יחידות{ffCardV2 ? ` · ${ils(unitPrice(p) * dq)} ל${packName}` : ""}
                       </div>
                     )}
                     {/* A price the manager set for THIS customer replaces the

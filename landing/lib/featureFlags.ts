@@ -30,6 +30,14 @@ export const featureFlags = {
   ff_a11y_widget: false,
   /** Wave 7: new visual theme (tokens.css). */
   ff_new_theme: true,
+  /** 3B wave 1: the redesigned product card — a calm neutral frame (colour
+   *  reserved for meaning, not a per-index rainbow border), the pack price on
+   *  the pack line, barcode||sku on the code line (matching the Excel export),
+   *  and a 2-line name clamp (the longest live product name is 54 chars).
+   *  DEFAULT OFF: with it off the card renders byte-identical to before, so
+   *  merging this changes nothing in production until the owner flips it on
+   *  after reviewing the staging screenshots. Rollback = set back to false. */
+  ff_card_v2: false,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
