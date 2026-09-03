@@ -66,6 +66,21 @@ const ffMinVat = featureFlags.ff_min_order_vat_ui;
 const ffCardV2 = featureFlags.ff_card_v2;
 // 3B wave 2: at-a-glance "in cart" state (corner badge + green ring).
 const ffCardIncart = featureFlags.ff_card_incart;
+// 3B wave 3: price-bucket filter (browse mode only — PostgREST gte/lt on price,
+// no RPC/DB change). Off = the control never renders and the query is unchanged.
+const ffFilters = featureFlags.ff_filters_v2;
+// Buckets straight from the live price histogram (median ₪13, 84% under ₪50).
+// lo is inclusive, hi exclusive, so the ranges partition the catalogue with no
+// product counted twice.
+const PRICE_BUCKETS: { key: string; label: string; lo?: number; hi?: number }[] = [
+  { key: "all", label: "כל המחירים" },
+  { key: "u5", label: "עד ₪5", hi: 5 },
+  { key: "5-10", label: "₪5–10", lo: 5, hi: 10 },
+  { key: "10-20", label: "₪10–20", lo: 10, hi: 20 },
+  { key: "20-50", label: "₪20–50", lo: 20, hi: 50 },
+  { key: "50-100", label: "₪50–100", lo: 50, hi: 100 },
+  { key: "100+", label: "₪100+", lo: 100 },
+];
 
 // Wave 3: rebuild a quantity-model view of a stored cart line. Only
 // display_qty/display_name are persisted; min_order_qty/order_step are not —
@@ -107,6 +122,8 @@ export default function CatalogPage() {
   const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
   const [activeCat, setActiveCat] = useState("all");
   const [sort, setSort] = useState<"name" | "price_asc" | "price_desc">("name");
+  // 3B wave 3: selected price bucket key (see PRICE_BUCKETS). "all" = no filter.
+  const [priceBucket, setPriceBucket] = useState("all");
 
   const [cart, setCart] = useState<Cart>({});
   const [note, setNote] = useState("");
@@ -213,8 +230,8 @@ export default function CatalogPage() {
     return () => clearTimeout(t);
   }, [input]);
 
-  // reset to first page when switching category
-  useEffect(() => { filterGen.current++; setPage(0); }, [activeCat, sort]);
+  // reset to first page when switching category, sort, or price bucket
+  useEffect(() => { filterGen.current++; setPage(0); }, [activeCat, sort, priceBucket]);
 
   const loadSeq = useRef(0);
   const [fuzzyNote, setFuzzyNote] = useState(false);
@@ -276,6 +293,13 @@ export default function CatalogPage() {
       .select("id,name,price,sku,barcode,picture_link,stock_quantity,rotation_override,unit_name,display_qty,display_name,carton_qty,min_order_qty,order_step,sell_by", { count: "exact" })
       .eq("is_active", true);
     if (activeCat !== "all") q = q.eq("category", activeCat);
+    // 3B wave 3: price bucket (browse mode only). Flag off or bucket "all" leaves
+    // the query byte-identical to before.
+    if (ffFilters && priceBucket !== "all") {
+      const b = PRICE_BUCKETS.find((x) => x.key === priceBucket);
+      if (b?.lo !== undefined) q = q.gte("price", b.lo);
+      if (b?.hi !== undefined) q = q.lt("price", b.hi);
+    }
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
     // Browse-mode sorting. Price sorts add a name tiebreak so paging is stable
     // (equal prices keep a deterministic order across pages).
@@ -304,7 +328,7 @@ export default function CatalogPage() {
     setEndReached(rows.length < PAGE_SIZE);
     setTotal(count ?? 0);
     setLoadingProducts(false);
-  }, [session, query, page, activeCat, sort]);
+  }, [session, query, page, activeCat, sort, priceBucket]);
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
@@ -713,6 +737,33 @@ export default function CatalogPage() {
                     }}
                   >
                     {isAll ? "הכל" : `${c.category} (${c.n})`}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {/* 3B wave 3: price buckets. Browse mode only (the RPC search path
+              takes no price argument), so hidden during a text search — exactly
+              like the category chips above — to never imply a filter that is not
+              applied. */}
+          {ffFilters && query.trim().length < 2 && (
+            <div role="group" aria-label="סינון לפי מחיר" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+              {PRICE_BUCKETS.map((b) => {
+                const active = priceBucket === b.key;
+                return (
+                  <button
+                    key={b.key}
+                    onClick={() => setPriceBucket(b.key)}
+                    aria-pressed={active}
+                    style={{
+                      whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem",
+                      padding: "0.45rem 0.95rem", borderRadius: 999, cursor: "pointer",
+                      border: `1.5px solid ${active ? "transparent" : tokens.border}`,
+                      background: active ? tokens.accent : "#fff",
+                      color: active ? "#fff" : tokens.body,
+                    }}
+                  >
+                    {b.label}
                   </button>
                 );
               })}

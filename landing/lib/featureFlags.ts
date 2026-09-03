@@ -45,6 +45,12 @@ export const featureFlags = {
    *  presentation over the existing cart state; no change to the cart, the
    *  quantity model, or checkout. DEFAULT OFF; rollback = set back to false. */
   ff_card_incart: false,
+  /** 3B wave 3: a price-bucket filter row on /catalog (עד ₪5 · ₪5–10 · … · ₪100+),
+   *  buckets taken straight from the live price histogram. Browse mode only — it
+   *  filters the existing PostgREST products query with gte/lt on price, adds no
+   *  RPC argument and no DB change, and is hidden during a text search exactly
+   *  like the category chips. DEFAULT OFF; rollback = set back to false. */
+  ff_filters_v2: false,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
