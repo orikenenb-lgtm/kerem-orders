@@ -8,7 +8,7 @@
     "serve": "node scripts/serve-out.mjs out",
     "lint": "eslint .",
     "frames": "python3 scripts/generate_frames.py",
-    "test": "node tests/quantity.test.mjs && node tests/searchRank.test.mjs && node tests/imageFallback.test.mjs && node tests/rivhitImgProxy.test.mjs && node tests/signup.test.mjs && node tests/turnstile.test.mjs && node tests/pricing.test.mjs"
+    "test": "node tests/quantity.test.mjs && node tests/searchRank.test.mjs && node tests/imageFallback.test.mjs && node tests/rivhitImgProxy.test.mjs && node tests/signup.test.mjs && node tests/turnstile.test.mjs && node tests/pricing.test.mjs && node tests/pricingParity.test.mjs && node tests/collectionExcel.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
