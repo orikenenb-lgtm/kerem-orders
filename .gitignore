@@ -1,4 +1,21 @@
 
+# Secrets. This repository is PUBLIC, and .env carries the Rivhit API token and
+# the Supabase service-role key — the two credentials that would hand over the
+# whole system. Nothing here is committed today, but the file was one
+# `git add -A` away from the open internet. .env.example (names only, no values)
+# stays tracked on purpose.
+.env
+.env.*
+!.env.example
+
+# Python bytecode and test caches — build artifacts of app/ and tests/,
+# regenerated on every run. Compiled .pyc files must never be source-controlled.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
 # Scratch dir used by image-review agents (decoded contact sheets)
 imgscratch/
 
