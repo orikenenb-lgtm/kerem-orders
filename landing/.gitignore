@@ -5,6 +5,17 @@ next-env.d.ts
 *.tsbuildinfo
 .DS_Store
 
+# Real env files never get committed; only .env.e2e.example is tracked.
+.env
+.env.*
+!.env.e2e.example
+
+# Playwright E2E artifacts
+/test-results
+/playwright-report
+/blob-report
+/.playwright
+
 # Regenerable extraction intermediates — the app serves the copies in public/
 /frames
 /hero.mp4
