@@ -81,6 +81,9 @@ const PRICE_BUCKETS: { key: string; label: string; lo?: number; hi?: number }[] 
   { key: "50-100", label: "₪50–100", lo: 50, hi: 100 },
   { key: "100+", label: "₪100+", lo: 100 },
 ];
+// 3B wave 4: clearer cart lines (per-line total + explicit remove). Drawer
+// presentation only — the submit/reconcile path is untouched.
+const ffCartV2 = featureFlags.ff_cart_v2;
 
 // Wave 3: rebuild a quantity-model view of a stored cart line. Only
 // display_qty/display_name are persisted; min_order_qty/order_step are not —
@@ -1032,10 +1035,17 @@ export default function CatalogPage() {
                           {ffQty && lineStep > 1 && (
                             <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>{describeQuantity(lp, l.qty)}</div>
                           )}
+                          {ffCartV2 && (
+                            <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", color: tokens.text, marginTop: "0.15rem" }}>סה״כ: {ils(l.price * l.qty)}</div>
+                          )}
                         </div>
                         <Stepper qty={l.qty} accent={tokens.accent} compact step={lineStep} label={l.name}
                           onCommitTyped={ffQty ? changeLineQty : undefined}
                           onChange={changeLineQty} />
+                        {ffCartV2 && (
+                          <button onClick={() => changeLineQty(0)} aria-label={`הסרת ${l.name} מהעגלה`}
+                            style={{ flexShrink: 0, minWidth: 32, minHeight: 32, border: "none", background: "none", color: tokens.dim, fontSize: "1.3rem", lineHeight: 1, cursor: "pointer" }}>×</button>
+                        )}
                       </div>
                     );
                   })}

@@ -51,6 +51,11 @@ export const featureFlags = {
    *  RPC argument and no DB change, and is hidden during a text search exactly
    *  like the category chips. DEFAULT OFF; rollback = set back to false. */
   ff_filters_v2: false,
+  /** 3B wave 4: clearer cart lines — a per-line total (unit price × quantity)
+   *  and an explicit × remove button (which just calls the existing
+   *  remove-at-zero path). Presentation only inside the drawer; the submit /
+   *  reconcile / checkout logic is untouched. DEFAULT OFF; rollback = false. */
+  ff_cart_v2: false,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
