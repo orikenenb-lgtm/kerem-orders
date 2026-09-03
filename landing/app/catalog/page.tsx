@@ -61,9 +61,11 @@ const PAGE_SIZE = 24;
 const ffQty = featureFlags.ff_display_quantities;
 // Wave 5: minimum-order progress bar + VAT breakdown in the cart drawer.
 const ffMinVat = featureFlags.ff_min_order_vat_ui;
-// 3B wave 1: redesigned product card (neutral frame, pack price, 2-line name,
-// barcode||sku). Off = byte-identical to the previous card.
+// 3B wave 1: redesigned product card (neutral frame, 2-line name, barcode||sku).
+// Off = byte-identical to the previous card.
 const ffCardV2 = featureFlags.ff_card_v2;
+// 3B wave 2: at-a-glance "in cart" state (corner badge + green ring).
+const ffCardIncart = featureFlags.ff_card_incart;
 
 // Wave 3: rebuild a quantity-model view of a stored cart line. Only
 // display_qty/display_name are persisted; min_order_qty/order_step are not —
@@ -764,7 +766,7 @@ export default function CatalogPage() {
                 const displaySold = ffQty && step > 1 && dq > 1;
                 const packName = (p.display_name || "מארז").trim() || "מארז";
                 return (
-                  <div key={p.id} className="kt-card" style={{ border: `1px solid ${tokens.border}`, borderTop: ffCardV2 ? `1px solid ${tokens.border}` : `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                  <div key={p.id} className="kt-card" style={{ border: `1px solid ${tokens.border}`, borderTop: ffCardV2 ? `1px solid ${tokens.border}` : `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: ffCardIncart && qty > 0 ? `0 0 0 2px #1A7A4D inset, ${tokens.shadowCard}` : tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
@@ -772,6 +774,11 @@ export default function CatalogPage() {
                         not a fixed height), contain (no cropping/stretching),
                         small inner padding, one white background. */}
                     <Link href={`/product/?id=${p.id}`} aria-label={`פרטים על ${p.name}`} style={{ display: "block", position: "relative", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, overflow: "hidden" }}>
+                      {ffCardIncart && qty > 0 && (
+                        <span aria-hidden="true" style={{ position: "absolute", insetInlineEnd: 6, top: 6, zIndex: 2, background: "#1A7A4D", color: "#fff", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 999 }}>
+                          בעגלה · {qty.toLocaleString("he-IL")}
+                        </span>
+                      )}
                       <span style={{ position: "absolute", inset: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>
                         <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} />
                       </span>

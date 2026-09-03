@@ -39,6 +39,12 @@ export const featureFlags = {
    *  merging this changes nothing in production until the owner flips it on
    *  after reviewing the staging screenshots. Rollback = set back to false. */
   ff_card_v2: false,
+  /** 3B wave 2: at-a-glance in-cart state on the /catalog card — a corner
+   *  "בעגלה · N" badge and a green ring on any product already in the cart, so
+   *  the buyer sees what they added without opening the drawer. Pure
+   *  presentation over the existing cart state; no change to the cart, the
+   *  quantity model, or checkout. DEFAULT OFF; rollback = set back to false. */
+  ff_card_incart: false,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
