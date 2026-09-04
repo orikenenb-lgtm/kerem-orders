@@ -50,7 +50,7 @@ export const featureFlags = {
    *  filters the existing PostgREST products query with gte/lt on price, adds no
    *  RPC argument and no DB change, and is hidden during a text search exactly
    *  like the category chips. DEFAULT OFF; rollback = set back to false. */
-  ff_filters_v2: false,
+  ff_filters_v2: true,
   /** 3B wave 4: clearer cart lines — a per-line total (unit price × quantity)
    *  and an explicit × remove button (which just calls the existing
    *  remove-at-zero path). Presentation only inside the drawer; the submit /
@@ -71,7 +71,7 @@ export const featureFlags = {
    *  The selected category stays visible even while collapsed. An in-page expand,
    *  not a modal — no focus trap, no scroll lock, nothing to get stuck behind.
    *  DEFAULT OFF; rollback = set back to false. */
-  ff_category_sheet: false,
+  ff_category_sheet: true,
   /** 3B wave 6: "הזמן שוב" on /account — loads a past order's lines back into
    *  the cart. Prices are RE-RESOLVED at today's prices through resolvePrice()
    *  and never taken from the stored order line, quantities are re-normalised to
