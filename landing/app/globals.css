@@ -67,3 +67,21 @@ body {
   box-shadow: 0 0 0 2px #fff;
   border-radius: 4px;
 }
+
+/* 3B wave 5 (ff_micro_motion): a barely-there press on the product card.
+   CSS only — framer-motion stays out of the catalogue. The class is added by
+   the flag, so with the flag off these rules match nothing. Nothing here
+   animates a price: a moving number reads as an unstable number. The
+   prefers-reduced-motion block above already neutralises this for anyone who
+   asked for less motion. */
+.kt-press {
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.kt-press:active {
+  transform: scale(0.985);
+}
+@media (hover: hover) {
+  .kt-press:hover {
+    transform: translateY(-2px);
+  }
+}

@@ -84,6 +84,10 @@ const PRICE_BUCKETS: { key: string; label: string; lo?: number; hi?: number }[] 
 // 3B wave 4: clearer cart lines (per-line total + explicit remove). Drawer
 // presentation only — the submit/reconcile path is untouched.
 const ffCartV2 = featureFlags.ff_cart_v2;
+// 3B wave 5: mobile polish (safe-area, search keyboard, skeletons) and CSS-only
+// micro-motion. globals.css already kills all motion under prefers-reduced-motion.
+const ffMobile = featureFlags.ff_mobile_polish;
+const ffMotion = featureFlags.ff_micro_motion;
 
 // Wave 3: rebuild a quantity-model view of a stored cart line. Only
 // display_qty/display_name are persisted; min_order_qty/order_step are not —
@@ -710,6 +714,11 @@ export default function CatalogPage() {
             placeholder="🔍 חיפוש לפי שם, קוד פריט או ברקוד…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            // Wave 5 (ff_mobile_polish): a real search keyboard, and Enter closes
+            // it instead of doing nothing — the results are already live-filtered
+            // by the debounce, so there is no form to submit.
+            enterKeyHint={ffMobile ? "search" : undefined}
+            onKeyDown={ffMobile ? (e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } } : undefined}
             style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
           />
           {/* Category chips apply while browsing. A text search runs across ALL
@@ -792,7 +801,23 @@ export default function CatalogPage() {
         </div>
 
         {loadingProducts && products.length === 0 ? (
-          <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>
+          ffMobile ? (
+            // Wave 5: skeleton cards instead of a bare line — the page looks like
+            // the catalogue immediately instead of an empty screen. Decorative
+            // only; the live region below still announces the load.
+            <div aria-busy="true" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem", marginTop: "1rem" }}>
+              <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clipPath: "inset(50%)" }} role="status">טוען מוצרים…</span>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} aria-hidden="true" style={{ border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  <div style={{ aspectRatio: "1 / 1", borderRadius: 12, background: tokens.surface }} />
+                  <div style={{ height: "0.85em", borderRadius: 6, background: tokens.surface }} />
+                  <div style={{ height: "0.85em", width: "60%", borderRadius: 6, background: tokens.surface }} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>
+          )
         ) : loadErr && products.length === 0 ? (
           <div style={{ textAlign: "center", marginTop: "2rem" }}>
             <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת הקטלוג נכשלה. בדקו את החיבור ונסו שוב.</p>
@@ -820,7 +845,7 @@ export default function CatalogPage() {
                 const displaySold = ffQty && step > 1 && dq > 1;
                 const packName = (p.display_name || "מארז").trim() || "מארז";
                 return (
-                  <div key={p.id} className="kt-card" style={{ border: `1px solid ${tokens.border}`, borderTop: ffCardV2 ? `1px solid ${tokens.border}` : `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: ffCardIncart && qty > 0 ? `0 0 0 2px #1A7A4D inset, ${tokens.shadowCard}` : tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                  <div key={p.id} className={ffMotion ? "kt-card kt-press" : "kt-card"} style={{ border: `1px solid ${tokens.border}`, borderTop: ffCardV2 ? `1px solid ${tokens.border}` : `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: ffCardIncart && qty > 0 ? `0 0 0 2px #1A7A4D inset, ${tokens.shadowCard}` : tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
@@ -988,7 +1013,7 @@ export default function CatalogPage() {
       </main>
 
       {itemCount > 0 && !cartOpen && (
-        <button ref={cartOpenerRef} onClick={() => setCartOpen(true)} aria-haspopup="dialog" style={{ position: "fixed", insetInlineStart: 20, bottom: 20, zIndex: 60, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "1rem 1.6rem", borderRadius: 999, boxShadow: "0 12px 30px rgba(138,63,252,0.35)", cursor: "pointer" }}>
+        <button ref={cartOpenerRef} onClick={() => setCartOpen(true)} aria-haspopup="dialog" style={{ position: "fixed", insetInlineStart: 20, bottom: ffMobile ? "calc(20px + env(safe-area-inset-bottom))" : 20, zIndex: 60, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "1rem 1.6rem", borderRadius: 999, boxShadow: "0 12px 30px rgba(138,63,252,0.35)", cursor: "pointer" }}>
           🛒 העגלה ({itemCount}) · {ils(cartTotal)}
         </button>
       )}

@@ -56,6 +56,16 @@ export const featureFlags = {
    *  remove-at-zero path). Presentation only inside the drawer; the submit /
    *  reconcile / checkout logic is untouched. DEFAULT OFF; rollback = false. */
   ff_cart_v2: false,
+  /** 3B wave 5: mobile polish on /catalog — the floating cart button clears the
+   *  iPhone home indicator (safe-area inset), the search field gets a real
+   *  search keyboard that closes on Enter, and the first load shows skeleton
+   *  cards instead of a bare "טוען מוצרים…" line. DEFAULT OFF; rollback = false. */
+  ff_mobile_polish: false,
+  /** 3B wave 5: micro-motion — a 120ms press/hover on the product card, CSS only
+   *  (no framer-motion in the catalogue), and nothing animates on a price.
+   *  globals.css already neutralises all motion under prefers-reduced-motion, so
+   *  this inherits that automatically. DEFAULT OFF; rollback = false. */
+  ff_micro_motion: false,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
