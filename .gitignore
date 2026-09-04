@@ -1,4 +1,21 @@
 
+# Secrets. This repository is PUBLIC, and .env carries the Rivhit API token and
+# the Supabase service-role key — the two credentials that would hand over the
+# whole system. Nothing here is committed today, but the file was one
+# `git add -A` away from the open internet. .env.example (names only, no values)
+# stays tracked on purpose.
+.env
+.env.*
+!.env.example
+
+# Python bytecode and test caches — build artifacts of app/ and tests/,
+# regenerated on every run. Compiled .pyc files must never be source-controlled.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
 # Scratch dir used by image-review agents (decoded contact sheets)
 imgscratch/
 
@@ -13,6 +30,17 @@ supabase/functions-deployed/
 *-BACKUP-*.zip
 *.deployed-source/
 
-
 # Claude Code local tooling state — agent worktrees, session data. Never commit.
 .claude/
+
+# Database dumps. A `supabase db dump` of this project contains all 553
+# customers with names, phones, emails and VAT numbers — and this repository is
+# PUBLIC. Dumps belong OUTSIDE the project folder (docs/upgrade/05-owner-checklist.md);
+# these patterns are the second line of defence against an untargeted `git add -A`.
+# The hand-written mirrors in supabase/*.sql and the schema-only, data-free
+# snapshot backups/schema-before.sql are deliberate and stay tracked.
+kerem-*.sql
+*-dump.sql
+db-dump*.sql
+*.dump
+*.pgdump
