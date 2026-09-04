@@ -14,7 +14,7 @@ import { featureFlags } from "../../lib/featureFlags";
 import { VAT_RATE, MIN_ORDER_FALLBACK } from "../../lib/config";
 import { resolveQuantity, stepOf, describeQuantity, pluralPack } from "../../lib/quantity";
 import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
-import { readCart } from "../../lib/cart";
+import { readCart, CART_KEY } from "../../lib/cart";
 
 type Product = {
   id: string;
@@ -56,11 +56,40 @@ type CartLine = {
 };
 type Cart = Record<string, CartLine>;
 
-const CART_KEY = "kt_cart_v2";
 const PAGE_SIZE = 24;
 const ffQty = featureFlags.ff_display_quantities;
 // Wave 5: minimum-order progress bar + VAT breakdown in the cart drawer.
 const ffMinVat = featureFlags.ff_min_order_vat_ui;
+// 3B wave 1: redesigned product card (neutral frame, 2-line name, barcode||sku).
+// Off = byte-identical to the previous card.
+const ffCardV2 = featureFlags.ff_card_v2;
+// 3B wave 2: at-a-glance "in cart" state (corner badge + green ring).
+const ffCardIncart = featureFlags.ff_card_incart;
+// 3B wave 3: price-bucket filter (browse mode only — PostgREST gte/lt on price,
+// no RPC/DB change). Off = the control never renders and the query is unchanged.
+const ffFilters = featureFlags.ff_filters_v2;
+// Buckets straight from the live price histogram (median ₪13, 84% under ₪50).
+// lo is inclusive, hi exclusive, so the ranges partition the catalogue with no
+// product counted twice.
+const PRICE_BUCKETS: { key: string; label: string; lo?: number; hi?: number }[] = [
+  { key: "all", label: "כל המחירים" },
+  { key: "u5", label: "עד ₪5", hi: 5 },
+  { key: "5-10", label: "₪5–10", lo: 5, hi: 10 },
+  { key: "10-20", label: "₪10–20", lo: 10, hi: 20 },
+  { key: "20-50", label: "₪20–50", lo: 20, hi: 50 },
+  { key: "50-100", label: "₪50–100", lo: 50, hi: 100 },
+  { key: "100+", label: "₪100+", lo: 100 },
+];
+// 3B wave 4: clearer cart lines (per-line total + explicit remove). Drawer
+// presentation only — the submit/reconcile path is untouched.
+const ffCartV2 = featureFlags.ff_cart_v2;
+// 3B wave 5: mobile polish (safe-area, search keyboard, skeletons) and CSS-only
+// micro-motion. globals.css already kills all motion under prefers-reduced-motion.
+const ffMobile = featureFlags.ff_mobile_polish;
+const ffMotion = featureFlags.ff_micro_motion;
+// 3B wave 6: collapse the 24-chip category row to the 6 largest + an "עוד" toggle.
+const ffCatSheet = featureFlags.ff_category_sheet;
+const CAT_CHIPS_COLLAPSED = 6;
 
 // Wave 3: rebuild a quantity-model view of a stored cart line. Only
 // display_qty/display_name are persisted; min_order_qty/order_step are not —
@@ -102,6 +131,8 @@ export default function CatalogPage() {
   const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
   const [activeCat, setActiveCat] = useState("all");
   const [sort, setSort] = useState<"name" | "price_asc" | "price_desc">("name");
+  // 3B wave 3: selected price bucket key (see PRICE_BUCKETS). "all" = no filter.
+  const [priceBucket, setPriceBucket] = useState("all");
 
   const [cart, setCart] = useState<Cart>({});
   const [note, setNote] = useState("");
@@ -208,8 +239,8 @@ export default function CatalogPage() {
     return () => clearTimeout(t);
   }, [input]);
 
-  // reset to first page when switching category
-  useEffect(() => { filterGen.current++; setPage(0); }, [activeCat, sort]);
+  // reset to first page when switching category, sort, or price bucket
+  useEffect(() => { filterGen.current++; setPage(0); }, [activeCat, sort, priceBucket]);
 
   const loadSeq = useRef(0);
   const [fuzzyNote, setFuzzyNote] = useState(false);
@@ -271,6 +302,13 @@ export default function CatalogPage() {
       .select("id,name,price,sku,barcode,picture_link,stock_quantity,rotation_override,unit_name,display_qty,display_name,carton_qty,min_order_qty,order_step,sell_by", { count: "exact" })
       .eq("is_active", true);
     if (activeCat !== "all") q = q.eq("category", activeCat);
+    // 3B wave 3: price bucket (browse mode only). Flag off or bucket "all" leaves
+    // the query byte-identical to before.
+    if (ffFilters && priceBucket !== "all") {
+      const b = PRICE_BUCKETS.find((x) => x.key === priceBucket);
+      if (b?.lo !== undefined) q = q.gte("price", b.lo);
+      if (b?.hi !== undefined) q = q.lt("price", b.hi);
+    }
     if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
     // Browse-mode sorting. Price sorts add a name tiebreak so paging is stable
     // (equal prices keep a deterministic order across pages).
@@ -299,7 +337,7 @@ export default function CatalogPage() {
     setEndReached(rows.length < PAGE_SIZE);
     setTotal(count ?? 0);
     setLoadingProducts(false);
-  }, [session, query, page, activeCat, sort]);
+  }, [session, query, page, activeCat, sort, priceBucket]);
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
@@ -428,6 +466,21 @@ export default function CatalogPage() {
       return ra !== rb ? rb - ra : b.n - a.n;
     });
   }, [categories]);
+
+  // Wave 6 (ff_category_sheet): 24 chips do not fit a phone. Collapsed shows the
+  // 6 largest — plus the selected one if it fell outside that slice, so the
+  // active filter is never hidden from the person who set it.
+  const [catsExpanded, setCatsExpanded] = useState(false);
+  const visibleCats = useMemo(() => {
+    if (!ffCatSheet || catsExpanded) return orderedCats;
+    const top = orderedCats.slice(0, CAT_CHIPS_COLLAPSED);
+    if (activeCat !== "all" && !top.some((c) => c.category === activeCat)) {
+      const sel = orderedCats.find((c) => c.category === activeCat);
+      if (sel) return [...top, sel];
+    }
+    return top;
+  }, [orderedCats, catsExpanded, activeCat]);
+  const hiddenCats = orderedCats.length - visibleCats.length;
 
   const placeOrder = async () => {
     if (!session || lines.length === 0 || submitting) return;
@@ -678,15 +731,26 @@ export default function CatalogPage() {
             placeholder="🔍 חיפוש לפי שם, קוד פריט או ברקוד…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            // Wave 5 (ff_mobile_polish): a real search keyboard, and Enter closes
+            // it instead of doing nothing — the results are already live-filtered
+            // by the debounce, so there is no form to submit.
+            enterKeyHint={ffMobile ? "search" : undefined}
+            onKeyDown={ffMobile ? (e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } } : undefined}
             style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
           />
           {/* Category chips apply while browsing. A text search runs across ALL
               categories (search_products takes no category argument), so the
               chips are hidden during search — leaving them visible and
               highlighted would falsely imply the results are filtered. */}
+          {/* The chip row stays a single scrolling line while collapsed — wrapping
+              6 chips took three rows at 390px and pushed the products off screen.
+              The "עוד N" toggle therefore lives on its OWN line below the row,
+              where it is always visible; putting it at the end of a scrolling row
+              hid the only way to reach the rest of the categories. Expanded, the
+              row wraps so all 24 are laid out at once. */}
           {categories.length > 0 && query.trim().length < 2 && (
-            <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
-              {[{ category: "all", n: 0 }, ...orderedCats].map((c, i) => {
+            <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", flexWrap: ffCatSheet && catsExpanded ? "wrap" : "nowrap", overflowX: ffCatSheet && catsExpanded ? "visible" : "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+              {[{ category: "all", n: 0 }, ...visibleCats].map((c, i) => {
                 const active = activeCat === c.category;
                 const isAll = c.category === "all";
                 const accent = isAll ? tokens.accent : tokens.rainbowColors[i % tokens.rainbowColors.length];
@@ -713,6 +777,48 @@ export default function CatalogPage() {
               })}
             </div>
           )}
+          {ffCatSheet && categories.length > 0 && query.trim().length < 2 && (hiddenCats > 0 || catsExpanded) && (
+            <div style={{ marginTop: "0.4rem" }}>
+              <button
+                onClick={() => setCatsExpanded((v) => !v)}
+                aria-expanded={catsExpanded}
+                style={{
+                  whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.8rem",
+                  padding: "0.4rem 1rem", borderRadius: 999, cursor: "pointer",
+                  border: `1.5px dashed ${tokens.border}`, background: "#fff", color: tokens.body,
+                }}
+              >
+                {catsExpanded ? "הצג פחות קטגוריות ↑" : `עוד ${hiddenCats} קטגוריות ↓`}
+              </button>
+            </div>
+          )}
+          {/* 3B wave 3: price buckets. Browse mode only (the RPC search path
+              takes no price argument), so hidden during a text search — exactly
+              like the category chips above — to never imply a filter that is not
+              applied. */}
+          {ffFilters && query.trim().length < 2 && (
+            <div role="group" aria-label="סינון לפי מחיר" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+              {PRICE_BUCKETS.map((b) => {
+                const active = priceBucket === b.key;
+                return (
+                  <button
+                    key={b.key}
+                    onClick={() => setPriceBucket(b.key)}
+                    aria-pressed={active}
+                    style={{
+                      whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem",
+                      padding: "0.45rem 0.95rem", borderRadius: 999, cursor: "pointer",
+                      border: `1.5px solid ${active ? "transparent" : tokens.border}`,
+                      background: active ? tokens.accent : "#fff",
+                      color: active ? "#fff" : tokens.body,
+                    }}
+                  >
+                    {b.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {/* Sorting applies while browsing; during a text search results are
               ranked by relevance, so the control is hidden then. */}
           {query.trim().length < 2 && (
@@ -733,7 +839,23 @@ export default function CatalogPage() {
         </div>
 
         {loadingProducts && products.length === 0 ? (
-          <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>
+          ffMobile ? (
+            // Wave 5: skeleton cards instead of a bare line — the page looks like
+            // the catalogue immediately instead of an empty screen. Decorative
+            // only; the live region below still announces the load.
+            <div aria-busy="true" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem", marginTop: "1rem" }}>
+              <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clipPath: "inset(50%)" }} role="status">טוען מוצרים…</span>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} aria-hidden="true" style={{ border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  <div style={{ aspectRatio: "1 / 1", borderRadius: 12, background: tokens.surface }} />
+                  <div style={{ height: "0.85em", borderRadius: 6, background: tokens.surface }} />
+                  <div style={{ height: "0.85em", width: "60%", borderRadius: 6, background: tokens.surface }} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>
+          )
         ) : loadErr && products.length === 0 ? (
           <div style={{ textAlign: "center", marginTop: "2rem" }}>
             <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת הקטלוג נכשלה. בדקו את החיבור ונסו שוב.</p>
@@ -761,7 +883,7 @@ export default function CatalogPage() {
                 const displaySold = ffQty && step > 1 && dq > 1;
                 const packName = (p.display_name || "מארז").trim() || "מארז";
                 return (
-                  <div key={p.id} className="kt-card" style={{ border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                  <div key={p.id} className={ffMotion ? "kt-card kt-press" : "kt-card"} style={{ border: `1px solid ${tokens.border}`, borderTop: ffCardV2 ? `1px solid ${tokens.border}` : `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: ffCardIncart && qty > 0 ? `0 0 0 2px #1A7A4D inset, ${tokens.shadowCard}` : tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
@@ -769,18 +891,30 @@ export default function CatalogPage() {
                         not a fixed height), contain (no cropping/stretching),
                         small inner padding, one white background. */}
                     <Link href={`/product/?id=${p.id}`} aria-label={`פרטים על ${p.name}`} style={{ display: "block", position: "relative", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, overflow: "hidden" }}>
+                      {ffCardIncart && qty > 0 && (
+                        <span aria-hidden="true" style={{ position: "absolute", insetInlineEnd: 6, top: 6, zIndex: 2, background: "#1A7A4D", color: "#fff", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 999 }}>
+                          בעגלה · {qty.toLocaleString("he-IL")}
+                        </span>
+                      )}
                       <span style={{ position: "absolute", inset: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>
                         <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} />
                       </span>
                     </Link>
                     <Link href={`/product/?id=${p.id}`} style={{ textDecoration: "none" }}>
-                      {/* Clamped to three lines. Rivhit names run to 120 characters, and one
-                          long name stretched its card to 453px against 300px for its
-                          neighbours — which stretches the whole grid row. title keeps the
-                          full name one hover away; the product page always shows it. */}
-                      <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, overflow: "hidden" }} title={p.name}>{p.name}</h3>
+                      {/* Clamped to keep every card the same height. Rivhit names run
+                          long, and one long name stretched its card to 453px against 300px
+                          for its neighbours — which stretches the whole grid row. title
+                          keeps the full name one hover away; the product page always shows
+                          it. ff_card_v2: 2 lines (the longest live name is 54 chars, so a
+                          third line was almost always empty) reclaims a row of vertical
+                          space. */}
+                      <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: ffCardV2 ? "2.5em" : "2.3em", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: ffCardV2 ? 2 : 3, overflow: "hidden" }} title={p.name}>{p.name}</h3>
                     </Link>
-                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{p.sku || "—"}</span></div>
+                    {/* ff_card_v2: prefer the barcode, fall back to sku — the same rule the
+                        Excel export uses. Today every active product's barcode is empty and
+                        the EAN lives in sku, so this reads identically now, but it keeps the
+                        card and the export in step if barcodes are ever populated. */}
+                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{(ffCardV2 ? (p.barcode || p.sku) : p.sku) || "—"}</span></div>
                     {displaySold && (
                       <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.78rem", color: tokens.body }}>
                         {packName} = {dq.toLocaleString("he-IL")} יחידות
@@ -917,7 +1051,7 @@ export default function CatalogPage() {
       </main>
 
       {itemCount > 0 && !cartOpen && (
-        <button ref={cartOpenerRef} onClick={() => setCartOpen(true)} aria-haspopup="dialog" style={{ position: "fixed", insetInlineStart: 20, bottom: 20, zIndex: 60, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "1rem 1.6rem", borderRadius: 999, boxShadow: "0 12px 30px rgba(138,63,252,0.35)", cursor: "pointer" }}>
+        <button ref={cartOpenerRef} onClick={() => setCartOpen(true)} aria-haspopup="dialog" style={{ position: "fixed", insetInlineStart: 20, bottom: ffMobile ? "calc(20px + env(safe-area-inset-bottom))" : 20, zIndex: 60, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "1rem 1.6rem", borderRadius: 999, boxShadow: "0 12px 30px rgba(138,63,252,0.35)", cursor: "pointer" }}>
           🛒 העגלה ({itemCount}) · {ils(cartTotal)}
         </button>
       )}
@@ -964,10 +1098,17 @@ export default function CatalogPage() {
                           {ffQty && lineStep > 1 && (
                             <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>{describeQuantity(lp, l.qty)}</div>
                           )}
+                          {ffCartV2 && (
+                            <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", color: tokens.text, marginTop: "0.15rem" }}>סה״כ: {ils(l.price * l.qty)}</div>
+                          )}
                         </div>
                         <Stepper qty={l.qty} accent={tokens.accent} compact step={lineStep} label={l.name}
                           onCommitTyped={ffQty ? changeLineQty : undefined}
                           onChange={changeLineQty} />
+                        {ffCartV2 && (
+                          <button onClick={() => changeLineQty(0)} aria-label={`הסרת ${l.name} מהעגלה`}
+                            style={{ flexShrink: 0, minWidth: 32, minHeight: 32, border: "none", background: "none", color: tokens.dim, fontSize: "1.3rem", lineHeight: 1, cursor: "pointer" }}>×</button>
+                        )}
                       </div>
                     );
                   })}

@@ -13,3 +13,6 @@ supabase/functions-deployed/
 *-BACKUP-*.zip
 *.deployed-source/
 
+
+# Claude Code local tooling state — agent worktrees, session data. Never commit.
+.claude/
