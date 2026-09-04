@@ -66,6 +66,12 @@ export const featureFlags = {
    *  globals.css already neutralises all motion under prefers-reduced-motion, so
    *  this inherits that automatically. DEFAULT OFF; rollback = false. */
   ff_micro_motion: false,
+  /** 3B wave 6: 24 category chips do not fit a 390px phone, so the row collapses
+   *  to the 6 largest plus an "עוד (N)" toggle that expands the rest in place.
+   *  The selected category stays visible even while collapsed. An in-page expand,
+   *  not a modal — no focus trap, no scroll lock, nothing to get stuck behind.
+   *  DEFAULT OFF; rollback = set back to false. */
+  ff_category_sheet: false,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;

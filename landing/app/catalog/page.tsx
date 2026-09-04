@@ -88,6 +88,9 @@ const ffCartV2 = featureFlags.ff_cart_v2;
 // micro-motion. globals.css already kills all motion under prefers-reduced-motion.
 const ffMobile = featureFlags.ff_mobile_polish;
 const ffMotion = featureFlags.ff_micro_motion;
+// 3B wave 6: collapse the 24-chip category row to the 6 largest + an "עוד" toggle.
+const ffCatSheet = featureFlags.ff_category_sheet;
+const CAT_CHIPS_COLLAPSED = 6;
 
 // Wave 3: rebuild a quantity-model view of a stored cart line. Only
 // display_qty/display_name are persisted; min_order_qty/order_step are not —
@@ -465,6 +468,21 @@ export default function CatalogPage() {
     });
   }, [categories]);
 
+  // Wave 6 (ff_category_sheet): 24 chips do not fit a phone. Collapsed shows the
+  // 6 largest — plus the selected one if it fell outside that slice, so the
+  // active filter is never hidden from the person who set it.
+  const [catsExpanded, setCatsExpanded] = useState(false);
+  const visibleCats = useMemo(() => {
+    if (!ffCatSheet || catsExpanded) return orderedCats;
+    const top = orderedCats.slice(0, CAT_CHIPS_COLLAPSED);
+    if (activeCat !== "all" && !top.some((c) => c.category === activeCat)) {
+      const sel = orderedCats.find((c) => c.category === activeCat);
+      if (sel) return [...top, sel];
+    }
+    return top;
+  }, [orderedCats, catsExpanded, activeCat]);
+  const hiddenCats = orderedCats.length - visibleCats.length;
+
   const placeOrder = async () => {
     if (!session || lines.length === 0 || submitting) return;
     setSubmitting(true);
@@ -726,8 +744,8 @@ export default function CatalogPage() {
               chips are hidden during search — leaving them visible and
               highlighted would falsely imply the results are filtered. */}
           {categories.length > 0 && query.trim().length < 2 && (
-            <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
-              {[{ category: "all", n: 0 }, ...orderedCats].map((c, i) => {
+            <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", flexWrap: ffCatSheet && catsExpanded ? "wrap" : "nowrap", overflowX: ffCatSheet && catsExpanded ? "visible" : "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+              {[{ category: "all", n: 0 }, ...visibleCats].map((c, i) => {
                 const active = activeCat === c.category;
                 const isAll = c.category === "all";
                 const accent = isAll ? tokens.accent : tokens.rainbowColors[i % tokens.rainbowColors.length];
@@ -752,6 +770,19 @@ export default function CatalogPage() {
                   </button>
                 );
               })}
+              {ffCatSheet && (hiddenCats > 0 || catsExpanded) && (
+                <button
+                  onClick={() => setCatsExpanded((v) => !v)}
+                  aria-expanded={catsExpanded}
+                  style={{
+                    whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.82rem",
+                    padding: "0.5rem 1.1rem", borderRadius: 999, cursor: "pointer",
+                    border: `1.5px dashed ${tokens.border}`, background: "#fff", color: tokens.body,
+                  }}
+                >
+                  {catsExpanded ? "פחות ↑" : `עוד ${hiddenCats} ↓`}
+                </button>
+              )}
             </div>
           )}
           {/* 3B wave 3: price buckets. Browse mode only (the RPC search path
