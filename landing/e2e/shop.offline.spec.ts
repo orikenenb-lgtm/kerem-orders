@@ -35,10 +35,13 @@ const realError = (t: string) => !IGNORED.some((re) => re.test(t));
  *  context here makes the ordering explicit and reliable. */
 async function openShop(
   browser: import("@playwright/test").Browser,
+  baseURL: string | undefined,
   viewport: { width: number; height: number },
   cart?: unknown,
 ) {
-  const context = await browser.newContext({ viewport, locale: "he-IL" });
+  // A context built by hand does NOT inherit the project's baseURL, so pass it
+  // through explicitly — otherwise every relative goto() lands nowhere.
+  const context = await browser.newContext({ viewport, locale: "he-IL", baseURL });
   await mockSupabase(context);
   await seedSession(context, cart);
   const page = await context.newPage();
@@ -60,11 +63,11 @@ const overflowOf = (page: import("@playwright/test").Page) =>
 for (const vp of VIEWPORTS) {
   test.describe(`${vp.label} (${vp.width}px)`, () => {
 
-    test("catalogue renders products, no errors, no sideways scroll", async ({ browser }) => {
-      const { context, page } = await openShop(browser, vp);
+    test("catalogue renders products, no errors, no sideways scroll", async ({ browser, baseURL }) => {
+      const { context, page } = await openShop(browser, baseURL, vp);
       const errors = watchErrors(page);
 
-      await page.goto("/catalog/", { waitUntil: "domcontentloaded" });
+      await page.goto("catalog/", { waitUntil: "domcontentloaded" });
       const cards = page.locator(".kt-card");
       await expect(cards.first()).toBeVisible({ timeout: 30_000 });
       await expect.poll(() => cards.count(), { timeout: 20_000 }).toBeGreaterThanOrEqual(8);
@@ -79,11 +82,11 @@ for (const vp of VIEWPORTS) {
       await context.close();
     });
 
-    test("cart drawer opens and its total matches the lines", async ({ browser }) => {
-      const { context, page } = await openShop(browser, vp);
+    test("cart drawer opens and its total matches the lines", async ({ browser, baseURL }) => {
+      const { context, page } = await openShop(browser, baseURL, vp);
       const errors = watchErrors(page);
 
-      await page.goto("/catalog/", { waitUntil: "domcontentloaded" });
+      await page.goto("catalog/", { waitUntil: "domcontentloaded" });
       await expect(page.locator(".kt-card").first()).toBeVisible({ timeout: 30_000 });
 
       await page.locator('button[aria-haspopup="dialog"]').first().click();
@@ -106,11 +109,11 @@ for (const vp of VIEWPORTS) {
       await context.close();
     });
 
-    test("order history renders a past order", async ({ browser }) => {
-      const { context, page } = await openShop(browser, vp);
+    test("order history renders a past order", async ({ browser, baseURL }) => {
+      const { context, page } = await openShop(browser, baseURL, vp);
       const errors = watchErrors(page);
 
-      await page.goto("/account/", { waitUntil: "domcontentloaded" });
+      await page.goto("account/", { waitUntil: "domcontentloaded" });
       await expect(page.getByRole("heading", { name: "ההזמנות שלי" })).toBeVisible();
       await expect(page.getByText(ORDER.order_items[0].product_name, { exact: false })).toBeVisible({ timeout: 20_000 });
 
@@ -123,9 +126,9 @@ for (const vp of VIEWPORTS) {
 
 test.describe("flag-gated behaviour (asserted only when the flag is on)", () => {
 
-  test("price buckets, when present, really narrow the grid", async ({ browser }) => {
-    const { context, page } = await openShop(browser, { width: 1440, height: 900 });
-    await page.goto("/catalog/", { waitUntil: "domcontentloaded" });
+  test("price buckets, when present, really narrow the grid", async ({ browser, baseURL }) => {
+    const { context, page } = await openShop(browser, baseURL, { width: 1440, height: 900 });
+    await page.goto("catalog/", { waitUntil: "domcontentloaded" });
     await expect(page.locator(".kt-card").first()).toBeVisible({ timeout: 30_000 });
 
     const bucket = page.getByRole("button", { name: "עד ₪5" });
@@ -139,9 +142,9 @@ test.describe("flag-gated behaviour (asserted only when the flag is on)", () => 
     await context.close();
   });
 
-  test("the category toggle, when present, reveals every category", async ({ browser }) => {
-    const { context, page } = await openShop(browser, { width: 1440, height: 900 });
-    await page.goto("/catalog/", { waitUntil: "domcontentloaded" });
+  test("the category toggle, when present, reveals every category", async ({ browser, baseURL }) => {
+    const { context, page } = await openShop(browser, baseURL, { width: 1440, height: 900 });
+    await page.goto("catalog/", { waitUntil: "domcontentloaded" });
     await expect(page.locator(".kt-card").first()).toBeVisible({ timeout: 30_000 });
 
     const toggle = page.getByRole("button", { name: /עוד \d+ קטגוריות/ });

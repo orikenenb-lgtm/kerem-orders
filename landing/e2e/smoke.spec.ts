@@ -21,7 +21,7 @@ test.describe("public catalog", () => {
     page.on("pageerror", (err) => consoleErrors.push(`pageerror: ${err.message}`));
 
     await page.setViewportSize(VIEWPORTS[1]); // start desktop
-    await page.goto("/view/", { waitUntil: "domcontentloaded" });
+    await page.goto("view/", { waitUntil: "domcontentloaded" });
 
     // Product cards are real <button class="kt-card"> elements, each holding an
     // <h3> with the product name. Wait for the anon RPC round-trip to paint.

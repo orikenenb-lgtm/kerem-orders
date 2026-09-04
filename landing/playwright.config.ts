@@ -18,7 +18,11 @@ import { defineConfig, devices } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT ?? 8735);
 const BASE_PATH = "/kerem-orders";
-const baseURL = `http://127.0.0.1:${PORT}${BASE_PATH}`;
+// NOTE the trailing slash. Without it, `page.goto("/catalog/")` resolves
+// against the ORIGIN and silently drops the /kerem-orders basePath, serving
+// the static server's error page instead of the app. Specs therefore use
+// RELATIVE paths ("catalog/"), never a leading slash.
+const baseURL = `http://127.0.0.1:${PORT}${BASE_PATH}/`;
 
 // Staging Supabase (publishable/anon key — public client key, RLS-enforced).
 // Real values come from the environment (e.g. sourced from .env.e2e); these
