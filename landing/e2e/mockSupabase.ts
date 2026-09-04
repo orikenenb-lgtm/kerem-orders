@@ -10,8 +10,20 @@ import type { BrowserContext, Route } from "@playwright/test";
 //
 // Nothing here writes: it is fixtures + request interception only.
 
-/** Project ref out of the configured URL — the key supabase-js persists the
- *  session under is `sb-<ref>-auth-token`, so it has to match the build. */
+/** supabase-js persists the session under `sb-<project-ref>-auth-token`, and the
+ *  ref is whatever URL was baked into the BUILD — not whatever the test process
+ *  happens to have in its environment. Guessing wrong is silent and total: the
+ *  app boots signed-out and redirects to /login, and the specs report "no
+ *  product cards", which reads like a broken catalogue.
+ *
+ *  Since every network call is mocked anyway, which project the build points at
+ *  is irrelevant here — so seed the session under EVERY ref the build could be
+ *  using. supabase-js reads only its own key; the spare entry is inert. */
+export const KNOWN_REFS = [
+  "ahptrtlnrpmevlpgqeac", // staging
+  "mcdchalyzeqjkkgfeznd", // production
+];
+
 export function projectRef(): string {
   const url =
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://ahptrtlnrpmevlpgqeac.supabase.co";
@@ -152,13 +164,16 @@ export async function mockSupabase(context: BrowserContext): Promise<void> {
 
 /** Seed a signed-in session and a known cart before the app boots. */
 export async function seedSession(context: BrowserContext, cart: unknown = SEEDED_CART): Promise<void> {
+  const refs = Array.from(new Set([projectRef(), ...KNOWN_REFS]));
   await context.addInitScript(
-    ([ref, session, c]) => {
+    ([allRefs, session, c]) => {
       try {
-        localStorage.setItem(`sb-${ref}-auth-token`, JSON.stringify(session));
+        for (const ref of allRefs as string[]) {
+          localStorage.setItem(`sb-${ref}-auth-token`, JSON.stringify(session));
+        }
         localStorage.setItem("kt_cart_v2", JSON.stringify(c));
       } catch { /* private mode — the specs that need storage will say so */ }
     },
-    [projectRef(), SESSION, cart] as const,
+    [refs, SESSION, cart] as const,
   );
 }
