@@ -38,7 +38,7 @@ export const featureFlags = {
    *  DEFAULT OFF: with it off the card renders byte-identical to before, so
    *  merging this changes nothing in production until the owner flips it on
    *  after reviewing the staging screenshots. Rollback = set back to false. */
-  ff_card_v2: false,
+  ff_card_v2: true,
   /** 3B wave 2: at-a-glance in-cart state on the /catalog card — a corner
    *  "בעגלה · N" badge and a green ring on any product already in the cart, so
    *  the buyer sees what they added without opening the drawer. Pure
