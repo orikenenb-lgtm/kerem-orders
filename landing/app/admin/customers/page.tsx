@@ -20,6 +20,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
 import { tokens, ils } from "../../../lib/ui";
 import { normalizeHe } from "../../../lib/searchRank";
+import { featureFlags } from "../../../lib/featureFlags";
 
 type Person = {
   id: string;
@@ -40,6 +41,67 @@ type Person = {
 };
 
 type OrderStat = { orders: number; total: number; last: string | null };
+
+type OrderLine = {
+  id: string;
+  product_name: string | null;
+  product_sku: string | null;
+  quantity: number | string | null;
+  unit_price: number | string | null;
+};
+
+type CustomerOrder = {
+  id: string;
+  created_at: string;
+  status: string | null;
+  total: number | string | null;
+  note: string | null;
+  rivhit_doc_id: number | null;
+  order_items: OrderLine[] | null;
+};
+
+const ffAdminOrders = featureFlags.ff_admin_customer_orders;
+
+/** One page of a customer's history. 9 orders exist in the whole system today,
+ *  but this screen must not become the reason the manager waits when that is
+ *  900 — so it is capped and says so rather than silently truncating. */
+const ORDER_PAGE = 50;
+
+const STATUS_HE: Record<string, string> = {
+  new: "התקבלה",
+  processing: "בטיפול",
+  done: "הושלמה",
+  cancelled: "בוטלה",
+};
+
+function statusLabel(s: string | null): string {
+  if (!s) return "—";
+  return STATUS_HE[s] ?? s;
+}
+
+function dateTimeHe(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${d.toLocaleDateString("he-IL")} ${d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/** What this customer buys most, by units, across the orders shown. The owner's
+ *  question is "what do they order?" — nine separate order cards answer it only
+ *  after he reads all nine and adds up in his head. */
+function topProducts(orders: CustomerOrder[], take = 5) {
+  const m = new Map<string, { name: string; qty: number; spend: number }>();
+  for (const o of orders) {
+    if (o.status === "cancelled") continue;
+    for (const it of o.order_items ?? []) {
+      const name = (it.product_name || "").trim() || "מוצר ללא שם";
+      const qty = Number(it.quantity) || 0;
+      const price = Number(it.unit_price) || 0;
+      const prev = m.get(name) ?? { name, qty: 0, spend: 0 };
+      m.set(name, { name, qty: prev.qty + qty, spend: prev.spend + qty * price });
+    }
+  }
+  return [...m.values()].sort((a, b) => b.qty - a.qty).slice(0, take);
+}
 
 const COLS =
   "id,email,full_name,business_name,phone,role,created_at,vat_number,discount_percent,city,street,house_number,zip_code,delivery_notes,rivhit_customer_id";
@@ -82,6 +144,13 @@ export default function CustomersAdminPage() {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  // Per-customer order history, fetched only when that customer is opened.
+  // Loading every order with its lines up front would make this list pay for
+  // data the manager may never look at; today that is 36 rows, but the screen
+  // should not need rewriting the first busy month.
+  const [ordersByUser, setOrdersByUser] = useState<Map<string, CustomerOrder[]>>(new Map());
+  const [ordersBusyFor, setOrdersBusyFor] = useState<string | null>(null);
+  const [ordersErrFor, setOrdersErrFor] = useState<Map<string, string>>(new Map());
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -148,6 +217,39 @@ export default function CustomersAdminPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // One round trip per customer: the orders plus their lines, newest first.
+  // RLS already lets a manager read every order and every order_item
+  // (orders_select / order_items_select both fall back to is_manager()), so
+  // this grants no access the account did not already have — it just puts the
+  // answer on the screen the question is asked on.
+  const loadOrders = useCallback(async (userId: string) => {
+    if (!ffAdminOrders || !isManager) return;
+    setOrdersBusyFor(userId);
+    const { data, error } = await supabase
+      .from("orders")
+      .select("id,created_at,status,total,note,rivhit_doc_id,order_items(id,product_name,product_sku,quantity,unit_price)")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(ORDER_PAGE);
+    if (!mountedRef.current) return;
+    setOrdersBusyFor(null);
+    if (error) {
+      // Never leave a blank panel that reads like "this customer never ordered".
+      setOrdersErrFor((m) => new Map(m).set(userId, "טעינת ההזמנות נכשלה. נסו שוב."));
+      return;
+    }
+    setOrdersErrFor((m) => { const n = new Map(m); n.delete(userId); return n; });
+    setOrdersByUser((m) => new Map(m).set(userId, (data as CustomerOrder[]) ?? []));
+  }, [isManager]);
+
+  const toggleCustomer = useCallback((id: string) => {
+    setOpenId((cur) => {
+      const next = cur === id ? null : id;
+      if (next && ffAdminOrders && !ordersByUser.has(next)) void loadOrders(next);
+      return next;
+    });
+  }, [ordersByUser, loadOrders]);
+
   const shown = useMemo(() => {
     const q = normalizeHe(query);
     if (!q) return people;
@@ -176,7 +278,8 @@ export default function CustomersAdminPage() {
         </h1>
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.4rem", maxWidth: 720 }}>
           כל מי שרשום במערכת. אפשר לחפש לפי שם העסק, שם איש הקשר, אימייל, טלפון, ח״פ או עיר —
-          ולפתוח כרטיס לקוח כדי לראות את כתובת המשלוח, ההנחה הקבועה וההזמנות שלו.
+          ולפתוח כרטיס לקוח כדי לראות את כתובת המשלוח, ההנחה הקבועה, וכל ההזמנות שלו:
+          מה בדיוק הזמין בכל הזמנה, באיזו כמות, באיזה מחיר, וכמה הוציא בסך הכול.
         </p>
 
         <div style={{ position: "sticky", top: "var(--kt-header-h, 96px)", zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
@@ -244,7 +347,7 @@ export default function CustomersAdminPage() {
                         : "עוד לא הזמין"}
                   </span>
                   <button
-                    onClick={() => setOpenId(open ? null : p.id)}
+                    onClick={() => toggleCustomer(p.id)}
                     aria-expanded={open}
                     style={{ ...miniBtn, minHeight: 44, background: open ? tokens.accent : "#fff", color: open ? "#fff" : tokens.text }}
                   >
@@ -264,6 +367,15 @@ export default function CustomersAdminPage() {
                     <Row label="מספר לקוח ברווחית" value={p.rivhit_customer_id ? String(p.rivhit_customer_id) : "לא מקושר"} ltr={!!p.rivhit_customer_id} />
                   </dl>
                 )}
+
+                {open && ffAdminOrders && (
+                  <CustomerOrders
+                    busy={ordersBusyFor === p.id}
+                    err={ordersErrFor.get(p.id)}
+                    orders={ordersByUser.get(p.id)}
+                    onRetry={() => loadOrders(p.id)}
+                  />
+                )}
               </div>
             );
           })}
@@ -273,6 +385,176 @@ export default function CustomersAdminPage() {
     </>
   );
 }
+
+/** A customer's order history: what they bought, how much of it, and for how
+ *  much. Manager-only, read-only, behind ff_admin_customer_orders. */
+function CustomerOrders({
+  busy, err, orders, onRetry,
+}: {
+  busy: boolean;
+  err: string | undefined;
+  orders: CustomerOrder[] | undefined;
+  onRetry: () => void;
+}) {
+  const [openOrder, setOpenOrder] = useState<string | null>(null);
+
+  if (busy) {
+    return (
+      <p style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.dim, borderTop: `1px solid ${tokens.border}`, marginTop: "0.8rem", paddingTop: "0.8rem" }}>
+        טוען את ההזמנות…
+      </p>
+    );
+  }
+  if (err) {
+    return (
+      <div style={{ borderTop: `1px solid ${tokens.border}`, marginTop: "0.8rem", paddingTop: "0.8rem" }}>
+        <p role="alert" style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: "#C0143C", marginBottom: "0.5rem" }}>{err}</p>
+        <button onClick={onRetry} style={miniBtn}>נסו שוב</button>
+      </div>
+    );
+  }
+  if (!orders) return null;
+  if (orders.length === 0) {
+    return (
+      <p style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.dim, borderTop: `1px solid ${tokens.border}`, marginTop: "0.8rem", paddingTop: "0.8rem" }}>
+        הלקוח עוד לא ביצע הזמנה.
+      </p>
+    );
+  }
+
+  const live = orders.filter((o) => o.status !== "cancelled");
+  const spend = live.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+  const units = live.reduce(
+    (sum, o) => sum + (o.order_items ?? []).reduce((n, it) => n + (Number(it.quantity) || 0), 0),
+    0
+  );
+  const top = topProducts(orders);
+
+  return (
+    <div style={{ borderTop: `1px solid ${tokens.border}`, marginTop: "0.8rem", paddingTop: "0.8rem" }}>
+      <h3 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: tokens.text, marginBottom: "0.5rem" }}>
+        ההזמנות של הלקוח
+      </h3>
+      <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, marginBottom: "0.7rem" }}>
+        {live.length.toLocaleString("he-IL")} הזמנות · {units.toLocaleString("he-IL")} יחידות · {ils(spend)}
+        {orders.length !== live.length ? ` · ${(orders.length - live.length).toLocaleString("he-IL")} בוטלו` : ""}
+        {orders.length >= ORDER_PAGE ? ` · מוצגות ${ORDER_PAGE} האחרונות` : ""}
+      </p>
+
+      {top.length > 0 && (
+        <div style={{ background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 12, padding: "0.7rem 0.9rem", marginBottom: "0.8rem" }}>
+          <div style={{ fontFamily: tokens.assistant, fontSize: "0.75rem", color: tokens.dim, marginBottom: "0.35rem" }}>הכי מזמין</div>
+          <ol style={{ margin: 0, paddingInlineStart: "1.1rem", display: "grid", gap: "0.2rem" }}>
+            {top.map((t) => (
+              <li key={t.name} style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.text }}>
+                {t.name} — <strong>{t.qty.toLocaleString("he-IL")} יח׳</strong> · {ils(t.spend)}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: "0.5rem" }}>
+        {orders.map((o) => {
+          const lines = o.order_items ?? [];
+          const isOpen = openOrder === o.id;
+          const cancelled = o.status === "cancelled";
+          const lineSum = lines.reduce((n, it) => n + (Number(it.quantity) || 0) * (Number(it.unit_price) || 0), 0);
+          const stored = Number(o.total) || 0;
+          // The stored total is what the customer was actually charged. If the
+          // lines no longer add up to it, say so instead of quietly showing two
+          // numbers and letting the owner trust the wrong one.
+          const mismatch = lines.length > 0 && Math.abs(lineSum - stored) >= 0.01;
+          return (
+            <div key={o.id} style={{ border: `1px solid ${isOpen ? tokens.accent : tokens.border}`, borderRadius: 12, padding: "0.6rem 0.8rem", background: cancelled ? "rgba(0,0,0,0.02)" : "#fff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+                <span style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim, whiteSpace: "nowrap" }}>
+                  {dateTimeHe(o.created_at)}
+                </span>
+                <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.7rem", padding: "0.15rem 0.55rem", borderRadius: 999, color: cancelled ? "#C0143C" : "#1A7A4D", background: cancelled ? "rgba(192,20,60,0.10)" : "rgba(37,199,126,0.12)", whiteSpace: "nowrap" }}>
+                  {statusLabel(o.status)}
+                </span>
+                <span style={{ flex: 1 }} />
+                <span style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim, whiteSpace: "nowrap" }}>
+                  {lines.length.toLocaleString("he-IL")} שורות
+                </span>
+                <strong style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: tokens.text, whiteSpace: "nowrap" }}>
+                  {ils(stored)}
+                </strong>
+                <button
+                  onClick={() => setOpenOrder(isOpen ? null : o.id)}
+                  aria-expanded={isOpen}
+                  style={{ ...miniBtn, minHeight: 40, fontSize: "0.78rem", background: isOpen ? tokens.accent : "#fff", color: isOpen ? "#fff" : tokens.text }}
+                >
+                  {isOpen ? "סגירה" : "מה הזמין"}
+                </button>
+              </div>
+
+              {isOpen && (
+                <div style={{ marginTop: "0.6rem", overflowX: "auto" }}>
+                  {lines.length === 0 ? (
+                    <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, margin: 0 }}>
+                      אין שורות שמורות להזמנה הזו.
+                    </p>
+                  ) : (
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: tokens.assistant, fontSize: "0.85rem", minWidth: 420 }}>
+                      <thead>
+                        <tr style={{ color: tokens.dim, textAlign: "start" }}>
+                          <th style={thStyle}>מוצר</th>
+                          <th style={thStyle}>מק״ט</th>
+                          <th style={{ ...thStyle, textAlign: "end" }}>כמות</th>
+                          <th style={{ ...thStyle, textAlign: "end" }}>מחיר ליח׳</th>
+                          <th style={{ ...thStyle, textAlign: "end" }}>סה״כ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lines.map((it) => {
+                          const q = Number(it.quantity) || 0;
+                          const u = Number(it.unit_price) || 0;
+                          return (
+                            <tr key={it.id} style={{ borderTop: `1px solid ${tokens.border}` }}>
+                              <td style={tdStyle}>{it.product_name || "—"}</td>
+                              <td style={{ ...tdStyle, direction: "ltr", textAlign: "right", color: tokens.dim }}>{it.product_sku || "—"}</td>
+                              <td style={{ ...tdStyle, textAlign: "end" }}>{q.toLocaleString("he-IL")}</td>
+                              <td style={{ ...tdStyle, textAlign: "end" }}>{ils(u)}</td>
+                              <td style={{ ...tdStyle, textAlign: "end", fontWeight: 700 }}>{ils(q * u)}</td>
+                            </tr>
+                          );
+                        })}
+                        <tr style={{ borderTop: `2px solid ${tokens.border}` }}>
+                          <td style={{ ...tdStyle, fontWeight: 800 }} colSpan={4}>סה״כ ההזמנה</td>
+                          <td style={{ ...tdStyle, textAlign: "end", fontWeight: 800 }}>{ils(stored)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  )}
+                  {mismatch && (
+                    <p style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: "#C0143C", marginTop: "0.5rem" }}>
+                      שימו לב: סכום השורות ({ils(lineSum)}) שונה מהסכום השמור בהזמנה ({ils(stored)}).
+                    </p>
+                  )}
+                  {o.note && (
+                    <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, marginTop: "0.5rem" }}>
+                      הערת הלקוח: {o.note}
+                    </p>
+                  )}
+                  {o.rivhit_doc_id ? (
+                    <p style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, marginTop: "0.35rem" }}>
+                      מסמך ברווחית: <span dir="ltr">{o.rivhit_doc_id}</span>
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const thStyle: React.CSSProperties = { fontWeight: 700, padding: "0.35rem 0.4rem", textAlign: "start", whiteSpace: "nowrap" };
+const tdStyle: React.CSSProperties = { padding: "0.4rem", verticalAlign: "top" };
 
 function Row({ label, value, ltr }: { label: string; value: string | null | undefined; ltr?: boolean }) {
   return (

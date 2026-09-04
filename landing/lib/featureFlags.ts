@@ -79,6 +79,16 @@ export const featureFlags = {
    *  It only fills the cart — checkout still re-fetches and revalidates every
    *  line, so a stale price cannot survive to an order. DEFAULT OFF. */
   ff_reorder: true,
+  /** Manager screen: on /admin/customers, opening a customer now also lists
+   *  THEIR orders and what was in each one — date, status, per-line product,
+   *  quantity, unit price and line total — plus a roll-up of the products that
+   *  customer buys most. The owner could see "5 הזמנות · ₪18,300" but not what
+   *  was in them without opening Supabase.
+   *  Read-only, and it adds NO access: the existing RLS policies on orders and
+   *  order_items already grant a manager SELECT over every row via is_manager().
+   *  No database change. Loaded lazily per customer, so the list stays fast as
+   *  order volume grows. DEFAULT ON at the owner's request; rollback = false. */
+  ff_admin_customer_orders: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
