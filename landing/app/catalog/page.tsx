@@ -481,6 +481,31 @@ export default function CatalogPage() {
     return top;
   }, [orderedCats, catsExpanded, activeCat]);
   const hiddenCats = orderedCats.length - visibleCats.length;
+  // The expand/collapse control. Its POSITION depends on state, which is the
+  // whole point: collapsed it sits below the one-line chip strip, where "עוד N
+  // קטגוריות" reads as "there is more past the edge". Expanded it moves ABOVE
+  // the list — the owner opened the categories on a phone and could not get
+  // out, because a below-the-list control sits under ~12 rows of wrapped chips
+  // and off the bottom of the screen. Rendering it above puts the exit under
+  // the same thumb that just opened it. Exactly one copy renders at a time.
+  const catToggle =
+    ffCatSheet && categories.length > 0 && query.trim().length < 2 && (hiddenCats > 0 || catsExpanded) ? (
+      <div style={{ marginTop: "0.4rem" }}>
+        <button
+          onClick={() => setCatsExpanded((v) => !v)}
+          aria-expanded={catsExpanded}
+          style={{
+            whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.8rem",
+            padding: "0.4rem 1rem", borderRadius: 999, cursor: "pointer",
+            border: catsExpanded ? "1.5px solid transparent" : `1.5px dashed ${tokens.border}`,
+            background: catsExpanded ? tokens.accent : "#fff",
+            color: catsExpanded ? "#fff" : tokens.body,
+          }}
+        >
+          {catsExpanded ? "✕ סגירת הקטגוריות" : `עוד ${hiddenCats} קטגוריות ↓`}
+        </button>
+      </div>
+    ) : null;
 
   const placeOrder = async () => {
     if (!session || lines.length === 0 || submitting) return;
@@ -747,9 +772,18 @@ export default function CatalogPage() {
               The "עוד N" toggle therefore lives on its OWN line below the row,
               where it is always visible; putting it at the end of a scrolling row
               hid the only way to reach the rest of the categories. Expanded, the
-              row wraps so all 24 are laid out at once. */}
+              row wraps so all 24 are laid out at once — but CAPPED at 38vh and
+              scrolled internally. Uncapped, 24 wrapped chips ran ~12 rows on a
+              390px phone: they filled the entire screen, pushed every product
+              below the fold, and buried the collapse control underneath the
+              whole list, so the owner reported there was no way out of the
+              expanded state. The cap keeps products visible and keeps the
+              close button on screen; the button itself is solid and reads
+              "✕ סגירת הקטגוריות" while open, so it looks like an exit rather
+              than another filter. */}
+          {catsExpanded && catToggle}
           {categories.length > 0 && query.trim().length < 2 && (
-            <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", flexWrap: ffCatSheet && catsExpanded ? "wrap" : "nowrap", overflowX: ffCatSheet && catsExpanded ? "visible" : "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+            <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", flexWrap: ffCatSheet && catsExpanded ? "wrap" : "nowrap", overflowX: ffCatSheet && catsExpanded ? "visible" : "auto", maxHeight: ffCatSheet && catsExpanded ? "38vh" : undefined, overflowY: ffCatSheet && catsExpanded ? "auto" : undefined, paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
               {[{ category: "all", n: 0 }, ...visibleCats].map((c, i) => {
                 const active = activeCat === c.category;
                 const isAll = c.category === "all";
@@ -757,7 +791,11 @@ export default function CatalogPage() {
                 return (
                   <button
                     key={c.category}
-                    onClick={() => setActiveCat(c.category)}
+                    // Picking a category IS the other way out of the expanded
+                    // list: the choice is made, so collapse back to the one-line
+                    // strip and put the products the customer just filtered for
+                    // back on screen instead of leaving 24 chips in front of them.
+                    onClick={() => { setActiveCat(c.category); if (ffCatSheet) setCatsExpanded(false); }}
                     aria-pressed={active}
                     style={{
                       whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.82rem",
@@ -777,21 +815,7 @@ export default function CatalogPage() {
               })}
             </div>
           )}
-          {ffCatSheet && categories.length > 0 && query.trim().length < 2 && (hiddenCats > 0 || catsExpanded) && (
-            <div style={{ marginTop: "0.4rem" }}>
-              <button
-                onClick={() => setCatsExpanded((v) => !v)}
-                aria-expanded={catsExpanded}
-                style={{
-                  whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.8rem",
-                  padding: "0.4rem 1rem", borderRadius: 999, cursor: "pointer",
-                  border: `1.5px dashed ${tokens.border}`, background: "#fff", color: tokens.body,
-                }}
-              >
-                {catsExpanded ? "הצג פחות קטגוריות ↑" : `עוד ${hiddenCats} קטגוריות ↓`}
-              </button>
-            </div>
-          )}
+          {!catsExpanded && catToggle}
           {/* 3B wave 3: price buckets. Browse mode only (the RPC search path
               takes no price argument), so hidden during a text search — exactly
               like the category chips above — to never imply a filter that is not
