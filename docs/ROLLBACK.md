@@ -24,9 +24,9 @@
 |---|---|---|---|
 | 1 | ff_card_v2 | `0193b23` | #125 ✅ |
 | 2 | ff_card_incart | `dc62d49` | #126 ✅ |
-| 3 | ff_filters_v2 · ff_category_sheet | `321dd3e` | #127 |
-| 4 | ff_cart_v2 · ff_mobile_polish · ff_micro_motion | `b4bace0` | #128 |
-| 5 | ff_reorder | `e428c71` | #129 |
+| 3 | ff_filters_v2 · ff_category_sheet | `321dd3e` | #127 ✅ |
+| 4 | ff_cart_v2 · ff_mobile_polish · ff_micro_motion | `b4bace0` | #128 ✅ |
+| 5 | ff_reorder | `e428c71` | #129 ✅ |
 
 **כל אחד עצמאי** — אפשר לכבות אחד בלי לגעת בשאר. כשכולם כבויים, `/catalog`
 ו-`/account` מתנהגים בדיוק כמו לפני 3B.
