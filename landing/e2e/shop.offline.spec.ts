@@ -28,6 +28,23 @@ const VIEWPORTS = [
 const IGNORED = [/favicon/i, /manifest/i, /font/i, /Failed to load resource/i];
 const realError = (t: string) => !IGNORED.some((re) => re.test(t));
 
+/** Create the page only AFTER the mocks and the seeded session are in place.
+ *  Playwright's built-in `page` fixture is constructed before the test body
+ *  runs, so an addInitScript registered inside the body can miss the first
+ *  navigation — the app then boots signed-out and renders nothing. Building the
+ *  context here makes the ordering explicit and reliable. */
+async function openShop(
+  browser: import("@playwright/test").Browser,
+  viewport: { width: number; height: number },
+  cart?: unknown,
+) {
+  const context = await browser.newContext({ viewport, locale: "he-IL" });
+  await mockSupabase(context);
+  await seedSession(context, cart);
+  const page = await context.newPage();
+  return { context, page };
+}
+
 function watchErrors(page: import("@playwright/test").Page): string[] {
   const errors: string[] = [];
   page.on("console", (m: ConsoleMessage) => {
@@ -42,11 +59,9 @@ const overflowOf = (page: import("@playwright/test").Page) =>
 
 for (const vp of VIEWPORTS) {
   test.describe(`${vp.label} (${vp.width}px)`, () => {
-    test.use({ viewport: { width: vp.width, height: vp.height }, locale: "he-IL" });
 
-    test("catalogue renders products, no errors, no sideways scroll", async ({ context, page }) => {
-      await mockSupabase(context);
-      await seedSession(context);
+    test("catalogue renders products, no errors, no sideways scroll", async ({ browser }) => {
+      const { context, page } = await openShop(browser, vp);
       const errors = watchErrors(page);
 
       await page.goto("/catalog/", { waitUntil: "domcontentloaded" });
@@ -61,11 +76,11 @@ for (const vp of VIEWPORTS) {
 
       expect(await overflowOf(page), "horizontal overflow").toBeLessThanOrEqual(1);
       expect(errors, errors.join("\n")).toEqual([]);
+      await context.close();
     });
 
-    test("cart drawer opens and its total matches the lines", async ({ context, page }) => {
-      await mockSupabase(context);
-      await seedSession(context);
+    test("cart drawer opens and its total matches the lines", async ({ browser }) => {
+      const { context, page } = await openShop(browser, vp);
       const errors = watchErrors(page);
 
       await page.goto("/catalog/", { waitUntil: "domcontentloaded" });
@@ -88,11 +103,11 @@ for (const vp of VIEWPORTS) {
 
       expect(await overflowOf(page), "horizontal overflow").toBeLessThanOrEqual(1);
       expect(errors, errors.join("\n")).toEqual([]);
+      await context.close();
     });
 
-    test("order history renders a past order", async ({ context, page }) => {
-      await mockSupabase(context);
-      await seedSession(context);
+    test("order history renders a past order", async ({ browser }) => {
+      const { context, page } = await openShop(browser, vp);
       const errors = watchErrors(page);
 
       await page.goto("/account/", { waitUntil: "domcontentloaded" });
@@ -101,16 +116,15 @@ for (const vp of VIEWPORTS) {
 
       expect(await overflowOf(page), "horizontal overflow").toBeLessThanOrEqual(1);
       expect(errors, errors.join("\n")).toEqual([]);
+      await context.close();
     });
   });
 }
 
 test.describe("flag-gated behaviour (asserted only when the flag is on)", () => {
-  test.use({ viewport: { width: 1440, height: 900 }, locale: "he-IL" });
 
-  test("price buckets, when present, really narrow the grid", async ({ context, page }) => {
-    await mockSupabase(context);
-    await seedSession(context);
+  test("price buckets, when present, really narrow the grid", async ({ browser }) => {
+    const { context, page } = await openShop(browser, { width: 1440, height: 900 });
     await page.goto("/catalog/", { waitUntil: "domcontentloaded" });
     await expect(page.locator(".kt-card").first()).toBeVisible({ timeout: 30_000 });
 
@@ -122,11 +136,11 @@ test.describe("flag-gated behaviour (asserted only when the flag is on)", () => 
     await expect.poll(() => page.locator(".kt-card").count(), { timeout: 15_000 }).toBeLessThan(before);
     // Only the one product under ₪5 survives the filter.
     await expect(page.locator(".kt-card h3")).toHaveText([PRODUCTS[10].name]);
+    await context.close();
   });
 
-  test("the category toggle, when present, reveals every category", async ({ context, page }) => {
-    await mockSupabase(context);
-    await seedSession(context);
+  test("the category toggle, when present, reveals every category", async ({ browser }) => {
+    const { context, page } = await openShop(browser, { width: 1440, height: 900 });
     await page.goto("/catalog/", { waitUntil: "domcontentloaded" });
     await expect(page.locator(".kt-card").first()).toBeVisible({ timeout: 30_000 });
 
@@ -139,5 +153,6 @@ test.describe("flag-gated behaviour (asserted only when the flag is on)", () => 
     // 24 categories + the "הכל" chip.
     await expect.poll(() => chips.count(), { timeout: 10_000 }).toBe(25);
     expect(collapsed).toBeLessThan(25);
+    await context.close();
   });
 });

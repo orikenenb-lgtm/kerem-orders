@@ -108,9 +108,13 @@ export async function mockSupabase(context: BrowserContext): Promise<void> {
     }),
   );
 
-  await context.route("**/auth/v1/**", (route) => json(route, { ...SESSION }));
+  await context.route(/\/auth\/v1\//, (route) => json(route, { ...SESSION }));
 
-  await context.route("**/rest/v1/**", (route) => {
+  // NB: regex, not a glob. Playwright's URL globs did not match the absolute
+  // Supabase URLs here, so every request fell through unmocked and the app
+  // booted with no data — the failure looked like a bug in the app rather than
+  // in the harness. A regex on the path is unambiguous.
+  await context.route(/\/rest\/v1\//, (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
 
