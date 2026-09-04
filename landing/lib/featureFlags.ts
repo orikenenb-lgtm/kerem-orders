@@ -44,7 +44,7 @@ export const featureFlags = {
    *  the buyer sees what they added without opening the drawer. Pure
    *  presentation over the existing cart state; no change to the cart, the
    *  quantity model, or checkout. DEFAULT OFF; rollback = set back to false. */
-  ff_card_incart: false,
+  ff_card_incart: true,
   /** 3B wave 3: a price-bucket filter row on /catalog (עד ₪5 · ₪5–10 · … · ₪100+),
    *  buckets taken straight from the live price histogram. Browse mode only — it
    *  filters the existing PostgREST products query with gte/lt on price, adds no
