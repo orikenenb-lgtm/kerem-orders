@@ -78,10 +78,14 @@ export default function AccountPage() {
   // every line, so even a stale write here cannot become a mispriced order.
   const [reorderingId, setReorderingId] = useState<string | null>(null);
   const [reorderMsg, setReorderMsg] = useState("");
+  // true when the reorder finished but something was unavailable, so we stayed
+  // on the page and offer an explicit way to the cart instead of redirecting.
+  const [reorderCta, setReorderCta] = useState(false);
 
   const reorder = async (o: Order) => {
     setReorderingId(o.id);
     setReorderMsg("");
+    setReorderCta(false);
     try {
       const items = o.order_items ?? [];
       const ids = Array.from(new Set(items.map((it) => it.product_id).filter((x): x is string => !!x)));
@@ -134,9 +138,13 @@ export default function AccountPage() {
       }
       try { localStorage.setItem(CART_KEY, JSON.stringify(next)); } catch { /* private mode: fall through */ }
       if (gone.length > 0) {
-        // Tell them BEFORE navigating — the catalogue cannot explain an absence.
+        // Something is missing, so DO NOT navigate. An auto-redirect gave the
+        // customer about a second and a half to read a Hebrew sentence naming
+        // products — not enough, and the catalogue cannot explain an absence
+        // once they are there. Show it and let them move on when they have read
+        // it.
         setReorderMsg(`נוספו ${added} מוצרים לעגלה. לא זמינים יותר: ${gone.join(", ")}`);
-        setTimeout(() => router.push("/catalog"), 1800);
+        setReorderCta(true);
         return;
       }
       router.push("/catalog");
@@ -179,6 +187,13 @@ export default function AccountPage() {
             {ffReorder && reorderMsg && (
               <div role="status" style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.body, background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 12, padding: "0.8rem 1rem" }}>
                 {reorderMsg}
+                {reorderCta && (
+                  <div style={{ marginTop: "0.7rem" }}>
+                    <Link href="/catalog" style={{ ...primaryBtn(false), display: "inline-block", textDecoration: "none", marginTop: 0 }}>
+                      מעבר לעגלה
+                    </Link>
+                  </div>
+                )}
               </div>
             )}
             {orders.map((o) => (

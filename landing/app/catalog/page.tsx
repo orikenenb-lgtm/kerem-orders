@@ -742,6 +742,12 @@ export default function CatalogPage() {
               categories (search_products takes no category argument), so the
               chips are hidden during search — leaving them visible and
               highlighted would falsely imply the results are filtered. */}
+          {/* The chip row stays a single scrolling line while collapsed — wrapping
+              6 chips took three rows at 390px and pushed the products off screen.
+              The "עוד N" toggle therefore lives on its OWN line below the row,
+              where it is always visible; putting it at the end of a scrolling row
+              hid the only way to reach the rest of the categories. Expanded, the
+              row wraps so all 24 are laid out at once. */}
           {categories.length > 0 && query.trim().length < 2 && (
             <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", flexWrap: ffCatSheet && catsExpanded ? "wrap" : "nowrap", overflowX: ffCatSheet && catsExpanded ? "visible" : "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
               {[{ category: "all", n: 0 }, ...visibleCats].map((c, i) => {
@@ -769,19 +775,21 @@ export default function CatalogPage() {
                   </button>
                 );
               })}
-              {ffCatSheet && (hiddenCats > 0 || catsExpanded) && (
-                <button
-                  onClick={() => setCatsExpanded((v) => !v)}
-                  aria-expanded={catsExpanded}
-                  style={{
-                    whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.82rem",
-                    padding: "0.5rem 1.1rem", borderRadius: 999, cursor: "pointer",
-                    border: `1.5px dashed ${tokens.border}`, background: "#fff", color: tokens.body,
-                  }}
-                >
-                  {catsExpanded ? "פחות ↑" : `עוד ${hiddenCats} ↓`}
-                </button>
-              )}
+            </div>
+          )}
+          {ffCatSheet && categories.length > 0 && query.trim().length < 2 && (hiddenCats > 0 || catsExpanded) && (
+            <div style={{ marginTop: "0.4rem" }}>
+              <button
+                onClick={() => setCatsExpanded((v) => !v)}
+                aria-expanded={catsExpanded}
+                style={{
+                  whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.8rem",
+                  padding: "0.4rem 1rem", borderRadius: 999, cursor: "pointer",
+                  border: `1.5px dashed ${tokens.border}`, background: "#fff", color: tokens.body,
+                }}
+              >
+                {catsExpanded ? "הצג פחות קטגוריות ↑" : `עוד ${hiddenCats} קטגוריות ↓`}
+              </button>
             </div>
           )}
           {/* 3B wave 3: price buckets. Browse mode only (the RPC search path
