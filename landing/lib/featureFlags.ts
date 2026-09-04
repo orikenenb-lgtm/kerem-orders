@@ -78,7 +78,7 @@ export const featureFlags = {
    *  whole packs, and products that are no longer active are skipped and named.
    *  It only fills the cart — checkout still re-fetches and revalidates every
    *  line, so a stale price cannot survive to an order. DEFAULT OFF. */
-  ff_reorder: false,
+  ff_reorder: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
