@@ -72,6 +72,13 @@ export const featureFlags = {
    *  not a modal — no focus trap, no scroll lock, nothing to get stuck behind.
    *  DEFAULT OFF; rollback = set back to false. */
   ff_category_sheet: false,
+  /** 3B wave 6: "הזמן שוב" on /account — loads a past order's lines back into
+   *  the cart. Prices are RE-RESOLVED at today's prices through resolvePrice()
+   *  and never taken from the stored order line, quantities are re-normalised to
+   *  whole packs, and products that are no longer active are skipped and named.
+   *  It only fills the cart — checkout still re-fetches and revalidates every
+   *  line, so a stale price cannot survive to an order. DEFAULT OFF. */
+  ff_reorder: false,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;

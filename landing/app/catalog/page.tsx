@@ -14,7 +14,7 @@ import { featureFlags } from "../../lib/featureFlags";
 import { VAT_RATE, MIN_ORDER_FALLBACK } from "../../lib/config";
 import { resolveQuantity, stepOf, describeQuantity, pluralPack } from "../../lib/quantity";
 import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
-import { readCart } from "../../lib/cart";
+import { readCart, CART_KEY } from "../../lib/cart";
 
 type Product = {
   id: string;
@@ -56,7 +56,6 @@ type CartLine = {
 };
 type Cart = Record<string, CartLine>;
 
-const CART_KEY = "kt_cart_v2";
 const PAGE_SIZE = 24;
 const ffQty = featureFlags.ff_display_quantities;
 // Wave 5: minimum-order progress bar + VAT breakdown in the cart drawer.
