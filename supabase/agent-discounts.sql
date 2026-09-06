@@ -158,3 +158,93 @@ create policy profiles_select on public.profiles
     or is_manager()
     or (is_agent() and role = 'customer')
   );
+
+-- ---------------------------------------------------------------------------
+-- A manual hide that OUTRANKS the Rivhit sync.
+-- Deployed to production as migration `manual_hide_overrides_rivhit_sync`,
+-- rehearsed on kerem-staging first (11/11, including "a full sync cannot
+-- resurrect a hidden product").
+--
+-- Why it is needed, with the evidence: the owner's Rivhit group picker lists 22
+-- groups. The site was serving 24 categories, and cross-referencing the group
+-- ids showed FIVE that Rivhit no longer lists — 40 חדש 1 (45 products), 29
+-- מוצרי אופניים (31), 23 סביבונים (15), 30 עגלות בובה (10) and 24 עצמאות (7).
+-- עגלות בובה existed TWICE: the current group 43 and the deleted group 30, so
+-- the chip row merged 32 live products with 10 stale ones under one name.
+--
+-- The sync is not at fault: those groups and their items are STILL returned by
+-- Rivhit's Item.Groups and Item.List (if the group were gone the category would
+-- be written as an empty string, and it is not). What was deleted was a price
+-- list selection, not the item master — so no automatic rule can tell the
+-- difference, and the owner needs a switch of his own.
+--
+-- Every customer-facing query and every catalogue RPC already filters on
+-- is_active, so forcing is_active = false from a trigger hides a product on the
+-- catalogue, the search, the chips, the product page, the price lists and the
+-- collections at once — with no front-end change and no edge-function redeploy.
+-- The sync keeps writing is_active = true; the trigger keeps turning it off.
+-- Nothing is deleted, and un-hiding restores the product in the same statement.
+
+alter table public.products
+  add column if not exists hidden_manually boolean not null default false;
+
+create or replace function public.apply_manual_hide()
+returns trigger language plpgsql
+as $$
+begin
+  if new.hidden_manually then
+    new.is_active := false;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_apply_manual_hide on public.products;
+create trigger trg_apply_manual_hide
+  before insert or update on public.products
+  for each row execute function public.apply_manual_hide();
+
+create or replace function public.set_product_hidden(p_product uuid, p_hidden boolean)
+returns boolean language plpgsql security definer set search_path to 'public'
+as $$
+begin
+  if not is_manager() then raise exception 'להנהלה בלבד'; end if;
+  update public.products
+     set hidden_manually = p_hidden,
+         is_active = case when p_hidden then false else true end
+   where id = p_product;
+  return p_hidden;
+end;
+$$;
+
+create or replace function public.set_category_hidden(p_category text, p_hidden boolean)
+returns integer language plpgsql security definer set search_path to 'public'
+as $$
+declare n integer;
+begin
+  if not is_manager() then raise exception 'להנהלה בלבד'; end if;
+  update public.products
+     set hidden_manually = p_hidden,
+         is_active = case when p_hidden then false else true end
+   where coalesce(category,'') = coalesce(p_category,'');
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+create or replace function public.hidden_products()
+returns table(id uuid, name text, category text, sku text, price numeric)
+language sql stable security definer set search_path to 'public'
+as $$
+  select p.id, p.name, p.category, p.sku, p.price
+  from public.products p
+  where p.hidden_manually
+  order by p.category nulls last, p.name
+$$;
+
+revoke all on function public.set_product_hidden(uuid, boolean) from public;
+revoke all on function public.set_category_hidden(text, boolean) from public;
+revoke all on function public.hidden_products() from public;
+grant execute on function public.set_product_hidden(uuid, boolean) to authenticated;
+grant execute on function public.set_category_hidden(text, boolean) to authenticated;
+grant execute on function public.hidden_products() to authenticated;
