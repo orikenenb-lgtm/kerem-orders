@@ -23,7 +23,11 @@ export type Profile = {
   full_name: string;
   business_name: string;
   phone: string;
-  role: "customer" | "manager";
+  role: "customer" | "manager" | "agent";
   // Optional: the column may not exist in the DB yet; missing/null means 0.
   discount_percent?: number | null;
+  /** An AGENT's own ceiling — the largest discount they may grant. Set by the
+   *  owner, pinned by the protect_privileged_profile_cols trigger so an agent
+   *  cannot raise it themselves. Meaningless for customers and managers. */
+  max_discount_percent?: number | null;
 };

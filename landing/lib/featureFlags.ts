@@ -99,6 +99,14 @@ export const featureFlags = {
    *  nothing new writes to the cart. DEFAULT ON at the owner's request;
    *  rollback = false, which returns the small "×". */
   ff_cart_delete_v2: true,
+  /** Sales agents. The owner can mark a person as an agent and give them a
+   *  personal ceiling (default 15%); that agent then gets ONE screen where they
+   *  can set a customer's fixed discount, never above their own ceiling.
+   *  The ceiling is enforced in the DATABASE (set_customer_discount + the
+   *  protect_privileged_profile_cols trigger), so turning this flag off hides
+   *  the screens but does not weaken the rule. Every change is written to
+   *  discount_changes with who did it. DEFAULT ON at the owner's request. */
+  ff_agent_discounts: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;

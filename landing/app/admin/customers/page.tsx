@@ -32,6 +32,7 @@ type Person = {
   created_at: string;
   vat_number: string | null;
   discount_percent: number | string | null;
+  max_discount_percent?: number | string | null;
   city: string | null;
   street: string | null;
   house_number: string | null;
@@ -61,6 +62,7 @@ type CustomerOrder = {
 };
 
 const ffAdminOrders = featureFlags.ff_admin_customer_orders;
+const ffAgentDiscounts = featureFlags.ff_agent_discounts;
 
 /** One page of a customer's history. 9 orders exist in the whole system today,
  *  but this screen must not become the reason the manager waits when that is
@@ -104,7 +106,7 @@ function topProducts(orders: CustomerOrder[], take = 5) {
 }
 
 const COLS =
-  "id,email,full_name,business_name,phone,role,created_at,vat_number,discount_percent,city,street,house_number,zip_code,delivery_notes,rivhit_customer_id";
+  "id,email,full_name,business_name,phone,role,created_at,vat_number,discount_percent,max_discount_percent,city,street,house_number,zip_code,delivery_notes,rivhit_customer_id";
 
 /** Everything about a person that is worth matching a search against, folded
  *  the same way the catalogue folds product names (final letters, punctuation,
@@ -130,7 +132,13 @@ function dateHe(iso: string | null): string {
 
 export default function CustomersAdminPage() {
   const router = useRouter();
-  const { session, isManager, loading } = useAuth();
+  const { session, profile, isManager, isAgent, loading } = useAuth();
+  // An agent may open this screen, but sees a strictly smaller version of it:
+  // no order history, no contact panel, just the customers and the one dial
+  // they are allowed to turn. RLS backs this up — profiles_select only exposes
+  // customer rows to an agent, so a hand-written query gets the same answer.
+  const canSeeOrders = isManager;
+  const myCap = Number(profile?.max_discount_percent ?? 0) || 0;
 
   const [people, setPeople] = useState<Person[]>([]);
   const [stats, setStats] = useState<Map<string, OrderStat>>(new Map());
@@ -151,6 +159,8 @@ export default function CustomersAdminPage() {
   const [ordersByUser, setOrdersByUser] = useState<Map<string, CustomerOrder[]>>(new Map());
   const [ordersBusyFor, setOrdersBusyFor] = useState<string | null>(null);
   const [ordersErrFor, setOrdersErrFor] = useState<Map<string, string>>(new Map());
+  const [savingFor, setSavingFor] = useState<string | null>(null);
+  const [saveMsg, setSaveMsg] = useState<Map<string, string>>(new Map());
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -158,11 +168,42 @@ export default function CustomersAdminPage() {
     return () => { mountedRef.current = false; };
   }, []);
 
+  // The ONLY write this screen performs. It goes through the RPC, never a
+  // direct UPDATE, because the RPC is where the ceiling and the audit row live
+  // — a direct write would be silently reverted by the profiles trigger anyway.
+  const saveDiscount = useCallback(async (customerId: string, percent: number) => {
+    setSavingFor(customerId);
+    setSaveMsg((m) => { const n2 = new Map(m); n2.delete(customerId); return n2; });
+    const { error } = await supabase.rpc("set_customer_discount", { p_customer: customerId, p_percent: percent });
+    if (!mountedRef.current) return;
+    setSavingFor(null);
+    if (error) {
+      // The database speaks Hebrew here on purpose: "ההנחה המקסימלית שלך היא
+      // 15 אחוז" is the actual server refusal, not a guess made in the browser.
+      setSaveMsg((m) => new Map(m).set(customerId, error.message || "השמירה נכשלה."));
+      return;
+    }
+    setPeople((ps) => ps.map((x) => (x.id === customerId ? { ...x, discount_percent: percent } : x)));
+    setSaveMsg((m) => new Map(m).set(customerId, `נשמר: ${percent}% הנחה`));
+  }, []);
+
+  // Manager-only: promote/demote an agent and set their ceiling.
+  const saveAgent = useCallback(async (userId: string, role: string, cap: number) => {
+    setSavingFor(userId);
+    setSaveMsg((m) => { const n2 = new Map(m); n2.delete(userId); return n2; });
+    const { error } = await supabase.from("profiles").update({ role, max_discount_percent: cap }).eq("id", userId);
+    if (!mountedRef.current) return;
+    setSavingFor(null);
+    if (error) { setSaveMsg((m) => new Map(m).set(userId, "השמירה נכשלה.")); return; }
+    setPeople((ps) => ps.map((x) => (x.id === userId ? { ...x, role, max_discount_percent: cap } : x)));
+    setSaveMsg((m) => new Map(m).set(userId, role === "agent" ? `נשמר: סוכן עד ${cap}%` : "נשמר: לקוח רגיל"));
+  }, []);
+
   useEffect(() => {
     if (loading) return;
     if (!session) router.replace("/login");
-    else if (!isManager) router.replace("/catalog");
-  }, [loading, session, isManager, router]);
+    else if (!isManager && !(ffAgentDiscounts && isAgent)) router.replace("/catalog");
+  }, [loading, session, isManager, isAgent, router]);
 
   // Debounced so typing does not re-filter on every keystroke once the list is
   // long — same 350ms the catalogue uses.
@@ -172,7 +213,7 @@ export default function CustomersAdminPage() {
   }, [input]);
 
   const load = useCallback(async () => {
-    if (!isManager) return;
+    if (!isManager && !isAgent) return;
     setBusy(true);
     const { data, error } = await supabase
       .from("profiles")
@@ -213,7 +254,7 @@ export default function CustomersAdminPage() {
     }
     setStats(m);
     setBusy(false);
-  }, [isManager]);
+  }, [isManager, isAgent]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -264,22 +305,28 @@ export default function CustomersAdminPage() {
 
   const customerCount = people.filter((p) => p.role !== "manager").length;
 
-  if (loading || !isManager) return null;
+  if (loading || !(isManager || (ffAgentDiscounts && isAgent))) return null;
 
   return (
     <>
       <SiteHeader />
       <main id="main-content" tabIndex={-1} style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 5rem" }}>
-        <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "0.8rem" }}>
-          <Link href="/admin" style={{ color: tokens.accent, textDecoration: "none" }}>ניהול</Link> · לקוחות
-        </div>
+        {/* An agent has no /admin, so do not offer them a crumb that bounces
+            them straight back to the catalogue. */}
+        {canSeeOrders ? (
+          <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "0.8rem" }}>
+            <Link href="/admin" style={{ color: tokens.accent, textDecoration: "none" }}>ניהול</Link> · לקוחות
+          </div>
+        ) : (
+          <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "0.8rem" }}>סוכן · לקוחות</div>
+        )}
         <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.5rem,4vw,2.2rem)", color: tokens.text }}>
           לקוחות
         </h1>
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.4rem", maxWidth: 720 }}>
-          כל מי שרשום במערכת. אפשר לחפש לפי שם העסק, שם איש הקשר, אימייל, טלפון, ח״פ או עיר —
-          ולפתוח כרטיס לקוח כדי לראות את כתובת המשלוח, ההנחה הקבועה, וכל ההזמנות שלו:
-          מה בדיוק הזמין בכל הזמנה, באיזו כמות, באיזה מחיר, וכמה הוציא בסך הכול.
+          {canSeeOrders
+            ? "כל מי שרשום במערכת. אפשר לחפש לפי שם העסק, שם איש הקשר, אימייל, טלפון, ח״פ או עיר — ולפתוח כרטיס לקוח כדי לראות את כתובת המשלוח, ההנחה הקבועה, וכל ההזמנות שלו: מה בדיוק הזמין בכל הזמנה, באיזו כמות, באיזה מחיר, וכמה הוציא בסך הכול."
+            : `הלקוחות שלכם. פתחו כרטיס כדי לקבוע ללקוח הנחה קבועה — עד ${myCap}% לפי ההרשאה שלכם. כל שינוי נרשם ביומן עם השם שלכם.`}
         </p>
 
         <div style={{ position: "sticky", top: "var(--kt-header-h, 96px)", zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
@@ -355,7 +402,7 @@ export default function CustomersAdminPage() {
                   </button>
                 </div>
 
-                {open && (
+                {open && canSeeOrders && (
                   <dl style={{ borderTop: `1px solid ${tokens.border}`, marginTop: "0.8rem", paddingTop: "0.8rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "0.7rem 1.2rem" }}>
                     <Row label="אימייל" value={p.email} ltr />
                     <Row label="טלפון" value={p.phone} ltr />
@@ -368,7 +415,19 @@ export default function CustomersAdminPage() {
                   </dl>
                 )}
 
-                {open && ffAdminOrders && (
+                {open && ffAgentDiscounts && (
+                  <DiscountEditor
+                    person={p}
+                    isManager={isManager}
+                    myCap={isManager ? 99 : myCap}
+                    busy={savingFor === p.id}
+                    msg={saveMsg.get(p.id)}
+                    onSaveDiscount={(pct) => saveDiscount(p.id, pct)}
+                    onSaveAgent={(role, cap) => saveAgent(p.id, role, cap)}
+                  />
+                )}
+
+                {open && ffAdminOrders && canSeeOrders && (
                   <CustomerOrders
                     busy={ordersBusyFor === p.id}
                     err={ordersErrFor.get(p.id)}
@@ -383,6 +442,121 @@ export default function CustomersAdminPage() {
       </main>
       <SiteFooter />
     </>
+  );
+}
+
+/** The one control an agent is allowed to touch, and the manager's controls for
+ *  appointing agents. Every write goes through set_customer_discount(), whose
+ *  ceiling lives in the database — the numbers below are a courtesy, not the
+ *  protection. */
+function DiscountEditor({
+  person, isManager, myCap, busy, msg, onSaveDiscount, onSaveAgent,
+}: {
+  person: Person;
+  isManager: boolean;
+  myCap: number;
+  busy: boolean;
+  msg: string | undefined;
+  onSaveDiscount: (pct: number) => void;
+  onSaveAgent: (role: string, cap: number) => void;
+}) {
+  const current = Number(person.discount_percent) || 0;
+  const [pct, setPct] = useState(String(current));
+  const [cap, setCap] = useState(String(Number(person.max_discount_percent) || 15));
+  const isCustomer = person.role === "customer";
+  const asked = Number(pct);
+  const overCap = Number.isFinite(asked) && asked > myCap;
+  const bad = !Number.isFinite(asked) || asked < 0 || asked >= 100;
+
+  return (
+    <div style={{ borderTop: `1px solid ${tokens.border}`, marginTop: "0.8rem", paddingTop: "0.8rem", display: "grid", gap: "0.7rem" }}>
+      {isCustomer ? (
+        <div>
+          <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: tokens.text, marginBottom: "0.4rem" }}>
+            הנחה קבועה ללקוח
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+            <input
+              type="number" inputMode="decimal" min={0} max={myCap} step="0.5"
+              value={pct} onChange={(e) => setPct(e.target.value)}
+              aria-label={`אחוז הנחה עבור ${person.business_name || person.full_name || "הלקוח"}`}
+              style={{ width: 96, minHeight: 44, fontFamily: tokens.assistant, fontSize: "1rem", textAlign: "center", padding: "0.5rem", borderRadius: 10, border: `1px solid ${overCap || bad ? "#C0143C" : tokens.border}`, background: "#fff", color: tokens.text }}
+            />
+            <span style={{ fontFamily: tokens.assistant, color: tokens.body }}>%</span>
+            <button
+              onClick={() => onSaveDiscount(asked)}
+              disabled={busy || bad || overCap || asked === current}
+              style={{ ...miniBtn, minHeight: 44, fontWeight: 800, background: busy || bad || overCap || asked === current ? "#fff" : tokens.accent, color: busy || bad || overCap || asked === current ? tokens.dim : "#fff", cursor: busy || bad || overCap || asked === current ? "not-allowed" : "pointer" }}
+            >
+              {busy ? "שומר…" : "שמירת ההנחה"}
+            </button>
+            <span style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>
+              {isManager ? "כמנהל אין לך תקרה" : `המקסימום שלך: ${myCap}%`}
+            </span>
+          </div>
+          {overCap && (
+            <p role="alert" style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C", marginTop: "0.35rem" }}>
+              מעל התקרה שלך ({myCap}%). גם אם תנסו לשלוח — השרת יסרב.
+            </p>
+          )}
+          <p style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, marginTop: "0.35rem" }}>
+            כרגע: {current}% · ההנחה חלה על כל הקטלוג ונרשמת ביומן עם השם שלכם.
+          </p>
+        </div>
+      ) : (
+        <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>
+          {person.role === "manager" ? "מנהל — אין הנחה קבועה." : "סוכן — אין הנחה קבועה."}
+        </p>
+      )}
+
+      {isManager && person.role !== "manager" && (
+        <div style={{ background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 12, padding: "0.7rem 0.9rem" }}>
+          <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", color: tokens.text, marginBottom: "0.4rem" }}>
+            הרשאת סוכן
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+            {person.role === "agent" ? (
+              <>
+                <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>מקסימום הנחה שהוא יכול לתת:</span>
+                <input
+                  type="number" inputMode="decimal" min={0} max={100} step="1"
+                  value={cap} onChange={(e) => setCap(e.target.value)}
+                  aria-label="תקרת ההנחה של הסוכן"
+                  style={{ width: 90, minHeight: 44, fontFamily: tokens.assistant, fontSize: "1rem", textAlign: "center", padding: "0.5rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text }}
+                />
+                <span style={{ fontFamily: tokens.assistant, color: tokens.body }}>%</span>
+                <button onClick={() => onSaveAgent("agent", Number(cap) || 0)} disabled={busy} style={{ ...miniBtn, minHeight: 44, fontWeight: 800 }}>
+                  שמירת התקרה
+                </button>
+                <button onClick={() => onSaveAgent("customer", Number(cap) || 0)} disabled={busy} style={{ ...miniBtn, minHeight: 44, color: "#C0143C", borderColor: "rgba(192,20,60,0.35)" }}>
+                  ביטול הרשאת סוכן
+                </button>
+              </>
+            ) : (
+              <>
+                <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>הפוך לסוכן עם תקרה של</span>
+                <input
+                  type="number" inputMode="decimal" min={0} max={100} step="1"
+                  value={cap} onChange={(e) => setCap(e.target.value)}
+                  aria-label="תקרת ההנחה של הסוכן"
+                  style={{ width: 90, minHeight: 44, fontFamily: tokens.assistant, fontSize: "1rem", textAlign: "center", padding: "0.5rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text }}
+                />
+                <span style={{ fontFamily: tokens.assistant, color: tokens.body }}>%</span>
+                <button onClick={() => onSaveAgent("agent", Number(cap) || 0)} disabled={busy} style={{ ...miniBtn, minHeight: 44, fontWeight: 800, background: tokens.accent, color: "#fff" }}>
+                  הפיכה לסוכן
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {msg && (
+        <p role="status" style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: msg.startsWith("נשמר") ? "#1A7A4D" : "#C0143C", margin: 0 }}>
+          {msg}
+        </p>
+      )}
+    </div>
   );
 }
 

@@ -15,6 +15,10 @@ type AuthValue = {
   profile: Profile | null;
   loading: boolean;
   isManager: boolean;
+  /** Sales agent: may set a customer's discount up to their OWN ceiling, and
+   *  nothing else. Deliberately NOT a weaker manager — every manager-only
+   *  screen keeps checking isManager. */
+  isAgent: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -24,6 +28,7 @@ const AuthContext = createContext<AuthValue>({
   profile: null,
   loading: true,
   isManager: false,
+  isAgent: false,
   refreshProfile: async () => {},
   signOut: async () => {},
 });
@@ -116,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profile,
     loading,
     isManager: profile?.role === "manager",
+    isAgent: profile?.role === "agent",
     refreshProfile: () => loadProfile(session?.user?.id),
     signOut: async () => {
       await supabase.auth.signOut();

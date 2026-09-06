@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../lib/auth";
+import { featureFlags } from "../../lib/featureFlags";
 import { tokens } from "../../lib/ui";
 import { getMinOrderTotal } from "../../lib/siteSettings";
 import { MIN_ORDER_FALLBACK, PHONE_DISPLAY } from "../../lib/config";
@@ -55,7 +56,7 @@ function Logo() {
 }
 
 export default function SiteHeader() {
-  const { session, isManager, signOut, loading } = useAuth();
+  const { session, isManager, signOut, loading, isAgent } = useAuth();
   const router = useRouter();
 
   // The minimum shown in the top strip must be the SAME number the cart
@@ -187,6 +188,12 @@ export default function SiteHeader() {
               : <Link href="/view" style={navLink}>קטלוג</Link>}
             {session && <Link href="/account" style={navLink}>ההזמנות שלי</Link>}
             {session && isManager && <Link href="/admin" style={{ ...navLink, color: tokens.accent }}>ניהול</Link>}
+            {/* An agent gets ONE link, straight to the only screen they may use.
+                They are not shown /admin at all — it is manager-only and would
+                just bounce them back to the catalogue. */}
+            {session && !isManager && isAgent && featureFlags.ff_agent_discounts && (
+              <Link href="/admin/customers" style={{ ...navLink, color: tokens.accent }}>לקוחות</Link>
+            )}
 
             {loading ? null : session ? (
               <button
