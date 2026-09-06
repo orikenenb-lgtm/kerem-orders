@@ -311,6 +311,29 @@ type SyncRun = {
 };
 
 // Relative time in plain Hebrew: "לפני 5 דקות", "לפני שעתיים", "לפני יומיים".
+function dateTimeHe(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${d.toLocaleDateString("he-IL")} ${d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/** One readable line from the watchdog's summary. Deliberately names the three
+ *  kinds of drift separately: "missing" and "extra" mean the catalogue is the
+ *  wrong SIZE, while a field difference means a product is on the site with the
+ *  wrong price or name — a different problem with a different urgency. */
+function auditLine(sum: Record<string, unknown> | null | undefined): string {
+  if (!sum) return "";
+  if (typeof sum.error === "string") return String(sum.error).slice(0, 140);
+  const n = (k: string) => Number(sum[k] ?? 0) || 0;
+  const hid = (sum.hidden_on_purpose ?? {}) as Record<string, number>;
+  const hidden = (Number(hid.by_product) || 0) + (Number(hid.by_group) || 0);
+  const head = `${n("rivhit_sellable").toLocaleString("he-IL")} פריטים למכירה ברווחית · ${n("site_active").toLocaleString("he-IL")} באתר`;
+  const tail = hidden > 0 ? ` · ${hidden.toLocaleString("he-IL")} הוסתרו על ידכם` : "";
+  if (sum.in_sync === true) return head + tail;
+  return `${head}${tail} · חסרים ${n("missing").toLocaleString("he-IL")}, עודפים ${n("extra").toLocaleString("he-IL")}, שדות שונים ${n("field_diffs").toLocaleString("he-IL")}`;
+}
+
 function heAgo(iso: string, now: number): string {
   const min = Math.floor(Math.max(0, now - new Date(iso).getTime()) / 60000);
   if (min < 1) return "לפני פחות מדקה";
@@ -397,6 +420,11 @@ function ProductsTab() {
   const [count, setCount] = useState(0);
   const [busy, setBusy] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  // The watchdog's verdict. The sync reporting "done" only means it finished;
+  // this is the separate check that the SITE actually equals Rivhit, field by
+  // field, and it is the number worth putting on screen.
+  const [audit, setAudit] = useState<{ checked_at: string; status: string; differences: number | null; summary: Record<string, unknown> } | null>(null);
+  const [auditing, setAuditing] = useState(false);
   const [runs, setRuns] = useState<SyncRun[]>([]);
   const [msg, setMsg] = useState("");
   // Load errors get their own state (separate from sync messages) so a stale
@@ -406,6 +434,19 @@ function ProductsTab() {
   // A once-a-minute tick: relative times ("לפני X דקות") stay fresh, and the
   // runs list refreshes so server-side (cron) syncs show up while the tab is open.
   const [now, setNow] = useState(() => Date.now());
+
+  const loadAudit = useCallback(async () => {
+    const { data } = await supabase.rpc("latest_sync_audit");
+    const row = Array.isArray(data) ? data[0] : data;
+    if (row) setAudit(row);
+  }, []);
+
+  const runAudit = async () => {
+    setAuditing(true);
+    await supabase.functions.invoke("rivhit-audit", { body: {} });
+    await loadAudit();
+    setAuditing(false);
+  };
 
   const loadRuns = useCallback(async () => {
     const { data } = await supabase.from("rivhit_sync_runs").select("*").order("created_at", { ascending: false }).limit(5);
@@ -440,6 +481,7 @@ function ProductsTab() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadRuns(); }, [loadRuns]);
+  useEffect(() => { loadAudit(); }, [loadAudit]);
 
   // ---- packaging editor helpers ----
   const toggleSelect = useCallback((id: string) => {
@@ -550,6 +592,29 @@ function ProductsTab() {
             <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>מסונכרן מרווחית (קריאה בלבד) — לא משנה דבר ברווחית.</div>
           </div>
           <button onClick={runSync} disabled={syncing} style={solidBtnA(syncing)}>{syncing ? "מעדכן…" : "עדכן עכשיו"}</button>
+        </div>
+        {/* Sync HEALTH, which is a different question from "did the sync run".
+            Every hour a watchdog compares all ~8,950 Rivhit items against the
+            site field by field — name, price, מק״ט, ברקוד, קטגוריה, קבוצה,
+            מלאי — and this is its verdict. Products the owner hid on purpose
+            are not counted as drift. */}
+        <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+          <div style={{ minWidth: 200, flex: 1 }}>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: audit?.status === "in_sync" ? "#1A7A4D" : audit?.status === "drift" ? "#C0143C" : tokens.text }}>
+              {audit?.status === "in_sync" && "✓ האתר תואם לרווחית ב-100%"}
+              {audit?.status === "drift" && `⚠ ${Number(audit.differences ?? 0).toLocaleString("he-IL")} הבדלים בין רווחית לאתר`}
+              {audit?.status === "error" && "⚠ בדיקת ההתאמה נכשלה"}
+              {!audit && "בדיקת ההתאמה לרווחית"}
+            </div>
+            <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>
+              {audit
+                ? `נבדק ${dateTimeHe(audit.checked_at)} · ${auditLine(audit.summary)}`
+                : "משווה כל פריט ברווחית מול האתר — שם, מחיר, מק״ט, ברקוד, קטגוריה ומלאי. רץ אוטומטית כל שעה."}
+            </div>
+          </div>
+          <button onClick={runAudit} disabled={auditing} style={{ ...ghostBtn, whiteSpace: "nowrap" }}>
+            {auditing ? "בודק…" : "בדיקה עכשיו"}
+          </button>
         </div>
         <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
           <div>

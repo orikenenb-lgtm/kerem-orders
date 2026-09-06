@@ -371,3 +371,67 @@ on conflict (group_id) do nothing;
 -- Verified afterwards on production: anon_can_call = false on all six, and the
 -- public catalogue (catalog_public / catalog_public_categories) still works for
 -- a logged-out visitor, which is the thing that must NOT break.
+
+-- ---------------------------------------------------------------------------
+-- RLS: products SELECT must respect is_active.
+-- Deployed as `products_select_must_respect_is_active`. Rehearsed on staging.
+--
+-- Found by a parallel read-only audit and then REPRODUCED before acting: with
+-- the old policy a signed-in customer read 5 inactive rows on staging; after the
+-- fix, 0. On production the same query went from 6,437 rows to 0.
+--
+-- The policy was `auth.uid() IS NOT NULL` — no is_active term, no RESTRICTIVE
+-- policy to narrow it. Every catalogue RPC filters is_active correctly, and an
+-- anonymous visitor saw nothing (no `sub` claim), but PostgREST exposes the
+-- TABLE as well as the functions:
+--   GET /rest/v1/products?is_active=eq.false&select=*
+-- with any customer's JWT returned every hidden product with its name, מק״ט,
+-- ברקוד, price, stock and picture. The hide feature was effective against the
+-- UI and against logged-out visitors, and not against a logged-in customer.
+drop policy if exists products_select_auth on public.products;
+create policy products_select_auth on public.products
+  for select using (is_active or is_manager());
+
+-- ---------------------------------------------------------------------------
+-- The sync watchdog: rivhit_audit_runs + latest_sync_audit() + two cron jobs.
+-- Deployed as `rivhit_audit_runs_and_schedule`, driven by the rivhit-audit edge
+-- function, which compares EVERY Rivhit item against the site field by field
+-- (name, price, מק״ט, ברקוד, category, group, stock) and records a verdict.
+-- Products the owner hid on purpose are excluded from drift — they are his
+-- decision, not an error. It never repairs anything on its own: a watchdog that
+-- silently edits the live catalogue turns a bad reading into a bad shop.
+--
+-- First run, 2026-09-06: 8,954 Rivhit items, 974 sellable, 973 live on the site,
+-- 1 hidden on purpose. missing 0 · extra 0 · field differences 0 · in_sync true.
+
+create table if not exists public.rivhit_audit_runs (
+  id          uuid primary key default gen_random_uuid(),
+  started_at  timestamptz not null default now(),
+  finished_at timestamptz,
+  status      text not null check (status in ('in_sync','drift','error')),
+  differences integer,
+  summary     jsonb,
+  created_at  timestamptz not null default now()
+);
+create index if not exists rivhit_audit_runs_created_idx
+  on public.rivhit_audit_runs (created_at desc);
+alter table public.rivhit_audit_runs enable row level security;
+drop policy if exists rivhit_audit_runs_select on public.rivhit_audit_runs;
+create policy rivhit_audit_runs_select on public.rivhit_audit_runs
+  for select using (is_manager());
+
+create or replace function public.latest_sync_audit()
+returns table(checked_at timestamptz, status text, differences integer, summary jsonb)
+language plpgsql stable security definer set search_path to 'public'
+as $$
+begin
+  if not is_manager() then raise exception 'להנהלה בלבד'; end if;
+  return query
+    select r.finished_at, r.status, r.differences, r.summary
+    from public.rivhit_audit_runs r order by r.created_at desc limit 1;
+end;
+$$;
+revoke execute on function public.latest_sync_audit() from anon, public;
+grant execute on function public.latest_sync_audit() to authenticated;
+
+-- cron: audit hourly at :08 (clear of the :00/:15/:30/:45 sync), prune at 90 days.
