@@ -44,3 +44,10 @@ kerem-*.sql
 db-dump*.sql
 *.dump
 *.pgdump
+
+# Playwright output. landing/.gitignore already ignores these inside landing/,
+# but a run started from the REPO ROOT (a mistyped cd) drops them here instead,
+# where nothing covered them. Test output is a build artifact and must never be
+# source-controlled.
+test-results/
+playwright-report/
