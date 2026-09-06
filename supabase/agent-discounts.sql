@@ -248,3 +248,106 @@ revoke all on function public.hidden_products() from public;
 grant execute on function public.set_product_hidden(uuid, boolean) to authenticated;
 grant execute on function public.set_category_hidden(text, boolean) to authenticated;
 grant execute on function public.hidden_products() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Owner-controlled Rivhit GROUP visibility — the permanent fix.
+-- Deployed to production as `owner_controlled_group_visibility`, rehearsed on
+-- kerem-staging first (8/8).
+--
+-- WHAT THE RIVHIT API ACTUALLY OFFERS, measured on 2026-09-06 with a temporary
+-- read-only probe (since retired):
+--   * Item.List returns 8,954 items, 7,410 of them priced. The DB holds exactly
+--     7,410 — the sync is faithful and holds nothing stale.
+--   * An item carries 21 fields: item_id, item_name, item_extended_description,
+--     item_part_num, barcode, item_group_id, storage_id, quantity, cost_nis,
+--     sale_nis, currency_id, cost_mtc, sale_mtc, picture_link, exempt_vat,
+--     avitem, location, is_serial, sapak, item_name_en, item_order.
+--     THERE IS NO deleted / inactive / discontinued FLAG.
+--   * Item.Groups returns 44 groups — including 999 ניגמרים, 9999 לא פעילים,
+--     31 מסמכים כרם and 1000-1006 — not the 22 the owner's price-list screen
+--     shows. Every "deleted" category is still there, with priced items in it.
+--
+-- So Rivhit cannot tell us what the owner stopped selling, and no amount of
+-- cleverness in the sync will change that. The owner decides, once, and the
+-- decision outlives every sync.
+--
+-- 999 and 9999 are seeded hidden. Neither has an active product today (999
+-- holds 6,260 inactive rows, 9999 holds 1), so this changes nothing now and
+-- stops a future price edit from leaking Rivhit's own housekeeping onto a shop
+-- front.
+
+create table if not exists public.catalog_hidden_groups (
+  group_id  integer primary key,
+  note      text,
+  hidden_by uuid references public.profiles(id) on delete set null,
+  hidden_at timestamptz not null default now()
+);
+alter table public.catalog_hidden_groups enable row level security;
+drop policy if exists catalog_hidden_groups_select on public.catalog_hidden_groups;
+create policy catalog_hidden_groups_select on public.catalog_hidden_groups
+  for select using (is_manager());
+
+-- Supersedes the earlier apply_manual_hide(): now covers per-product AND
+-- per-group hiding, still as one BEFORE trigger on products.
+create or replace function public.apply_manual_hide()
+returns trigger language plpgsql
+as $$
+begin
+  if new.hidden_manually
+     or (new.group_id is not null
+         and exists (select 1 from public.catalog_hidden_groups g where g.group_id = new.group_id))
+  then
+    new.is_active := false;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.set_group_hidden(p_group integer, p_hidden boolean)
+returns integer language plpgsql security definer set search_path to 'public'
+as $$
+declare n integer;
+begin
+  if not is_manager() then raise exception 'להנהלה בלבד'; end if;
+  if p_hidden then
+    insert into public.catalog_hidden_groups (group_id, hidden_by)
+    values (p_group, auth.uid())
+    on conflict (group_id) do update set hidden_by = excluded.hidden_by, hidden_at = now();
+    update public.products set is_active = false where group_id = p_group;
+  else
+    delete from public.catalog_hidden_groups where group_id = p_group;
+    update public.products
+       set is_active = true
+     where group_id = p_group
+       and not hidden_manually
+       and updated_at >= (now() - interval '2 hours');
+  end if;
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+create or replace function public.catalog_groups()
+returns table(group_id integer, name text, products bigint, active bigint, hidden boolean)
+language sql stable security definer set search_path to 'public'
+as $$
+  select p.group_id,
+         coalesce(max(p.category) filter (where coalesce(p.category,'') <> ''), '—') as name,
+         count(*)::bigint, count(*) filter (where p.is_active)::bigint,
+         (h.group_id is not null)
+  from public.products p
+  left join public.catalog_hidden_groups h on h.group_id = p.group_id
+  where p.group_id is not null
+  group by p.group_id, h.group_id
+  order by count(*) filter (where p.is_active) desc, p.group_id
+$$;
+
+revoke all on function public.set_group_hidden(integer, boolean) from public;
+revoke all on function public.catalog_groups() from public;
+grant execute on function public.set_group_hidden(integer, boolean) to authenticated;
+grant execute on function public.catalog_groups() to authenticated;
+
+insert into public.catalog_hidden_groups (group_id, note) values
+  (999,  'ניגמרים — קבוצת המלאי שנגמר ברווחית'),
+  (9999, 'לא פעילים — קבוצת הפריטים שהושבתו ברווחית')
+on conflict (group_id) do nothing;

@@ -25,6 +25,7 @@ import { normalizeHe } from "../../../lib/searchRank";
 
 type Row = { id: string; name: string; category: string | null; sku: string | null; price: number | string | null };
 type Cat = { category: string; n: number };
+type Group = { group_id: number; name: string; products: number; active: number; hidden: boolean };
 
 export default function HiddenAdminPage() {
   const router = useRouter();
@@ -32,6 +33,7 @@ export default function HiddenAdminPage() {
 
   const [cats, setCats] = useState<Cat[]>([]);
   const [hidden, setHidden] = useState<Row[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [found, setFound] = useState<Row[]>([]);
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
@@ -64,12 +66,13 @@ export default function HiddenAdminPage() {
   const load = useCallback(async (showSpinner = false) => {
     if (!isManager) return;
     if (showSpinner) setBusy(true);
-    const [c, h] = await Promise.all([
+    const [c, h, g] = await Promise.all([
       supabase.rpc("catalog_categories"),
       supabase.rpc("hidden_products"),
+      supabase.rpc("catalog_groups"),
     ]);
     if (!mountedRef.current) return;
-    if (c.error || h.error) {
+    if (c.error || h.error || g.error) {
       // Never render an empty screen that reads like "nothing is hidden" when
       // the truth is "we could not ask".
       setErr("טעינת הנתונים נכשלה. בדקו את החיבור ונסו שוב.");
@@ -79,6 +82,7 @@ export default function HiddenAdminPage() {
     setErr("");
     setCats((c.data as Cat[]) ?? []);
     setHidden((h.data as Row[]) ?? []);
+    setGroups((g.data as Group[]) ?? []);
     setBusy(false);
   }, [isManager]);
 
@@ -115,6 +119,20 @@ export default function HiddenAdminPage() {
     setMsg(hide ? `“${name}” הוסתר מהאתר.` : `“${name}” חזר לאתר.`);
     load();
     if (!hide) setFound((f) => f.slice());
+  };
+
+  // The permanent switch: a Rivhit GROUP the owner no longer sells. Hiding by
+  // group survives every sync AND catches products that arrive into the group
+  // later, which hiding one category name cannot do.
+  const hideGroup = async (gid: number, name: string, hide: boolean) => {
+    setWorking(`g${gid}`); setMsg("");
+    const { error } = await supabase.rpc("set_group_hidden", { p_group: gid, p_hidden: hide });
+    if (!mountedRef.current) return;
+    setWorking(null);
+    if (error) { setMsg(error.message || "הפעולה נכשלה."); return; }
+    setMsg(hide ? `קבוצה ${gid} (${name}) הוסתרה — היא לא תחזור גם אחרי עדכון.`
+                : `קבוצה ${gid} (${name}) חזרה לאתר.`);
+    load();
   };
 
   const hideCategory = async (category: string, hide: boolean) => {
@@ -209,6 +227,41 @@ export default function HiddenAdminPage() {
             </div>
           </section>
         )}
+
+        <section style={{ marginTop: "1.6rem" }}>
+          <h2 style={sectionH}>קבוצות רווחית ({groups.length.toLocaleString("he-IL")})</h2>
+          <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, marginBottom: "0.6rem" }}>
+            <strong>זה המקום החשוב.</strong> ברווחית יש 44 קבוצות, ולפריט אין שם שדה שאומר
+            ״נמחק״ — אז המערכת לא יכולה לנחש מה הורדתם מהמכירה. כאן אתם מחליטים פעם אחת אילו
+            קבוצות נמכרות באתר. קבוצה שתסתירו <strong>לא תחזור אחרי עדכון</strong>, וגם מוצר
+            חדש שייכנס אליה בעתיד לא יופיע.
+          </p>
+          <div style={{ display: "grid", gap: "0.5rem", marginBottom: "1.6rem" }}>
+            {groups.map((g) => (
+              <div key={g.group_id} style={{ ...rowBox, background: g.hidden ? "rgba(0,0,0,0.02)" : "#fff" }}>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <div style={{ fontFamily: tokens.assistant, fontWeight: 700, fontSize: "0.9rem", color: g.hidden ? tokens.dim : tokens.text }}>
+                    {g.name} <span style={{ fontWeight: 400, color: tokens.dim }}>· קבוצה {g.group_id}</span>
+                  </div>
+                  <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim }}>
+                    {g.hidden
+                      ? `מוסתרת · ${g.products.toLocaleString("he-IL")} מוצרים שמורים`
+                      : `${g.active.toLocaleString("he-IL")} באתר מתוך ${g.products.toLocaleString("he-IL")}`}
+                  </div>
+                </div>
+                <button
+                  onClick={() => hideGroup(g.group_id, g.name, !g.hidden)}
+                  disabled={working === `g${g.group_id}`}
+                  style={g.hidden
+                    ? { ...miniBtn, minHeight: 44, color: "#1A7A4D", borderColor: "rgba(37,199,126,0.45)" }
+                    : dangerBtn}
+                >
+                  {working === `g${g.group_id}` ? "…" : g.hidden ? "החזרה לאתר" : "הסתרת הקבוצה"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <section style={{ marginTop: "1.6rem" }}>
           <h2 style={sectionH}>קטגוריות באתר ({shownCats.length.toLocaleString("he-IL")})</h2>
