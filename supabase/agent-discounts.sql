@@ -351,3 +351,23 @@ insert into public.catalog_hidden_groups (group_id, note) values
   (999,  'ניגמרים — קבוצת המלאי שנגמר ברווחית'),
   (9999, 'לא פעילים — קבוצת הפריטים שהושבתו ברווחית')
 on conflict (group_id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Hardening found by a full security sweep (Supabase advisor + live ACL check),
+-- deployed as `harden_manager_only_rpcs_against_anon`. Rehearsed on staging 6/6.
+--
+-- `revoke all ... from public` was NOT enough. Supabase grants EXECUTE to the
+-- anon and authenticated ROLES by name, so revoking from `public` leaves those
+-- grants standing. Every function added this week was callable by anon.
+--
+--   * The set_* functions already refused anon internally, so nothing could be
+--     changed — but they should never have been callable.
+--   * hidden_products() and catalog_groups() had NO internal check and are
+--     SECURITY DEFINER: an anonymous GET on /rest/v1/rpc/hidden_products
+--     returned hidden product names, SKUs and prices. A real leak, introduced
+--     by me, closed two ways — revoked from anon AND now checking is_manager().
+--   * apply_manual_hide() had no pinned search_path.
+--
+-- Verified afterwards on production: anon_can_call = false on all six, and the
+-- public catalogue (catalog_public / catalog_public_categories) still works for
+-- a logged-out visitor, which is the thing that must NOT break.
