@@ -89,6 +89,16 @@ export const featureFlags = {
    *  No database change. Loaded lazily per customer, so the list stays fast as
    *  order volume grows. DEFAULT ON at the owner's request; rollback = false. */
   ff_admin_customer_orders: true,
+  /** A real delete control on each cart line: a 44px, red-tinted trash button
+   *  instead of the 32px grey "×" glyph ff_cart_v2 shipped, which was easy to
+   *  miss and easy to mis-tap. Because deleting a 120-unit line by accident is
+   *  destructive and the old control offered no way back, the removal is now
+   *  UNDOABLE — the removed line is held and one tap on "ביטול" restores it
+   *  exactly, same product, same quantity, same price.
+   *  It calls the SAME remove path the stepper already uses (quantity 0), so
+   *  nothing new writes to the cart. DEFAULT ON at the owner's request;
+   *  rollback = false, which returns the small "×". */
+  ff_cart_delete_v2: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;

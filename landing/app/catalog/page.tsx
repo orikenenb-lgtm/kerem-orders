@@ -83,6 +83,8 @@ const PRICE_BUCKETS: { key: string; label: string; lo?: number; hi?: number }[] 
 // 3B wave 4: clearer cart lines (per-line total + explicit remove). Drawer
 // presentation only — the submit/reconcile path is untouched.
 const ffCartV2 = featureFlags.ff_cart_v2;
+// A visible, undoable delete on each cart line. See lib/featureFlags.ts.
+const ffCartDelete = featureFlags.ff_cart_delete_v2;
 // 3B wave 5: mobile polish (safe-area, search keyboard, skeletons) and CSS-only
 // micro-motion. globals.css already kills all motion under prefers-reduced-motion.
 const ffMobile = featureFlags.ff_mobile_polish;
@@ -135,6 +137,12 @@ export default function CatalogPage() {
   const [priceBucket, setPriceBucket] = useState("all");
 
   const [cart, setCart] = useState<Cart>({});
+  // The last line deleted from the drawer, held so it can be put back exactly.
+  // Deleting is the one cart action with no inverse — the stepper can always be
+  // stepped the other way, but a removed line takes its quantity with it, and a
+  // wholesale line is often 120 units typed by hand. Nothing here is persisted:
+  // it lives for as long as the drawer is open.
+  const [undoLine, setUndoLine] = useState<{ id: string; line: CartLine } | null>(null);
   const [note, setNote] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
@@ -1075,7 +1083,7 @@ export default function CatalogPage() {
       </main>
 
       {itemCount > 0 && !cartOpen && (
-        <button ref={cartOpenerRef} onClick={() => setCartOpen(true)} aria-haspopup="dialog" style={{ position: "fixed", insetInlineStart: 20, bottom: ffMobile ? "calc(20px + env(safe-area-inset-bottom))" : 20, zIndex: 60, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "1rem 1.6rem", borderRadius: 999, boxShadow: "0 12px 30px rgba(138,63,252,0.35)", cursor: "pointer" }}>
+        <button ref={cartOpenerRef} onClick={() => { setUndoLine(null); setCartOpen(true); }} aria-haspopup="dialog" style={{ position: "fixed", insetInlineStart: 20, bottom: ffMobile ? "calc(20px + env(safe-area-inset-bottom))" : 20, zIndex: 60, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "1rem 1.6rem", borderRadius: 999, boxShadow: "0 12px 30px rgba(138,63,252,0.35)", cursor: "pointer" }}>
           🛒 העגלה ({itemCount}) · {ils(cartTotal)}
         </button>
       )}
@@ -1091,6 +1099,21 @@ export default function CatalogPage() {
                 "items sold out and were removed" explanation is still visible
                 even when the reconcile emptied the whole cart. */}
             {error && <div role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.88rem", marginBottom: "0.8rem" }}>{error}</div>}
+            {ffCartDelete && undoLine && (
+              <div role="status" style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", background: "rgba(26,23,48,0.05)", border: `1px solid ${tokens.border}`, borderRadius: 12, padding: "0.6rem 0.8rem", marginBottom: "0.8rem" }}>
+                <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, flex: 1, minWidth: 150 }}>
+                  “{undoLine.line.name}” נמחק מהעגלה.
+                </span>
+                <button
+                  onClick={() => { setCart((c) => ({ ...c, [undoLine.id]: undoLine.line })); setUndoLine(null); }}
+                  style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.82rem", color: "#fff", background: tokens.accent, border: "none", borderRadius: 999, padding: "0.5rem 1.1rem", minHeight: 44, cursor: "pointer", whiteSpace: "nowrap" }}
+                >
+                  ביטול המחיקה
+                </button>
+                <button onClick={() => setUndoLine(null)} aria-label="סגירת ההודעה"
+                  style={{ background: "none", border: "none", color: tokens.dim, fontSize: "1.2rem", lineHeight: 1, cursor: "pointer", minWidth: 44, minHeight: 44 }}>×</button>
+              </div>
+            )}
             {lines.length === 0 ? (
               <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>העגלה ריקה.</p>
             ) : (
@@ -1112,11 +1135,11 @@ export default function CatalogPage() {
                       });
                     };
                     return (
-                      <div key={l.id} style={{ display: "flex", gap: "0.6rem", alignItems: "center", borderBottom: `1px solid ${tokens.border}`, paddingBottom: "0.6rem" }}>
+                      <div key={l.id} style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: ffCartDelete ? "wrap" : undefined, borderBottom: `1px solid ${tokens.border}`, paddingBottom: "0.6rem" }}>
                         <div style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>
                           <ProductImage pictureLink={l.picture_link} name={l.name} />
                         </div>
-                        <div style={{ flex: 1 }}>
+                        <div style={{ flex: 1, minWidth: ffCartDelete ? 160 : undefined }}>
                           <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.88rem", color: tokens.text }}>{l.name}</div>
                           <div style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>{ils(l.price)} ליח׳</div>
                           {ffQty && lineStep > 1 && (
@@ -1126,13 +1149,28 @@ export default function CatalogPage() {
                             <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", color: tokens.text, marginTop: "0.15rem" }}>סה״כ: {ils(l.price * l.qty)}</div>
                           )}
                         </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginInlineStart: ffCartDelete ? "auto" : undefined }}>
                         <Stepper qty={l.qty} accent={tokens.accent} compact step={lineStep} label={l.name}
                           onCommitTyped={ffQty ? changeLineQty : undefined}
                           onChange={changeLineQty} />
-                        {ffCartV2 && (
+                        {ffCartDelete ? (
+                          <button
+                            onClick={() => { setUndoLine({ id: l.id, line: cart[l.id] }); changeLineQty(0); }}
+                            aria-label={`מחיקת ${l.name} מהעגלה`}
+                            title={`מחיקת ${l.name} מהעגלה`}
+                            style={{
+                              flexShrink: 0, minWidth: 44, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center",
+                              borderRadius: 10, border: "1px solid rgba(192,20,60,0.35)", background: "rgba(192,20,60,0.07)",
+                              color: "#C0143C", fontSize: "1.1rem", lineHeight: 1, cursor: "pointer",
+                            }}
+                          >
+                            🗑
+                          </button>
+                        ) : ffCartV2 ? (
                           <button onClick={() => changeLineQty(0)} aria-label={`הסרת ${l.name} מהעגלה`}
                             style={{ flexShrink: 0, minWidth: 32, minHeight: 32, border: "none", background: "none", color: tokens.dim, fontSize: "1.3rem", lineHeight: 1, cursor: "pointer" }}>×</button>
-                        )}
+                        ) : null}
+                        </div>
                       </div>
                     );
                   })}

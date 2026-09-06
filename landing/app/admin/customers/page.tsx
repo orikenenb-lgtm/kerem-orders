@@ -490,43 +490,49 @@ function CustomerOrders({
                 </button>
               </div>
 
+              {/* Deliberately NOT a table and NOT a sideways scroller. The first
+                  version was a 5-column table with minWidth 420 inside an
+                  overflow-x box: on a 390px phone that made the CARD wider than
+                  the screen, so product names were clipped on one side and the
+                  whole סה״כ column fell off the other — the owner saw "half and
+                  half". Stacked blocks cannot be cut at any width. */}
               {isOpen && (
-                <div style={{ marginTop: "0.6rem", overflowX: "auto" }}>
+                <div style={{ marginTop: "0.6rem" }}>
                   {lines.length === 0 ? (
                     <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, margin: 0 }}>
                       אין שורות שמורות להזמנה הזו.
                     </p>
                   ) : (
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: tokens.assistant, fontSize: "0.85rem", minWidth: 420 }}>
-                      <thead>
-                        <tr style={{ color: tokens.dim, textAlign: "start" }}>
-                          <th style={thStyle}>מוצר</th>
-                          <th style={thStyle}>מק״ט</th>
-                          <th style={{ ...thStyle, textAlign: "end" }}>כמות</th>
-                          <th style={{ ...thStyle, textAlign: "end" }}>מחיר ליח׳</th>
-                          <th style={{ ...thStyle, textAlign: "end" }}>סה״כ</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "0.45rem" }}>
                         {lines.map((it) => {
                           const q = Number(it.quantity) || 0;
                           const u = Number(it.unit_price) || 0;
                           return (
-                            <tr key={it.id} style={{ borderTop: `1px solid ${tokens.border}` }}>
-                              <td style={tdStyle}>{it.product_name || "—"}</td>
-                              <td style={{ ...tdStyle, direction: "ltr", textAlign: "right", color: tokens.dim }}>{it.product_sku || "—"}</td>
-                              <td style={{ ...tdStyle, textAlign: "end" }}>{q.toLocaleString("he-IL")}</td>
-                              <td style={{ ...tdStyle, textAlign: "end" }}>{ils(u)}</td>
-                              <td style={{ ...tdStyle, textAlign: "end", fontWeight: 700 }}>{ils(q * u)}</td>
-                            </tr>
+                            <li key={it.id} style={{ border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.5rem 0.6rem", background: tokens.surface }}>
+                              <div style={{ fontFamily: tokens.assistant, fontWeight: 700, fontSize: "0.88rem", color: tokens.text, lineHeight: 1.3, overflowWrap: "anywhere" }}>
+                                {it.product_name || "—"}
+                              </div>
+                              {it.product_sku && (
+                                <div style={{ fontFamily: tokens.assistant, fontSize: "0.75rem", color: tokens.dim, marginTop: "0.15rem" }}>
+                                  מק״ט <span dir="ltr">{it.product_sku}</span>
+                                </div>
+                              )}
+                              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "0.6rem", flexWrap: "wrap", marginTop: "0.3rem" }}>
+                                <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>
+                                  {q.toLocaleString("he-IL")} יח׳ × {ils(u)}
+                                </span>
+                                <strong style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", color: tokens.text }}>
+                                  {ils(q * u)}
+                                </strong>
+                              </div>
+                            </li>
                           );
                         })}
-                        <tr style={{ borderTop: `2px solid ${tokens.border}` }}>
-                          <td style={{ ...tdStyle, fontWeight: 800 }} colSpan={4}>סה״כ ההזמנה</td>
-                          <td style={{ ...tdStyle, textAlign: "end", fontWeight: 800 }}>{ils(stored)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
+                        <li style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "0.6rem", flexWrap: "wrap", borderTop: `2px solid ${tokens.border}`, paddingTop: "0.5rem", marginTop: "0.15rem" }}>
+                          <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.9rem", color: tokens.text }}>סה״כ ההזמנה</span>
+                          <strong style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: tokens.text }}>{ils(stored)}</strong>
+                        </li>
+                    </ul>
                   )}
                   {mismatch && (
                     <p style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: "#C0143C", marginTop: "0.5rem" }}>
@@ -552,9 +558,6 @@ function CustomerOrders({
     </div>
   );
 }
-
-const thStyle: React.CSSProperties = { fontWeight: 700, padding: "0.35rem 0.4rem", textAlign: "start", whiteSpace: "nowrap" };
-const tdStyle: React.CSSProperties = { padding: "0.4rem", verticalAlign: "top" };
 
 function Row({ label, value, ltr }: { label: string; value: string | null | undefined; ltr?: boolean }) {
   return (
