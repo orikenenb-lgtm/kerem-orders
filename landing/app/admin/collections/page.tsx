@@ -39,7 +39,11 @@ type ProductRow = BrowserProduct;
 // manager's global price for everyone (glob_price, from price_overrides).
 // Both are needed to tell the manager the truth: what the customer in this
 // link will actually see, and what he would have seen without the override.
-type MemberRow = ProductRow & { col_price: number | null; glob_price: number | null; barcode: string | null };
+type MemberRow = ProductRow & { col_price: number | null; glob_price: number | null; barcode: string | null;
+  /** Whether the customer can actually see this member. A product hidden or
+   *  discontinued after it was added stays in collection_products, but
+   *  catalog_collection filters it out of the link the customer opens. */
+  is_active?: boolean | null };
 
 // Unguessable link token: 12 chars, URL-safe, from the browser CSPRNG.
 function makeSlug(): string {
@@ -204,12 +208,17 @@ export default function CollectionsAdminPage() {
       // Select every column BrowserProduct declares — the rows are typed as
       // that shape, so a short select would leave price/category undefined at
       // runtime while the types claim otherwise.
-      .select("sort_order, price_override, products(id,name,sku,price,category,picture_link,rotation_override,barcode)")
+      // is_active comes along so the screen can say which members the customer
+      // cannot actually see. A product hidden after it was added stays in
+      // collection_products, but catalog_collection filters it out of the
+      // customer's link — so without this the manager's list and the Excel he
+      // hands a chain would disagree with the page he sent them.
+      .select("sort_order, price_override, products(id,name,sku,price,category,picture_link,rotation_override,barcode,is_active)")
       .eq("collection_id", collectionId)
       .order("sort_order", { ascending: true });
     if (!mountedRef.current) return;
     if (error) { setMembersBusy(false); setErr("טעינת מוצרי הקטלוג נכשלה."); return; }
-    type Joined = { sort_order: number; price_override: number | string | null; products: (ProductRow & { barcode?: string | null }) | null };
+    type Joined = { sort_order: number; price_override: number | string | null; products: (ProductRow & { barcode?: string | null; is_active?: boolean | null }) | null };
     const rows = ((data ?? []) as unknown as Joined[]).filter((r): r is Joined & { products: ProductRow } => !!r.products);
 
     // The manager's GLOBAL per-product prices (price_overrides, user_id null).
@@ -526,9 +535,14 @@ export default function CollectionsAdminPage() {
     setExporting("מכין…");
     try {
       const { exportCollectionExcel } = await import("../../../lib/collectionExcel");
+      // The customer's link shows only active members (catalog_collection
+      // filters on p.is_active), so the file handed to the same chain must
+      // match it. Skipping silently would be its own lie, hence the notice.
+      const visible = members.filter((m) => m.is_active !== false);
+      const skipped = members.length - visible.length;
       const { imagesFailed } = await exportCollectionExcel(
         openCollectionRow.name,
-        members.map((m) => ({
+        visible.map((m) => ({
           name: m.name,
           // barcode, then sku. In THIS catalogue the barcode lives in the sku
           // field: measured live, 0 of 1,010 active products have anything in
@@ -546,10 +560,13 @@ export default function CollectionsAdminPage() {
         })),
         (done, total) => setExporting(`${done}/${total} תמונות…`),
       );
+      const skippedNote = skipped > 0
+        ? ` ${skipped.toLocaleString("he-IL")} מוצרים לא נכללו כי הם לא מופיעים ללקוח.`
+        : "";
       setNotice(
-        imagesFailed > 0
-          ? `קובץ האקסל של "${openCollectionRow.name}" ירד — ${members.length.toLocaleString("he-IL")} מוצרים, אבל ${imagesFailed.toLocaleString("he-IL")} תמונות לא נטענו ונשארו ריקות.`
-          : `קובץ האקסל של "${openCollectionRow.name}" ירד — ${members.length.toLocaleString("he-IL")} מוצרים.`,
+        (imagesFailed > 0
+          ? `קובץ האקסל של "${openCollectionRow.name}" ירד — ${visible.length.toLocaleString("he-IL")} מוצרים, אבל ${imagesFailed.toLocaleString("he-IL")} תמונות לא נטענו ונשארו ריקות.`
+          : `קובץ האקסל של "${openCollectionRow.name}" ירד — ${visible.length.toLocaleString("he-IL")} מוצרים.`) + skippedNote,
       );
     } catch {
       setErr("יצירת קובץ האקסל נכשלה — נסו שוב.");
@@ -911,7 +928,14 @@ export default function CollectionsAdminPage() {
                               <ProductImage pictureLink={m.picture_link} name={m.name} width={480} rotation={m.rotation_override ?? 0} imgStyle={{ width: "100%", height: "100%", objectFit: "contain" }} />
                             </div>
                             <div style={{ flex: 1, minWidth: 140 }}>
-                              <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</div>
+                              <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {m.name}
+                                {m.is_active === false && (
+                                  <span style={{ marginInlineStart: "0.4rem", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.65rem", color: "#C0143C", background: "rgba(192,20,60,0.10)", border: "1px solid rgba(192,20,60,0.3)", borderRadius: 999, padding: "0.1rem 0.45rem", whiteSpace: "nowrap" }}>
+                                    לא מופיע ללקוח
+                                  </span>
+                                )}
+                              </div>
                               <div style={{ fontFamily: tokens.assistant, fontSize: "0.75rem", color: tokens.dim }}>
                                 מחיר רגיל: ₪{(m.glob_price ?? m.price).toLocaleString("he-IL")}
                                 {Number(c.discount_percent) > 0 && m.col_price == null ? ` · בקישור אחרי הנחה: ₪${effectivePrice(m).toLocaleString("he-IL")}` : ""}
