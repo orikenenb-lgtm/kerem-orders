@@ -535,8 +535,24 @@ export default function CollectionsAdminPage() {
   };
 
   // The rule row on the pricing screen. It only writes DRAFTS.
+  // ruleScope: "all", or one category name — the owner prices a chain's
+  // catalogue category by category (a different margin on branded goods than
+  // on spinners), so a rule can be aimed at one category and the next rule at
+  // another, and the drafts MERGE: applying to סביבונים never touches what a
+  // previous rule filled for מותגים. One save at the end covers all of them.
   const [ruleMode, setRuleMode] = useState<RuleMode>("discount");
   const [ruleValue, setRuleValue] = useState("");
+  const [ruleScope, setRuleScope] = useState("all");
+
+  // The categories actually present in THIS catalogue, with counts — the
+  // scope options. Computed from members, so a category with no member is
+  // never offered and the count is what the rule would touch.
+  const memberCats = (() => {
+    const m = new Map<string, number>();
+    for (const x of members) { const c = x.category || "ללא קטגוריה"; m.set(c, (m.get(c) ?? 0) + 1); }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  })();
+  const inScope = (m: MemberRow) => ruleScope === "all" || (m.category || "ללא קטגוריה") === ruleScope;
 
   const fillByRule = () => {
     const v = Number(ruleValue.trim().replace("٫", ".").replace(",", "."));
@@ -544,17 +560,22 @@ export default function CollectionsAdminPage() {
     if (ruleMode === "discount" && (v <= 0 || v >= 100)) { setErr("אחוז ההנחה חייב להיות בין 0 ל-100."); return; }
     if (ruleMode === "markup" && (v <= 0 || v > 1000)) { setErr("אחוז התוספת חייב להיות בין 0 ל-1000."); return; }
     if (ruleMode === "fixed" && (v <= 0 || v > 999999)) { setErr("מחיר קבוע חייב להיות גדול מאפס."); return; }
+    const targets = members.filter(inScope);
+    if (targets.length === 0) { setErr("אין מוצרים בקטגוריה הזאת בקטלוג."); return; }
     const next: Record<string, string> = {};
     let skipped = 0;
-    for (const m of members) {
+    for (const m of targets) {
       const p = priceByRule(ruleMode, v, m.glob_price ?? m.price);
       if (p == null) { skipped++; continue; }
       next[m.id] = String(p);
     }
     setErr("");
-    setPriceDrafts(next);
+    // Merge, never replace: a rule aimed at one category must leave the
+    // fields another rule (or the manager's hand) already filled alone.
+    setPriceDrafts((d) => ({ ...d, ...next }));
     const what = ruleMode === "discount" ? `הנחה של ${v}%` : ruleMode === "markup" ? `תוספת של ${v}%` : `מחיר קבוע ₪${v.toLocaleString("he-IL")}`;
-    setNotice(`${what} מולאה ב-${Object.keys(next).length.toLocaleString("he-IL")} שדות מהמחיר הרגיל${skipped > 0 ? ` (${skipped.toLocaleString("he-IL")} דולגו — יצא מחיר אפס)` : ""}. עוברים על הרשימה, מתקנים מה שצריך, ושומרים בכפתור למטה. עדיין לא נשמר כלום.`);
+    const where = ruleScope === "all" ? "" : ` בקטגוריה "${ruleScope}"`;
+    setNotice(`${what} מולאה ב-${Object.keys(next).length.toLocaleString("he-IL")} שדות${where} מהמחיר הרגיל${skipped > 0 ? ` (${skipped.toLocaleString("he-IL")} דולגו — יצא מחיר אפס)` : ""}. אפשר להחיל עכשיו כלל אחר על קטגוריה אחרת. עוברים על הרשימה, מתקנים מה שצריך, ושומרים בכפתור למטה. עדיין לא נשמר כלום.`);
   };
 
   const clearFill = () => {
@@ -1117,7 +1138,18 @@ export default function CollectionsAdminPage() {
                     )}
                     {ffBulk && (
                       <div role="group" aria-label="כלל מחיר לכל המוצרים" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.9rem", padding: "0.7rem 0.8rem", border: `1px solid ${tokens.border}`, borderRadius: 12, background: tokens.surface }}>
-                        <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.88rem", color: tokens.text, whiteSpace: "nowrap" }}>כלל לכולם:</span>
+                        <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.88rem", color: tokens.text, whiteSpace: "nowrap" }}>כלל:</span>
+                        <select
+                          aria-label="על אילו מוצרים"
+                          value={memberCats.some(([name]) => name === ruleScope) ? ruleScope : "all"}
+                          onChange={(e) => setRuleScope(e.target.value)}
+                          style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", padding: "0.45rem 0.5rem", borderRadius: 8, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, minHeight: 40, maxWidth: "100%" }}
+                        >
+                          <option value="all">כל המוצרים ({members.length.toLocaleString("he-IL")})</option>
+                          {memberCats.map(([name, n]) => (
+                            <option key={name} value={name}>{name} ({n.toLocaleString("he-IL")})</option>
+                          ))}
+                        </select>
                         <select
                           aria-label="סוג הכלל"
                           value={ruleMode}
@@ -1145,7 +1177,7 @@ export default function CollectionsAdminPage() {
                           <button onClick={clearFill} disabled={batchBusy} style={{ ...miniBtn, minHeight: 40, whiteSpace: "nowrap" }}>ניקוי המילוי</button>
                         )}
                         <span style={{ flexBasis: "100%", fontFamily: tokens.assistant, fontSize: "0.75rem", color: tokens.dim }}>
-                          הכלל רק ממלא את השדות למטה מהמחיר הרגיל של כל מוצר — אפשר לתקן כל מחיר ביד, ורק ״שמירת המחירים״ בכפתור למטה שומרת.
+                          הכלל רק ממלא את השדות למטה מהמחיר הרגיל של כל מוצר — לכל המוצרים או לקטגוריה אחת, ואפשר להחיל כלל אחר על כל קטגוריה בתורה. מתקנים כל מחיר ביד אם צריך, ורק ״שמירת המחירים״ בכפתור למטה שומרת.
                         </span>
                       </div>
                     )}
