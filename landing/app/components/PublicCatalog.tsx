@@ -1,5 +1,7 @@
 "use client";
 
+import { useGridDensity, gridColumns, GridDensityPicker } from "../../lib/gridDensity";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SiteHeader from "./SiteHeader";
 import SiteFooter from "./SiteFooter";
@@ -34,6 +36,8 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   const rpcName = showPrices ? "catalog_public_prices" : "catalog_public";
 
   const [input, setInput] = useState("");
+  // Products per row — the visitor's own choice, remembered per browser.
+  const [density, setDensity] = useGridDensity();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [products, setProducts] = useState<PublicProduct[]>([]);
@@ -222,6 +226,9 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
               })}
             </div>
           )}
+          <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "0.7rem" }}>
+            <GridDensityPicker value={density} onChange={setDensity} />
+          </div>
         </div>
 
         {loadingProducts && products.length === 0 ? (
@@ -242,7 +249,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                 🔎 לא מצאנו התאמה מדויקת ל־“{query}” — אלה המוצרים הכי דומים:
               </div>
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem", marginTop: "1rem" }}>
+            <div data-density={density} style={{ display: "grid", gridTemplateColumns: gridColumns(density), gap: "1rem", marginTop: "1rem" }}>
               {products.map((p, i) => {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
                 return (

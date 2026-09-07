@@ -1,5 +1,7 @@
 "use client";
 
+import { useGridDensity, gridColumns, GridDensityPicker } from "../../lib/gridDensity";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -133,6 +135,9 @@ export default function CatalogPage() {
   const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
   const [activeCat, setActiveCat] = useState("all");
   const [sort, setSort] = useState<"name" | "price_asc" | "price_desc">("name");
+  // Products per row — the customer's own choice, remembered per browser.
+  // "auto" is the pre-existing layout, so nothing moves until they pick.
+  const [density, setDensity] = useGridDensity();
   // 3B wave 3: selected price bucket key (see PRICE_BUCKETS). "all" = no filter.
   const [priceBucket, setPriceBucket] = useState("all");
 
@@ -854,7 +859,9 @@ export default function CatalogPage() {
           {/* Sorting applies while browsing; during a text search results are
               ranked by relevance, so the control is hidden then. */}
           {query.trim().length < 2 && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.7rem" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.7rem" }}>
+              <GridDensityPicker value={density} onChange={setDensity} />
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginInlineStart: "auto" }}>
               <label htmlFor="kt-sort" style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>מיון:</label>
               <select
                 id="kt-sort"
@@ -866,6 +873,7 @@ export default function CatalogPage() {
                 <option value="price_asc">מחיר: מהזול ליקר</option>
                 <option value="price_desc">מחיר: מהיקר לזול</option>
               </select>
+              </div>
             </div>
           )}
         </div>
@@ -875,7 +883,7 @@ export default function CatalogPage() {
             // Wave 5: skeleton cards instead of a bare line — the page looks like
             // the catalogue immediately instead of an empty screen. Decorative
             // only; the live region below still announces the load.
-            <div aria-busy="true" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem", marginTop: "1rem" }}>
+            <div aria-busy="true" data-density={density} style={{ display: "grid", gridTemplateColumns: gridColumns(density), gap: "1rem", marginTop: "1rem" }}>
               <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clipPath: "inset(50%)" }} role="status">טוען מוצרים…</span>
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} aria-hidden="true" style={{ border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -904,7 +912,7 @@ export default function CatalogPage() {
                 🔎 לא מצאנו התאמה מדויקת ל־“{query}” — אלה המוצרים הכי דומים:
               </div>
             )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem", marginTop: "1rem" }}>
+            <div data-density={density} style={{ display: "grid", gridTemplateColumns: gridColumns(density), gap: "1rem", marginTop: "1rem" }}>
               {products.map((p, i) => {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
                 const qty = cart[p.id]?.qty ?? 0;

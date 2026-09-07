@@ -85,3 +85,39 @@ body {
     transform: translateY(-2px);
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Products-per-row (ff_grid_density). Grids carry data-density="auto|2|3|4".
+
+   At three across on a 390px phone a card has ~80px of content. Measured:
+   the only thing that refused to fit was the catalogue's add-to-cart row
+   ("הוספה 📦 קרטון (288)", 114px), which widened the whole page by 5px.
+   These rules let that row wrap, forbid a card from ever growing past its
+   grid track, and break long unbreakable tokens (a 13-digit barcode) inside
+   the card instead of letting them push it. Scoped to dense grids only, so
+   "auto" and "2" render exactly as they always did.
+
+   !important is used only where the card sets the same property inline
+   (padding, gap, the name's font-size); CSS cannot beat an inline style
+   otherwise. Nothing here changes what is shown — only how tightly.
+   --------------------------------------------------------------------------- */
+[data-density="3"] .kt-card,
+[data-density="4"] .kt-card {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.6rem !important;
+  gap: 0.35rem !important;
+}
+[data-density="3"] .kt-card > *,
+[data-density="4"] .kt-card > * {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+[data-density="3"] .kt-card *,
+[data-density="4"] .kt-card * {
+  overflow-wrap: anywhere;
+}
+[data-density="3"] .kt-card h3,
+[data-density="4"] .kt-card h3 {
+  font-size: 0.82rem !important;
+}

@@ -107,6 +107,14 @@ export const featureFlags = {
    *  the screens but does not weaken the rule. Every change is written to
    *  discount_changes with who did it. DEFAULT ON at the owner's request. */
   ff_agent_discounts: true,
+  /** How many products per row: a "בשורה: אוטו · 2 · 3 · 4" control on every
+   *  customer catalogue (/catalog, /view, /prices, /collection), remembered per
+   *  browser. Presentation only — it sets grid-template-columns and nothing
+   *  else. "אוטו" is the pre-existing layout verbatim and the default, so a
+   *  customer who never touches it sees no change; turning the flag off hides
+   *  the control and returns everyone to that layout. See lib/gridDensity.tsx.
+   *  DEFAULT ON at the owner's request. */
+  ff_grid_density: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;

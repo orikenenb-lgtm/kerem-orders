@@ -1,5 +1,7 @@
 "use client";
 
+import { useGridDensity, gridColumns, GridDensityPicker } from "../../lib/gridDensity";
+
 // Customer-specific curated catalog ("קישור לרשת"): /collection/?k=<slug>
 // shows ONLY the products the manager put into that collection — built for
 // a chain that starts with ~50 items and grows over time.
@@ -44,6 +46,8 @@ function CollectionCatalog() {
   const slug = (params.get("k") || "").trim();
 
   const [input, setInput] = useState("");
+  // Products per row — the visitor's own choice, remembered per browser.
+  const [density, setDensity] = useGridDensity();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [products, setProducts] = useState<CollectionProduct[]>([]);
@@ -178,6 +182,9 @@ function CollectionCatalog() {
           onChange={(e) => setInput(e.target.value)}
           style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
         />
+        <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "0.7rem" }}>
+          <GridDensityPicker value={density} onChange={setDensity} />
+        </div>
       </div>
 
       {loading && products.length === 0 ? (
@@ -195,7 +202,7 @@ function CollectionCatalog() {
         </p>
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem", marginTop: "1rem" }}>
+          <div data-density={density} style={{ display: "grid", gridTemplateColumns: gridColumns(density), gap: "1rem", marginTop: "1rem" }}>
             {products.map((p) => (
               <button
                 key={p.id}

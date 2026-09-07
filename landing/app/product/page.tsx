@@ -1,5 +1,7 @@
 "use client";
 
+import { useGridDensity, gridColumns } from "../../lib/gridDensity";
+
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -71,6 +73,9 @@ function ProductDetail() {
   const [product, setProduct] = useState<Product | null>(null);
   const [related, setRelated] = useState<Product[]>([]);
   const [busy, setBusy] = useState(true);
+  // The "similar products" strip follows the same per-row choice the customer
+  // made on the catalogue, so the two screens never disagree about density.
+  const [density] = useGridDensity();
   const [notFound, setNotFound] = useState(false);
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(0);
@@ -243,7 +248,7 @@ function ProductDetail() {
       {related.length > 0 && (
         <section style={{ marginTop: "3.5rem" }}>
           <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.3rem", color: tokens.text, marginBottom: "1.2rem" }}>מוצרים דומים</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(clamp(132px, 46%, 150px), 1fr))", gap: "1rem" }}>
+          <div data-density={density} style={{ display: "grid", gridTemplateColumns: gridColumns(density), gap: "1rem" }}>
             {related.map((r) => {
               const rPrice = resolvePrice(r.id, r.price, priceMap, discount);
               return (
