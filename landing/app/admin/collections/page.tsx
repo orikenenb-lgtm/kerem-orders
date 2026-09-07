@@ -13,11 +13,51 @@ import Link from "next/link";
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
 import ProductImage from "../../components/ProductImage";
-import AdminProductBrowser, { type BrowserProduct } from "../components/AdminProductBrowser";
+import AdminProductBrowser, { fetchAllMatchingIds, type BrowserProduct, type BrowserFilter } from "../components/AdminProductBrowser";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
 import { tokens } from "../../../lib/ui";
 import { rivhitImg } from "../../../lib/images";
+import { featureFlags } from "../../../lib/featureFlags";
+
+// "Everything at once": add all the products the browser is showing in one
+// click, and fill every price in the pricing screen from one rule. Both are
+// the owner's ask — building a 856-product catalogue one click at a time, and
+// then pricing it one field at a time, is the workflow this replaces.
+const ffBulk = featureFlags.ff_collection_bulk;
+
+// Rows per write. PostgREST accepts far more, but a chunk this size keeps each
+// request small enough to fail cleanly and be reported by name, and 856
+// products is nine requests, not one for each.
+const WRITE_CHUNK = 100;
+// Ids per read filter. An `in.(…)` list travels in the URL; 150 uuids is
+// ~6KB, comfortably under every proxy's URL limit, where 856 would not be.
+const READ_CHUNK = 150;
+
+function chunks<T>(xs: T[], n: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
+  return out;
+}
+
+// One rule, applied to every product's REGULAR price (the manager's global
+// price when one exists, else the Rivhit list price — the same base the
+// pricing screen prints as "מחיר רגיל"). The result lands in the drafts, not
+// the database: the manager still sees every number, can fix any of them by
+// hand, and saves once. The collection-wide discount is deliberately not part
+// of the base — a custom price is final and that discount never applies to it,
+// so basing the rule on an already-discounted number would double-discount.
+type RuleMode = "discount" | "markup" | "fixed";
+function priceByRule(mode: RuleMode, value: number, regular: number): number | null {
+  if (!Number.isFinite(value)) return null;
+  let p: number;
+  if (mode === "fixed") p = value;
+  else if (mode === "discount") { if (value <= 0 || value >= 100) return null; p = regular * (100 - value) / 100; }
+  else { if (value <= 0 || value > 1000) return null; p = regular * (100 + value) / 100; }
+  p = Math.round(p * 100) / 100;
+  if (p <= 0 || p > 999999) return null;
+  return p;
+}
 
 type Collection = {
   id: string;
@@ -203,37 +243,50 @@ export default function CollectionsAdminPage() {
 
   const loadMembers = useCallback(async (collectionId: string) => {
     setMembersBusy(true);
-    const { data, error } = await supabase
-      .from("collection_products")
-      // Select every column BrowserProduct declares — the rows are typed as
-      // that shape, so a short select would leave price/category undefined at
-      // runtime while the types claim otherwise.
-      // is_active comes along so the screen can say which members the customer
-      // cannot actually see. A product hidden after it was added stays in
-      // collection_products, but catalog_collection filters it out of the
-      // customer's link — so without this the manager's list and the Excel he
-      // hands a chain would disagree with the page he sent them.
-      .select("sort_order, price_override, products(id,name,sku,price,category,picture_link,rotation_override,barcode,is_active)")
-      .eq("collection_id", collectionId)
-      .order("sort_order", { ascending: true });
-    if (!mountedRef.current) return;
-    if (error) { setMembersBusy(false); setErr("טעינת מוצרי הקטלוג נכשלה."); return; }
     type Joined = { sort_order: number; price_override: number | string | null; products: (ProductRow & { barcode?: string | null; is_active?: boolean | null }) | null };
-    const rows = ((data ?? []) as unknown as Joined[]).filter((r): r is Joined & { products: ProductRow } => !!r.products);
+    // Pages of 1,000 — PostgREST's row cap. A catalogue used to be 50 products
+    // and one request; "add everything" makes 856 (and growing) ordinary, and
+    // a silently truncated member list would hide products from the manager
+    // that the customer's link still shows.
+    const STEP = 1000;
+    const raw: Joined[] = [];
+    for (let from = 0; ; from += STEP) {
+      const { data, error } = await supabase
+        .from("collection_products")
+        // Select every column BrowserProduct declares — the rows are typed as
+        // that shape, so a short select would leave price/category undefined at
+        // runtime while the types claim otherwise.
+        // is_active comes along so the screen can say which members the customer
+        // cannot actually see. A product hidden after it was added stays in
+        // collection_products, but catalog_collection filters it out of the
+        // customer's link — so without this the manager's list and the Excel he
+        // hands a chain would disagree with the page he sent them.
+        .select("sort_order, price_override, products(id,name,sku,price,category,picture_link,rotation_override,barcode,is_active)")
+        .eq("collection_id", collectionId)
+        .order("sort_order", { ascending: true })
+        .order("product_id", { ascending: true })
+        .range(from, from + STEP - 1);
+      if (!mountedRef.current) return;
+      if (error) { setMembersBusy(false); setErr("טעינת מוצרי הקטלוג נכשלה."); return; }
+      const page = (data ?? []) as unknown as Joined[];
+      raw.push(...page);
+      if (page.length < STEP) break;
+    }
+    const rows = raw.filter((r): r is Joined & { products: ProductRow } => !!r.products);
 
     // The manager's GLOBAL per-product prices (price_overrides, user_id null).
     // Without them the "regular price" shown next to the custom-price editor
     // would be the raw Rivhit price — a number the customer never sees when a
     // global override exists, which makes the comparison a lie exactly where
-    // the manager is deciding a price. One extra query, members only.
+    // the manager is deciding a price. Members only, in URL-sized chunks.
     const ids = rows.map((r) => r.products.id);
     const globs = new Map<string, number>();
-    if (ids.length > 0) {
+    for (const part of chunks(ids, READ_CHUNK)) {
       const { data: po } = await supabase
         .from("price_overrides")
         .select("product_id, price")
         .is("user_id", null)
-        .in("product_id", ids);
+        .in("product_id", part);
       for (const o of (po ?? []) as { product_id: string; price: number | string }[]) {
         globs.set(o.product_id, Number(o.price));
       }
@@ -380,6 +433,136 @@ export default function CollectionsAdminPage() {
     loadMembers(openId);
   };
 
+  // ---- everything at once ----------------------------------------------------
+  // bulkBusy is the progress text on the button while the add runs (null =
+  // idle); lastBulk remembers exactly which rows the LAST bulk add inserted
+  // so "ביטול" can take back precisely those — never a product that was in
+  // the catalogue before, never one that has since been priced by hand.
+  const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+  const [lastBulk, setLastBulk] = useState<{ collectionId: string; ids: string[] } | null>(null);
+
+  const addAllShown = async (f: BrowserFilter) => {
+    const col = collections.find((c) => c.id === openId);
+    if (!openId || bulkBusy || !col) return;
+    const scope = f.query.trim()
+      ? `שתואמים את החיפוש "${f.query.trim()}"`
+      : f.category !== "all" ? `בקטגוריה "${f.category}"` : "באתר";
+    if (!window.confirm(`להוסיף את כל ${f.total.toLocaleString("he-IL")} המוצרים ${scope} לקטלוג "${col.name}"?\nמוצרים שכבר בקטלוג לא ישתנו, והמחירים המותאמים שלהם נשארים.`)) return;
+    setErr("");
+    setBulkBusy("אוסף…");
+    const collectionId = openId;
+    let ids: string[];
+    try {
+      ids = await fetchAllMatchingIds(f.query, f.category);
+    } catch {
+      if (mountedRef.current) { setBulkBusy(null); setErr("איסוף המוצרים נכשל — לא נוסף כלום."); }
+      return;
+    }
+    if (!mountedRef.current) return;
+    const have = new Set(members.map((m) => m.id));
+    const fresh = ids.filter((id) => !have.has(id));
+    if (fresh.length === 0) {
+      setBulkBusy(null);
+      setNotice("כל המוצרים האלה כבר בקטלוג.");
+      return;
+    }
+    // Appended after the existing members, in the grid's order. Insert-only:
+    // ignoreDuplicates means a row that appeared meanwhile (another tab, a
+    // second manager) is left exactly as it is, price included.
+    const rows = fresh.map((id, i) => ({ collection_id: collectionId, product_id: id, sort_order: members.length + i }));
+    const added: string[] = [];
+    let failed = false;
+    for (const part of chunks(rows, WRITE_CHUNK)) {
+      setBulkBusy(`מוסיף ${added.length.toLocaleString("he-IL")}/${fresh.length.toLocaleString("he-IL")}…`);
+      const { data, error } = await supabase
+        .from("collection_products")
+        .upsert(part, { onConflict: "collection_id,product_id", ignoreDuplicates: true })
+        .select("product_id");
+      if (!mountedRef.current) return;
+      if (error) { failed = true; break; }
+      for (const r of (data ?? []) as { product_id: string }[]) added.push(r.product_id);
+    }
+    setBulkBusy(null);
+    if (added.length > 0) setLastBulk({ collectionId, ids: added });
+    if (failed) {
+      setErr(added.length === 0
+        ? "ההוספה נכשלה — לא נוסף כלום."
+        : `נוספו ${added.length.toLocaleString("he-IL")} מתוך ${fresh.length.toLocaleString("he-IL")} ואז ההוספה נכשלה. אפשר ללחוץ שוב — מה שכבר נוסף לא יוכפל.`);
+    } else {
+      setErr("");
+      setNotice(`נוספו ${added.length.toLocaleString("he-IL")} מוצרים לקטלוג "${col.name}". עכשיו אפשר לעבור ל״שינוי מחירים״ ולתמחר את כולם בבת אחת.`);
+    }
+    loadCollections();
+    loadMembers(collectionId);
+  };
+
+  // Takes back the last bulk add and nothing else: the delete is filtered to
+  // this collection AND to the exact ids that add inserted. Those rows were
+  // created seconds ago with no custom price, so nothing the manager typed can
+  // be lost. Any price he set on one of them since is the one thing that
+  // would be — so the confirm says so.
+  const undoBulkAdd = async () => {
+    if (!lastBulk || bulkBusy || lastBulk.collectionId !== openId) return;
+    const priced = members.filter((m) => lastBulk.ids.includes(m.id) && m.col_price != null).length;
+    const warn = priced > 0 ? `\nשים לב: ל-${priced.toLocaleString("he-IL")} מהם כבר נקבע מחיר מותאם — הוא יימחק איתם.` : "";
+    if (!window.confirm(`להסיר מהקטלוג את ${lastBulk.ids.length.toLocaleString("he-IL")} המוצרים שנוספו עכשיו?${warn}`)) return;
+    setErr("");
+    setBulkBusy("מסיר…");
+    const collectionId = lastBulk.collectionId;
+    let removed = 0;
+    let failed = false;
+    for (const part of chunks(lastBulk.ids, READ_CHUNK)) {
+      const { data, error } = await supabase
+        .from("collection_products")
+        .delete()
+        .eq("collection_id", collectionId)
+        .in("product_id", part)
+        .select("product_id");
+      if (!mountedRef.current) return;
+      if (error) { failed = true; break; }
+      removed += (data ?? []).length;
+    }
+    setBulkBusy(null);
+    if (failed) {
+      setErr(removed === 0 ? "ההסרה נכשלה — הקטלוג לא השתנה." : `הוסרו ${removed.toLocaleString("he-IL")} ואז ההסרה נכשלה — אפשר ללחוץ שוב.`);
+      setLastBulk({ collectionId, ids: lastBulk.ids.slice(removed) });
+    } else {
+      setLastBulk(null);
+      setNotice(`הוסרו ${removed.toLocaleString("he-IL")} מוצרים — הקטלוג חזר למה שהיה לפני ההוספה.`);
+    }
+    loadCollections();
+    loadMembers(collectionId);
+  };
+
+  // The rule row on the pricing screen. It only writes DRAFTS.
+  const [ruleMode, setRuleMode] = useState<RuleMode>("discount");
+  const [ruleValue, setRuleValue] = useState("");
+
+  const fillByRule = () => {
+    const v = Number(ruleValue.trim().replace("٫", ".").replace(",", "."));
+    if (ruleValue.trim() === "" || !Number.isFinite(v)) { setErr("צריך מספר בשדה הכלל — למשל 10."); return; }
+    if (ruleMode === "discount" && (v <= 0 || v >= 100)) { setErr("אחוז ההנחה חייב להיות בין 0 ל-100."); return; }
+    if (ruleMode === "markup" && (v <= 0 || v > 1000)) { setErr("אחוז התוספת חייב להיות בין 0 ל-1000."); return; }
+    if (ruleMode === "fixed" && (v <= 0 || v > 999999)) { setErr("מחיר קבוע חייב להיות גדול מאפס."); return; }
+    const next: Record<string, string> = {};
+    let skipped = 0;
+    for (const m of members) {
+      const p = priceByRule(ruleMode, v, m.glob_price ?? m.price);
+      if (p == null) { skipped++; continue; }
+      next[m.id] = String(p);
+    }
+    setErr("");
+    setPriceDrafts(next);
+    const what = ruleMode === "discount" ? `הנחה של ${v}%` : ruleMode === "markup" ? `תוספת של ${v}%` : `מחיר קבוע ₪${v.toLocaleString("he-IL")}`;
+    setNotice(`${what} מולאה ב-${Object.keys(next).length.toLocaleString("he-IL")} שדות מהמחיר הרגיל${skipped > 0 ? ` (${skipped.toLocaleString("he-IL")} דולגו — יצא מחיר אפס)` : ""}. עוברים על הרשימה, מתקנים מה שצריך, ושומרים בכפתור למטה. עדיין לא נשמר כלום.`);
+  };
+
+  const clearFill = () => {
+    if (changedCount > 0 && !window.confirm(`למחוק ${changedCount.toLocaleString("he-IL")} שינויים שלא נשמרו ולחזור למחירים השמורים?`)) return;
+    setPriceDrafts({});
+    setNotice("");
+  };
+
   const removeProduct = async (p: ProductRow) => {
     if (!openId) return;
     const { error } = await supabase
@@ -484,21 +667,34 @@ export default function CollectionsAdminPage() {
     setBatchBusy(true);
     let saved = 0;
     const failed: string[] = [];
-    // Sequential on purpose: tens of rows at most, and one clear failure
-    // report beats a burst of racing PATCHes.
-    for (const { m, value } of changes) {
-      const okWrite = await writeColPrice(m.id, value);
+    const collectionId = openId as string;
+    // Chunked upserts, in order. This used to be one PATCH per product,
+    // sequential — fine for the tens of rows a hand-built catalogue had, and
+    // minutes for the 856 a rule fills. An upsert on the primary key updates
+    // the row's price and touches nothing else; the returned ids say exactly
+    // which rows were written, so a failed chunk is reported by name.
+    for (const part of chunks(changes, WRITE_CHUNK)) {
+      const { data, error } = await supabase
+        .from("collection_products")
+        .upsert(part.map(({ m, value }) => ({ collection_id: collectionId, product_id: m.id, price_override: value })), { onConflict: "collection_id,product_id" })
+        .select("product_id");
       if (!mountedRef.current) return;
-      if (okWrite) {
-        saved++;
-        setPriceDrafts((d) => { const nd = { ...d }; delete nd[m.id]; return nd; });
-      } else {
-        failed.push(m.name);
+      const written = new Set(error ? [] : ((data ?? []) as { product_id: string }[]).map((r) => r.product_id));
+      for (const { m, value } of part) {
+        if (written.has(m.id)) {
+          saved++;
+          setMembers((ms) => ms.map((x) => (x.id === m.id ? { ...x, col_price: value } : x)));
+          setPriceDrafts((d) => { const nd = { ...d }; delete nd[m.id]; return nd; });
+        } else {
+          failed.push(m.name);
+        }
       }
+      if (error) break; // the rest keep their drafts; the report below says so
     }
     setBatchBusy(false);
     if (failed.length > 0) {
-      setErr(`נשמרו ${saved} מחירים, אבל ${failed.length} נכשלו: ${failed.join(", ")} — המחירים הקודמים שלהם נשארו.`);
+      const named = failed.slice(0, 8).join(", ") + (failed.length > 8 ? ` ועוד ${(failed.length - 8).toLocaleString("he-IL")}` : "");
+      setErr(`נשמרו ${saved.toLocaleString("he-IL")} מחירים, אבל ${failed.length.toLocaleString("he-IL")} נכשלו: ${named} — המחירים הקודמים שלהם נשארו, והשדות שלהם עדיין מלאים כדי לשמור שוב.`);
     } else {
       setErr("");
       setNotice(saved === 1 ? "מחיר אחד נשמר בקטלוג." : `${saved} מחירים נשמרו בקטלוג.`);
@@ -919,6 +1115,40 @@ export default function CollectionsAdminPage() {
                         ⚠ הקישור מוגדר בלי מחירים — המחירים ייראו ללקוח רק אם מדליקים ״להציג מחירים״.
                       </p>
                     )}
+                    {ffBulk && (
+                      <div role="group" aria-label="כלל מחיר לכל המוצרים" style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.9rem", padding: "0.7rem 0.8rem", border: `1px solid ${tokens.border}`, borderRadius: 12, background: tokens.surface }}>
+                        <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.88rem", color: tokens.text, whiteSpace: "nowrap" }}>כלל לכולם:</span>
+                        <select
+                          aria-label="סוג הכלל"
+                          value={ruleMode}
+                          onChange={(e) => setRuleMode(e.target.value as RuleMode)}
+                          style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", padding: "0.45rem 0.5rem", borderRadius: 8, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, minHeight: 40 }}
+                        >
+                          <option value="discount">הנחה באחוזים מהמחיר הרגיל</option>
+                          <option value="markup">תוספת באחוזים על המחיר הרגיל</option>
+                          <option value="fixed">מחיר קבוע לכולם</option>
+                        </select>
+                        <input
+                          dir="ltr"
+                          inputMode="decimal"
+                          aria-label="ערך הכלל"
+                          placeholder={ruleMode === "fixed" ? "₪" : "%"}
+                          value={ruleValue}
+                          onChange={(e) => setRuleValue(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); fillByRule(); } }}
+                          style={{ width: 84, fontFamily: tokens.assistant, fontSize: "0.9rem", padding: "0.45rem 0.5rem", borderRadius: 8, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, minHeight: 40 }}
+                        />
+                        <button onClick={fillByRule} disabled={batchBusy} style={{ ...miniBtn, background: tokens.accent, color: "#fff", border: "none", minHeight: 40, whiteSpace: "nowrap" }}>
+                          מילוי כל השדות לפי הכלל
+                        </button>
+                        {changedCount > 0 && (
+                          <button onClick={clearFill} disabled={batchBusy} style={{ ...miniBtn, minHeight: 40, whiteSpace: "nowrap" }}>ניקוי המילוי</button>
+                        )}
+                        <span style={{ flexBasis: "100%", fontFamily: tokens.assistant, fontSize: "0.75rem", color: tokens.dim }}>
+                          הכלל רק ממלא את השדות למטה מהמחיר הרגיל של כל מוצר — אפשר לתקן כל מחיר ביד, ורק ״שמירת המחירים״ בכפתור למטה שומרת.
+                        </span>
+                      </div>
+                    )}
                     <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.9rem" }}>
                       {members.map((m) => {
                         const changed = draftChanged(m);
@@ -983,6 +1213,27 @@ export default function CollectionsAdminPage() {
                     <AdminProductBrowser
                       searchLabel="חיפוש מוצר להוספה (שם / קוד / ברקוד)"
                       highlight={(p) => memberIds.has(p.id)}
+                      renderBulk={ffBulk ? (f) => {
+                        // Everything the filter matches — the number is the
+                        // database count, not the pages scrolled so far.
+                        const scope = f.query.trim() ? "מהחיפוש" : f.category !== "all" ? `מ"${f.category}"` : "";
+                        const disabled = !!bulkBusy || f.busy || membersBusy;
+                        return (
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+                            <button
+                              onClick={() => addAllShown(f)}
+                              disabled={disabled}
+                              aria-label="הוספת כל המוצרים המוצגים לקטלוג"
+                              style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.88rem", color: "#fff", background: "#1A7A4D", border: "none", padding: "0.6rem 1.1rem", borderRadius: 999, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1, minHeight: 44, whiteSpace: "nowrap" }}
+                            >
+                              {bulkBusy ?? `+ הוספת כל ${f.total.toLocaleString("he-IL")} המוצרים ${scope}`.trim()}
+                            </button>
+                            <span style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim }}>
+                              {f.query.trim() || f.category !== "all" ? "רק מה שמסונן כרגע. " : ""}מה שכבר בקטלוג לא משתנה.
+                            </span>
+                          </div>
+                        );
+                      } : undefined}
                       renderAction={(p) => {
                         const mem = membersById.get(p.id);
                         if (!mem) {
@@ -1031,6 +1282,11 @@ export default function CollectionsAdminPage() {
                       {members.length > 0 && (
                         <button onClick={openPricing} style={{ ...miniBtn, minHeight: 32 }}>
                           ₪ שינוי מחירים לכולם
+                        </button>
+                      )}
+                      {ffBulk && lastBulk && lastBulk.collectionId === c.id && (
+                        <button onClick={undoBulkAdd} disabled={!!bulkBusy} style={{ ...miniBtn, minHeight: 32, color: "#C0143C", opacity: bulkBusy ? 0.6 : 1 }}>
+                          ↩ ביטול — הסרת {lastBulk.ids.length.toLocaleString("he-IL")} המוצרים שנוספו עכשיו
                         </button>
                       )}
                     </div>

@@ -30,12 +30,53 @@ export type BrowserProduct = {
 const PAGE_SIZE = 24;
 const PROD_COLS = "id,name,sku,price,category,picture_link,rotation_override";
 
+/** What the browser is currently showing: the filter, and how many active
+ *  products match it in the database (not just the pages loaded so far). */
+export type BrowserFilter = { query: string; category: string; total: number; busy: boolean };
+
+// The ONE place the browser's filter is decided. The grid, the count and the
+// "add everything shown" fetch all apply these same two clauses, so what the
+// manager sees and what a bulk action touches can never be two different sets.
+function filterClauses(query: string, category: string): { category: string | null; or: string | null } {
+  // Same sanitisation every other search screen applies: a raw "," or "("
+  // breaks the or() filter and PostgREST answers 400; "%" would smuggle in
+  // an extra LIKE wildcard.
+  const s = sanitizeQuery(query);
+  return {
+    category: category !== "all" ? category : null,
+    or: s ? `name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%` : null,
+  };
+}
+
+/** Every product id the current filter matches, in the grid's own order.
+ *  Pages of 1,000 (PostgREST's row cap) so a catalogue larger than that is
+ *  still returned whole; today the active catalogue is under 900. */
+export async function fetchAllMatchingIds(query: string, category: string): Promise<string[]> {
+  const STEP = 1000;
+  const ids: string[] = [];
+  for (let from = 0; ; from += STEP) {
+    const f = filterClauses(query, category);
+    let q = supabase.from("products").select("id").eq("is_active", true);
+    if (f.category) q = q.eq("category", f.category);
+    if (f.or) q = q.or(f.or);
+    const { data, error } = await q
+      .order("name", { ascending: true })
+      .range(from, from + STEP - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as { id: string }[];
+    for (const r of rows) ids.push(r.id);
+    if (rows.length < STEP) break;
+  }
+  return ids;
+}
+
 export default function AdminProductBrowser({
   searchLabel,
   renderAction,
   highlight,
   stickyTop = "var(--kt-header-h, 96px)",
   onTotal,
+  renderBulk,
 }: {
   searchLabel: string;
   /** Bottom of each card — the screen's own action(s). */
@@ -44,6 +85,11 @@ export default function AdminProductBrowser({
   highlight?: (p: BrowserProduct) => boolean;
   stickyTop?: number | string;
   onTotal?: (n: number) => void;
+  /** An action over EVERYTHING the current filter matches, rendered in the
+   *  sticky bar under the category chips. It receives the live filter so it
+   *  can say "all 856" or "all 45 in סביבונים" — and pass exactly that
+   *  filter to fetchAllMatchingIds. */
+  renderBulk?: (f: BrowserFilter) => React.ReactNode;
 }) {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
@@ -83,13 +129,10 @@ export default function AdminProductBrowser({
   const load = useCallback(async () => {
     const gen = genRef.current;
     setBusy(true);
+    const f = filterClauses(query, activeCat);
     let q = supabase.from("products").select(PROD_COLS, { count: "exact" }).eq("is_active", true);
-    if (activeCat !== "all") q = q.eq("category", activeCat);
-    // Same sanitisation every other search screen applies: a raw "," or "("
-    // breaks the or() filter and PostgREST answers 400; "%" would smuggle in
-    // an extra LIKE wildcard.
-    const s = sanitizeQuery(query);
-    if (s) q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`);
+    if (f.category) q = q.eq("category", f.category);
+    if (f.or) q = q.or(f.or);
     const { data, count, error } = await q
       .order("name", { ascending: true })
       .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1);
@@ -163,6 +206,11 @@ export default function AdminProductBrowser({
                 </button>
               );
             })}
+          </div>
+        )}
+        {renderBulk && total > 0 && (
+          <div style={{ marginTop: "0.6rem" }}>
+            {renderBulk({ query, category: activeCat, total, busy })}
           </div>
         )}
       </div>

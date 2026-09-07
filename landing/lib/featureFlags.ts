@@ -115,6 +115,17 @@ export const featureFlags = {
    *  the control and returns everyone to that layout. See lib/gridDensity.tsx.
    *  DEFAULT ON at the owner's request. */
   ff_grid_density: true,
+  /** Manager screen /admin/collections, "everything at once": one button adds
+   *  every product the browser is currently showing (all 856, or one category,
+   *  or a search) to the catalogue being edited, with an undo that removes
+   *  exactly the rows it just added; and the pricing screen gets a rule row
+   *  (X% off / X% on top / one fixed price) that fills every field from the
+   *  regular price for the manager to review and save once. Writes go through
+   *  the same manager-only RLS table as the single add and the single price
+   *  save; no RPC, no schema change. Off = the two controls disappear and the
+   *  screen is exactly the one-at-a-time flow it was. DEFAULT ON at the
+   *  owner's request. */
+  ff_collection_bulk: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
