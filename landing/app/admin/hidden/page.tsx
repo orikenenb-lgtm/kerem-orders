@@ -229,37 +229,54 @@ export default function HiddenAdminPage() {
         )}
 
         <section style={{ marginTop: "1.6rem" }}>
-          <h2 style={sectionH}>קבוצות רווחית ({groups.length.toLocaleString("he-IL")})</h2>
-          <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, marginBottom: "0.6rem" }}>
-            <strong>זה המקום החשוב.</strong> ברווחית יש 44 קבוצות, ולפריט אין שם שדה שאומר
-            ״נמחק״ — אז המערכת לא יכולה לנחש מה הורדתם מהמכירה. כאן אתם מחליטים פעם אחת אילו
-            קבוצות נמכרות באתר. קבוצה שתסתירו <strong>לא תחזור אחרי עדכון</strong>, וגם מוצר
-            חדש שייכנס אליה בעתיד לא יופיע.
-          </p>
-          <div style={{ display: "grid", gap: "0.5rem", marginBottom: "1.6rem" }}>
-            {groups.map((g) => (
-              <div key={g.group_id} style={{ ...rowBox, background: g.hidden ? "rgba(0,0,0,0.02)" : "#fff" }}>
-                <div style={{ flex: 1, minWidth: 160 }}>
-                  <div style={{ fontFamily: tokens.assistant, fontWeight: 700, fontSize: "0.9rem", color: g.hidden ? tokens.dim : tokens.text }}>
-                    {g.name} <span style={{ fontWeight: 400, color: tokens.dim }}>· קבוצה {g.group_id}</span>
-                  </div>
-                  <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim }}>
-                    {g.hidden
-                      ? `מוסתרת · ${g.products.toLocaleString("he-IL")} מוצרים שמורים`
-                      : `${g.active.toLocaleString("he-IL")} באתר מתוך ${g.products.toLocaleString("he-IL")}`}
-                  </div>
-                </div>
-                <button
-                  onClick={() => hideGroup(g.group_id, g.name, !g.hidden)}
-                  disabled={working === `g${g.group_id}`}
-                  style={g.hidden
-                    ? { ...miniBtn, minHeight: 44, color: "#1A7A4D", borderColor: "rgba(37,199,126,0.45)" }
-                    : dangerBtn}
+          <h2 style={sectionH}>
+            קבוצות רווחית — מה מופיע באתר ({groups.filter((g) => !g.hidden).length.toLocaleString("he-IL")} מתוך {groups.length.toLocaleString("he-IL")})
+          </h2>
+          <div style={{ background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 12, padding: "0.8rem 1rem", marginBottom: "0.8rem" }}>
+            <p style={{ fontFamily: tokens.assistant, fontSize: "0.88rem", color: tokens.body, margin: 0, lineHeight: 1.6 }}>
+              <strong>זו אותה רשימה שמסמנים ברווחית עם קוד המנהל</strong> — רק שכאן היא שולטת על האתר.
+              וי = הקבוצה נמכרת באתר. בלי וי = היא לא מופיעה, <strong>וגם לא תחזור אחרי עדכון</strong>,
+              וגם מוצר חדש שייכנס אליה בעתיד לא יופיע.
+            </p>
+            <p style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim, margin: "0.5rem 0 0", lineHeight: 1.6 }}>
+              נבדק מול רווחית: ה-API שלה מוסר 44 קבוצות ואינו כולל את הסימון שלכם —
+              ניסינו שש דרכים לשאול אותו וכולן החזירו את אותה רשימה מלאה. לכן את הסימון
+              צריך לעשות כאן פעם אחת, וזה נשמר.
+            </p>
+          </div>
+          <div style={{ display: "grid", gap: "0.4rem", marginBottom: "1.6rem" }}>
+            {groups.map((g) => {
+              const on = !g.hidden;
+              const busyHere = working === `g${g.group_id}`;
+              return (
+                <label
+                  key={g.group_id}
+                  style={{ ...rowBox, cursor: busyHere ? "wait" : "pointer", background: on ? "#fff" : "rgba(0,0,0,0.03)", borderColor: on ? tokens.border : "rgba(192,20,60,0.25)" }}
                 >
-                  {working === `g${g.group_id}` ? "…" : g.hidden ? "החזרה לאתר" : "הסתרת הקבוצה"}
-                </button>
-              </div>
-            ))}
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={busyHere}
+                    onChange={() => hideGroup(g.group_id, g.name, on)}
+                    aria-label={`${g.name} — קבוצה ${g.group_id} — ${on ? "מופיעה באתר" : "לא מופיעה"}`}
+                    style={{ width: 22, height: 22, flexShrink: 0, accentColor: "#1A7A4D", cursor: busyHere ? "wait" : "pointer" }}
+                  />
+                  <div style={{ flex: 1, minWidth: 150 }}>
+                    <div style={{ fontFamily: tokens.assistant, fontWeight: 700, fontSize: "0.9rem", color: on ? tokens.text : tokens.dim }}>
+                      {g.name} <span style={{ fontWeight: 400, color: tokens.dim }}>· קבוצה {g.group_id}</span>
+                    </div>
+                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim }}>
+                      {on
+                        ? `${g.active.toLocaleString("he-IL")} מוצרים באתר מתוך ${g.products.toLocaleString("he-IL")}`
+                        : `לא מופיעה · ${g.products.toLocaleString("he-IL")} מוצרים שמורים, אפשר להחזיר בכל רגע`}
+                    </div>
+                  </div>
+                  <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.75rem", whiteSpace: "nowrap", padding: "0.25rem 0.6rem", borderRadius: 999, color: on ? "#1A7A4D" : "#C0143C", background: on ? "rgba(37,199,126,0.12)" : "rgba(192,20,60,0.08)" }}>
+                    {busyHere ? "…" : on ? "מופיעה" : "מוסתרת"}
+                  </span>
+                </label>
+              );
+            })}
           </div>
         </section>
 
