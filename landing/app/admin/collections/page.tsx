@@ -82,6 +82,10 @@ type ProductRow = BrowserProduct;
 type MemberRow = ProductRow & { col_price: number | null; glob_price: number | null; barcode: string | null;
   /** Rivhit group number — orders the categories the way Rivhit does. */
   group_id?: number | null;
+  /** When it was added to THIS catalogue (collection_products.added_at).
+   *  The pricing screen shows the newest first, so what the manager just
+   *  added is at the top when he goes to price it. */
+  added_at?: string | null;
   /** Whether the customer can actually see this member. A product hidden or
    *  discontinued after it was added stays in collection_products, but
    *  catalog_collection filters it out of the link the customer opens. */
@@ -245,7 +249,7 @@ export default function CollectionsAdminPage() {
 
   const loadMembers = useCallback(async (collectionId: string) => {
     setMembersBusy(true);
-    type Joined = { sort_order: number; price_override: number | string | null; products: (ProductRow & { barcode?: string | null; is_active?: boolean | null; group_id?: number | null }) | null };
+    type Joined = { sort_order: number; price_override: number | string | null; added_at?: string | null; products: (ProductRow & { barcode?: string | null; is_active?: boolean | null; group_id?: number | null }) | null };
     // Pages of 1,000 — PostgREST's row cap. A catalogue used to be 50 products
     // and one request; "add everything" makes 856 (and growing) ordinary, and
     // a silently truncated member list would hide products from the manager
@@ -263,7 +267,7 @@ export default function CollectionsAdminPage() {
         // collection_products, but catalog_collection filters it out of the
         // customer's link — so without this the manager's list and the Excel he
         // hands a chain would disagree with the page he sent them.
-        .select("sort_order, price_override, products(id,name,sku,price,category,picture_link,rotation_override,barcode,is_active,group_id)")
+        .select("sort_order, price_override, added_at, products(id,name,sku,price,category,picture_link,rotation_override,barcode,is_active,group_id)")
         .eq("collection_id", collectionId)
         .order("sort_order", { ascending: true })
         .order("product_id", { ascending: true })
@@ -300,6 +304,7 @@ export default function CollectionsAdminPage() {
       barcode: r.products.barcode ?? null,
       col_price: r.price_override == null ? null : Number(r.price_override),
       glob_price: globs.get(r.products.id) ?? null,
+      added_at: r.added_at ?? null,
     })));
   }, []);
 
@@ -428,7 +433,7 @@ export default function CollectionsAdminPage() {
       if (!/duplicate|unique/i.test(error.message)) setErr("הוספת המוצר נכשלה.");
       return;
     }
-    setMembers((m) => [...m, { ...p, barcode: null, col_price: null, glob_price: null }]);
+    setMembers((m) => [...m, { ...p, barcode: null, col_price: null, glob_price: null, added_at: new Date().toISOString() }]);
     // Refresh in the background: the count on the card, and the member's
     // glob_price (the optimistic row above assumes it has none).
     loadCollections();
@@ -471,7 +476,12 @@ export default function CollectionsAdminPage() {
     // Appended after the existing members, in the grid's order. Insert-only:
     // ignoreDuplicates means a row that appeared meanwhile (another tab, a
     // second manager) is left exactly as it is, price included.
-    const rows = fresh.map((id, i) => ({ collection_id: collectionId, product_id: id, sort_order: members.length + i }));
+    // One added_at for the whole add, set here rather than left to the
+    // column default: the chunks are separate requests, so now() would give
+    // 856 products three different timestamps and the pricing screen (newest
+    // first) would show the last chunk above the first. One add = one moment.
+    const stamp = new Date().toISOString();
+    const rows = fresh.map((id, i) => ({ collection_id: collectionId, product_id: id, sort_order: members.length + i, added_at: stamp }));
     const added: string[] = [];
     let failed = false;
     for (const part of chunks(rows, WRITE_CHUNK)) {
@@ -561,6 +571,19 @@ export default function CollectionsAdminPage() {
     return [...m.entries()].sort((a, b) => a[1].g - b[1].g || b[1].n - a[1].n).map(([name, e]) => [name, e.n] as [string, number]);
   })();
   const inScope = (m: MemberRow) => ruleScope === "all" || (m.category || "ללא קטגוריה") === ruleScope;
+
+  // The pricing list: newest additions first. The owner's father adds
+  // products and then goes to price them; with the list in catalogue order
+  // the ones he just added were at the very bottom, under everything already
+  // priced. Products added together (one bulk add = one timestamp) keep the
+  // catalogue's order among themselves. The customer's link is untouched —
+  // it still follows sort_order.
+  const pricingOrder = [...members].sort((a, b) => {
+    const ta = a.added_at ? Date.parse(a.added_at) : 0;
+    const tb = b.added_at ? Date.parse(b.added_at) : 0;
+    if (ta !== tb) return tb - ta;
+    return members.indexOf(a) - members.indexOf(b);
+  });
 
   const fillByRule = () => {
     const v = Number(ruleValue.trim().replace("٫", ".").replace(",", "."));
@@ -1149,7 +1172,7 @@ export default function CollectionsAdminPage() {
                       </div>
                     </div>
                     <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, marginTop: "0.3rem", maxWidth: 620 }}>
-                      עוברים על הרשימה וממלאים מחיר רק למוצרים שרוצים לשנות — שדה שנשאר כפי שהוא לא נוגע בכלום.
+                      מה שנוסף לקטלוג אחרון מופיע כאן ראשון. עוברים על הרשימה וממלאים מחיר רק למוצרים שרוצים לשנות — שדה שנשאר כפי שהוא לא נוגע בכלום.
                       מחיר שמוקלד כאן הוא סופי לקטלוג הזה{Number(c.discount_percent) > 0 ? " (ההנחה לא חלה עליו)" : ""}; מחיקת מחיר קיים מחזירה למחיר הרגיל.
                       השמירה בכפתור שבתחתית המסך.
                     </p>
@@ -1204,7 +1227,7 @@ export default function CollectionsAdminPage() {
                       </div>
                     )}
                     <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.9rem" }}>
-                      {members.map((m) => {
+                      {pricingOrder.map((m) => {
                         const changed = draftChanged(m);
                         return (
                           <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", border: `1px solid ${changed ? tokens.accent : m.col_price != null ? "#1A7A4D" : tokens.border}`, borderRadius: 10, padding: "0.45rem 0.6rem", background: "#fff" }}>
