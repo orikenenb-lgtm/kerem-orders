@@ -91,10 +91,9 @@ export default function ImagesReviewPage() {
     supabase.rpc("catalog_categories").then(({ data }) => {
       if (!mountedRef.current) return;
       const list = ((data ?? []) as { category: string; n: number }[])
-        .filter((c) => c.category)
-        // Busiest first — the SAME order the catalogue and the product
-        // browser show, so the row reads identically everywhere.
-        .sort((a, b) => b.n - a.n);
+        .filter((c) => c.category);
+        // Server order = Rivhit group order — the SAME order the catalogue
+        // and the product browser show, so the row reads identically everywhere.
       setCats(list);
     });
   }, [isManager]);
@@ -274,7 +273,7 @@ export default function ImagesReviewPage() {
           </span>
           {/* The category row, EXACTLY as the rest of the site draws it —
               the owner asked for the same look as the regular catalogue:
-              pill buttons, busiest category first, scrolling sideways.
+              pill buttons in Rivhit group order, scrolling sideways.
               minWidth:0 keeps the nowrap chips from setting the page width
               (the D-018 lesson). */}
           {cats.length > 0 && (

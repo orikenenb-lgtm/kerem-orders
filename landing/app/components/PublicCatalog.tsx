@@ -167,16 +167,11 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
     return () => obs.disconnect();
   }, [hasMore, loadingProducts, loadErr, products.length]);
 
-  // keep all "חדש/חדשים" categories grouped together (adjacent) in the chip bar
-  const orderedCats = useMemo(() => {
-    const isNew = (name: string) => /חדש/.test(name);
-    const newMax = categories.filter((c) => isNew(c.category)).reduce((m, c) => Math.max(m, c.n), 0);
-    return [...categories].sort((a, b) => {
-      const ra = isNew(a.category) ? newMax + 1 : a.n;
-      const rb = isNew(b.category) ? newMax + 1 : b.n;
-      return ra !== rb ? rb - ra : b.n - a.n;
-    });
-  }, [categories]);
+  // The order is the server's: the categories RPC returns them in Rivhit's
+  // own group order (group 1, 2, 3 …), which is how the owner and his father
+  // see them in Rivhit. It used to be busiest-first with the "חדש" groups
+  // pulled together; the owner asked for exactly the Rivhit order, everywhere.
+  const orderedCats = useMemo(() => [...categories], [categories]);
 
   return (
     <>

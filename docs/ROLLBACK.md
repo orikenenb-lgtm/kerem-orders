@@ -56,6 +56,11 @@
   `update site_settings set value='500' where key='min_order_total';`
 - **סנכרון כל 15 דק' — ביטול**:
   `select cron.unschedule('rivhit-products-15m');` (הלילי ב-03:00 נשאר).
+- **סדר הקטגוריות (8.9.2026) — חזרה ל״הכי גדולה קודם״**: שלוש הפונקציות
+  `catalog_categories`, `catalog_public_categories`, `catalog_groups` מסודרות היום לפי
+  מספר הקבוצה ברווחית (`min(group_id)`). ההיפוך הוא `create or replace` של הגוף בלבד עם
+  ה-ORDER BY הקודם — מתועד ב-`supabase/2026-09-category-order.sql`. הלקוחות שומרים
+  על סדר השרת, אז אין צורך בדיפלוי.
 
 ## 3. מיגרציות
 

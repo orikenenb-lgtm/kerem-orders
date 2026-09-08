@@ -168,7 +168,8 @@ export default function AdminProductBrowser({
     return () => obs.disconnect();
   }, [hasMore, busy, loadErr, products.length]);
 
-  const orderedCats = useMemo(() => [...categories].sort((a, b) => b.n - a.n), [categories]);
+  // Server order = Rivhit group order (1, 2, 3 …), same as every catalogue.
+  const orderedCats = useMemo(() => [...categories], [categories]);
 
   return (
     <>

@@ -80,6 +80,8 @@ type ProductRow = BrowserProduct;
 // Both are needed to tell the manager the truth: what the customer in this
 // link will actually see, and what he would have seen without the override.
 type MemberRow = ProductRow & { col_price: number | null; glob_price: number | null; barcode: string | null;
+  /** Rivhit group number — orders the categories the way Rivhit does. */
+  group_id?: number | null;
   /** Whether the customer can actually see this member. A product hidden or
    *  discontinued after it was added stays in collection_products, but
    *  catalog_collection filters it out of the link the customer opens. */
@@ -243,7 +245,7 @@ export default function CollectionsAdminPage() {
 
   const loadMembers = useCallback(async (collectionId: string) => {
     setMembersBusy(true);
-    type Joined = { sort_order: number; price_override: number | string | null; products: (ProductRow & { barcode?: string | null; is_active?: boolean | null }) | null };
+    type Joined = { sort_order: number; price_override: number | string | null; products: (ProductRow & { barcode?: string | null; is_active?: boolean | null; group_id?: number | null }) | null };
     // Pages of 1,000 — PostgREST's row cap. A catalogue used to be 50 products
     // and one request; "add everything" makes 856 (and growing) ordinary, and
     // a silently truncated member list would hide products from the manager
@@ -261,7 +263,7 @@ export default function CollectionsAdminPage() {
         // collection_products, but catalog_collection filters it out of the
         // customer's link — so without this the manager's list and the Excel he
         // hands a chain would disagree with the page he sent them.
-        .select("sort_order, price_override, products(id,name,sku,price,category,picture_link,rotation_override,barcode,is_active)")
+        .select("sort_order, price_override, products(id,name,sku,price,category,picture_link,rotation_override,barcode,is_active,group_id)")
         .eq("collection_id", collectionId)
         .order("sort_order", { ascending: true })
         .order("product_id", { ascending: true })
@@ -546,11 +548,17 @@ export default function CollectionsAdminPage() {
 
   // The categories actually present in THIS catalogue, with counts — the
   // scope options. Computed from members, so a category with no member is
-  // never offered and the count is what the rule would touch.
+  // never offered and the count is what the rule would touch. In Rivhit's
+  // group order (1, 2, 3 …), like every other category list on the site.
   const memberCats = (() => {
-    const m = new Map<string, number>();
-    for (const x of members) { const c = x.category || "ללא קטגוריה"; m.set(c, (m.get(c) ?? 0) + 1); }
-    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+    const m = new Map<string, { n: number; g: number }>();
+    for (const x of members) {
+      const c = x.category || "ללא קטגוריה";
+      const e = m.get(c) ?? { n: 0, g: Number.MAX_SAFE_INTEGER };
+      e.n++; e.g = Math.min(e.g, x.group_id ?? Number.MAX_SAFE_INTEGER);
+      m.set(c, e);
+    }
+    return [...m.entries()].sort((a, b) => a[1].g - b[1].g || b[1].n - a[1].n).map(([name, e]) => [name, e.n] as [string, number]);
   })();
   const inScope = (m: MemberRow) => ruleScope === "all" || (m.category || "ללא קטגוריה") === ruleScope;
 
@@ -1123,8 +1131,22 @@ export default function CollectionsAdminPage() {
                     aria-label={`שינוי מחירים בקטלוג ${c.name}`}
                     style={{ borderTop: `1px solid ${tokens.border}`, marginTop: "0.9rem", paddingTop: "0.9rem" }}
                   >
-                    <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>
-                      ₪ שינוי מחירים — {members.length.toLocaleString("he-IL")} מוצרים
+                    {/* The way back lives in the fixed bottom bar too, but the
+                        owner reported "no back button" — on his phone he looked
+                        at the top of the screen, where the title is, and the
+                        bar at the bottom did not read as the way out. Same
+                        closePricing (asks about unsaved changes), one more place. */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => closePricing()}
+                        aria-label="חזרה לבחירת מוצרים"
+                        style={{ ...miniBtn, minHeight: 40, whiteSpace: "nowrap" }}
+                      >
+                        → חזרה
+                      </button>
+                      <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>
+                        ₪ שינוי מחירים — {members.length.toLocaleString("he-IL")} מוצרים
+                      </div>
                     </div>
                     <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, marginTop: "0.3rem", maxWidth: 620 }}>
                       עוברים על הרשימה וממלאים מחיר רק למוצרים שרוצים לשנות — שדה שנשאר כפי שהוא לא נוגע בכלום.
@@ -1213,6 +1235,23 @@ export default function CollectionsAdminPage() {
                                 placeholder="רגיל"
                                 value={draftFor(m)}
                                 onChange={(e) => setPriceDrafts((d) => ({ ...d, [m.id]: e.target.value }))}
+                                onKeyDown={(e) => {
+                                  // Enter = down to the next product's field (Shift+Enter =
+                                  // up), text selected so the next number just overwrites.
+                                  // The owner prices a list from the keyboard; reaching for
+                                  // the mouse between every two products was the complaint.
+                                  // Enter never saves here — the save is the one button below.
+                                  if (e.key !== "Enter") return;
+                                  e.preventDefault();
+                                  const fields = Array.from(document.querySelectorAll<HTMLInputElement>("input[data-price-field]"));
+                                  const i = fields.indexOf(e.currentTarget);
+                                  const next = fields[i + (e.shiftKey ? -1 : 1)];
+                                  if (!next) return;
+                                  next.focus();
+                                  next.select();
+                                  next.scrollIntoView({ block: "center" });
+                                }}
+                                data-price-field=""
                                 style={{ width: 84, fontFamily: tokens.assistant, fontSize: "0.9rem", padding: "0.45rem 0.5rem", borderRadius: 8, border: `1px solid ${changed ? tokens.accent : tokens.border}`, background: tokens.surface, color: tokens.text }}
                               />
                             </label>
