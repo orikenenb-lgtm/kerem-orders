@@ -243,6 +243,13 @@ export default function HiddenAdminPage() {
               ניסינו שש דרכים לשאול אותו וכולן החזירו את אותה רשימה מלאה. לכן את הסימון
               צריך לעשות כאן פעם אחת, וזה נשמר.
             </p>
+            {groups.some((g) => g.hidden && g.products > 0 && g.group_id !== 999 && g.group_id !== 9999) && (
+              <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: "#B45309", margin: "0.6rem 0 0", lineHeight: 1.6 }}>
+                <strong>שימו לב:</strong> קבוצה בלי וי כאן לא תופיע גם אם מסמנים אותה ברווחית ולוחצים ״עדכן עכשיו״ —
+                הסימון ברווחית לא מגיע לאתר. כרגע בלי וי:{" "}
+                {groups.filter((g) => g.hidden && g.products > 0 && g.group_id !== 999 && g.group_id !== 9999).map((g) => `${g.name} (${g.products.toLocaleString("he-IL")})`).join(", ")}.
+              </p>
+            )}
           </div>
           <div style={{ display: "grid", gap: "0.4rem", marginBottom: "1.6rem" }}>
             {groups.map((g) => {

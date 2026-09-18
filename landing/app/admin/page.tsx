@@ -435,11 +435,41 @@ function ProductsTab() {
   // runs list refreshes so server-side (cron) syncs show up while the tab is open.
   const [now, setNow] = useState(() => Date.now());
 
+  // The groups the SITE hides while Rivhit still sells them. This is the one
+  // reason a category the owner's father ticks in Rivhit "does not sync": the
+  // API never reports Rivhit's ticks, so the site's own list decides, and a
+  // group hidden here stays hidden through every update — by design, at the
+  // owner's request. It has to be visible on the dashboard, not two clicks
+  // away, or it reads as a broken sync.
+  type HiddenGroup = { group_id: number; name: string; products: number; active: number; hidden: boolean };
+  const [hiddenGroups, setHiddenGroups] = useState<HiddenGroup[]>([]);
+  const [unhiding, setUnhiding] = useState<number | null>(null);
+  const loadHiddenGroups = useCallback(async () => {
+    const { data } = await supabase.rpc("catalog_groups");
+    const rows = ((data ?? []) as HiddenGroup[]).filter((g) => g.hidden && g.products > 0);
+    // Rivhit's own housekeeping groups (999 = "ניגמרים", 9999 = "לא פעילים")
+    // are hidden on purpose and never something the father would tick.
+    setHiddenGroups(rows.filter((g) => g.group_id !== 999 && g.group_id !== 9999));
+  }, []);
+  // Loaded together with the audit verdict: the two answer the same question
+  // ("does the site show what Rivhit sells?") and refresh together.
   const loadAudit = useCallback(async () => {
     const { data } = await supabase.rpc("latest_sync_audit");
     const row = Array.isArray(data) ? data[0] : data;
     if (row) setAudit(row);
-  }, []);
+    loadHiddenGroups();
+  }, [loadHiddenGroups]);
+
+  const showGroup = async (g: HiddenGroup) => {
+    if (unhiding) return;
+    if (!window.confirm(`להציג באתר את הקבוצה "${g.name}" (${g.products.toLocaleString("he-IL")} מוצרים)? המוצרים שלה יופיעו ללקוחות בעדכון הבא, תוך 15 דקות לכל היותר.`)) return;
+    setUnhiding(g.group_id);
+    const { error } = await supabase.rpc("set_group_hidden", { p_group: g.group_id, p_hidden: false });
+    setUnhiding(null);
+    if (error) { setMsg(`הצגת הקבוצה "${g.name}" נכשלה — לא השתנה כלום.`); return; }
+    setMsg(`הקבוצה "${g.name}" חזרה לאתר.`);
+    loadHiddenGroups();
+  };
 
   const runAudit = async () => {
     setAuditing(true);
@@ -616,6 +646,29 @@ function ProductsTab() {
             {auditing ? "בודק…" : "בדיקה עכשיו"}
           </button>
         </div>
+        {hiddenGroups.length > 0 && (
+          <div role="region" aria-label="קבוצות שרווחית מוכרת והאתר מסתיר" style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem" }}>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: "#B45309" }}>
+              {hiddenGroups.length === 1 ? "קבוצה אחת" : `${hiddenGroups.length.toLocaleString("he-IL")} קבוצות`} שרווחית מוכרת והאתר מסתיר לפי בקשתכם
+            </div>
+            <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, lineHeight: 1.6, maxWidth: 720 }}>
+              רווחית לא מוסרת לאתר את הסימון (״וי״) של הקבוצות, ולכן <strong>סימון ברווחית לא מחזיר קבוצה שהוסתרה כאן</strong> — גם אחרי ״עדכן עכשיו״.
+              כדי שקבוצה כזאת תופיע, לוחצים ״להציג״ כאן פעם אחת. מוצרים חדשים בקבוצה מוצגת מגיעים לבד תוך 15 דקות.
+            </div>
+            <div style={{ display: "grid", gap: "0.4rem", marginTop: "0.6rem" }}>
+              {hiddenGroups.map((g) => (
+                <div key={g.group_id} style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", border: "1px solid rgba(180,83,9,0.35)", background: "rgba(180,83,9,0.06)", borderRadius: 10, padding: "0.5rem 0.7rem" }}>
+                  <div style={{ flex: 1, minWidth: 160, fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.text }}>
+                    <strong>{g.name}</strong> <span style={{ color: tokens.dim }}>· קבוצה {g.group_id} · {g.products.toLocaleString("he-IL")} מוצרים ברווחית, 0 באתר</span>
+                  </div>
+                  <button onClick={() => showGroup(g)} disabled={unhiding !== null} aria-label={`להציג את הקבוצה ${g.name} באתר`} style={{ ...ghostBtn, minHeight: 40, whiteSpace: "nowrap", opacity: unhiding !== null ? 0.6 : 1 }}>
+                    {unhiding === g.group_id ? "מציג…" : "להציג באתר"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
           <div>
             <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>הסתרה מהאתר</div>
