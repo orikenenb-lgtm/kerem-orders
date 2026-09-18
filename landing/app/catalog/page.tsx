@@ -70,6 +70,9 @@ const ffCardIncart = featureFlags.ff_card_incart;
 // 3B wave 3: price-bucket filter (browse mode only — PostgREST gte/lt on price,
 // no RPC/DB change). Off = the control never renders and the query is unchanged.
 const ffFilters = featureFlags.ff_filters_v2;
+// The price buckets and the "בשורה / מיון" row scroll away with the page
+// instead of pinning: the pinned bar was eating the phone's screen.
+const ffLeanSticky = featureFlags.ff_lean_sticky;
 // Buckets straight from the live price histogram (median ₪13, 84% under ₪50).
 // lo is inclusive, hi exclusive, so the ranges partition the catalogue with no
 // product counted twice.
@@ -496,6 +499,62 @@ export default function CatalogPage() {
   // out, because a below-the-list control sits under ~12 rows of wrapped chips
   // and off the bottom of the screen. Rendering it above puts the exit under
   // the same thumb that just opened it. Exactly one copy renders at a time.
+  // The price-bucket row and the tools row ("בשורה" + "מיון"). With
+  // ff_lean_sticky they render right UNDER the sticky block, so they are
+  // there at the top of the page and scroll away with it; without the flag
+  // they sit inside the sticky block exactly as before.
+  const belowBar = (
+    <>
+          {/* 3B wave 3: price buckets. Browse mode only (the RPC search path
+              takes no price argument), so hidden during a text search — exactly
+              like the category chips above — to never imply a filter that is not
+              applied. */}
+          {ffFilters && query.trim().length < 2 && (
+            <div role="group" aria-label="סינון לפי מחיר" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+              {PRICE_BUCKETS.map((b) => {
+                const active = priceBucket === b.key;
+                return (
+                  <button
+                    key={b.key}
+                    onClick={() => setPriceBucket(b.key)}
+                    aria-pressed={active}
+                    style={{
+                      whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem",
+                      padding: "0.45rem 0.95rem", borderRadius: 999, cursor: "pointer",
+                      border: `1.5px solid ${active ? "transparent" : tokens.border}`,
+                      background: active ? tokens.accent : "#fff",
+                      color: active ? "#fff" : tokens.body,
+                    }}
+                  >
+                    {b.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {/* Sorting applies while browsing; during a text search results are
+              ranked by relevance, so the control is hidden then. */}
+          {query.trim().length < 2 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.7rem" }}>
+              <GridDensityPicker value={density} onChange={setDensity} />
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginInlineStart: "auto" }}>
+              <label htmlFor="kt-sort" style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>מיון:</label>
+              <select
+                id="kt-sort"
+                value={sort}
+                onChange={(e) => setSort(e.target.value as "name" | "price_asc" | "price_desc")}
+                style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", color: tokens.text, background: "#fff", border: `1px solid ${tokens.border}`, borderRadius: 999, padding: "0.4rem 0.9rem", cursor: "pointer" }}
+              >
+                <option value="name">שם (א-ת)</option>
+                <option value="price_asc">מחיר: מהזול ליקר</option>
+                <option value="price_desc">מחיר: מהיקר לזול</option>
+              </select>
+              </div>
+            </div>
+          )}
+    </>
+  );
+
   const catToggle =
     ffCatSheet && categories.length > 0 && query.trim().length < 2 && (hiddenCats > 0 || catsExpanded) ? (
       <div style={{ marginTop: "0.4rem" }}>
@@ -824,54 +883,9 @@ export default function CatalogPage() {
             </div>
           )}
           {!catsExpanded && catToggle}
-          {/* 3B wave 3: price buckets. Browse mode only (the RPC search path
-              takes no price argument), so hidden during a text search — exactly
-              like the category chips above — to never imply a filter that is not
-              applied. */}
-          {ffFilters && query.trim().length < 2 && (
-            <div role="group" aria-label="סינון לפי מחיר" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
-              {PRICE_BUCKETS.map((b) => {
-                const active = priceBucket === b.key;
-                return (
-                  <button
-                    key={b.key}
-                    onClick={() => setPriceBucket(b.key)}
-                    aria-pressed={active}
-                    style={{
-                      whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem",
-                      padding: "0.45rem 0.95rem", borderRadius: 999, cursor: "pointer",
-                      border: `1.5px solid ${active ? "transparent" : tokens.border}`,
-                      background: active ? tokens.accent : "#fff",
-                      color: active ? "#fff" : tokens.body,
-                    }}
-                  >
-                    {b.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {/* Sorting applies while browsing; during a text search results are
-              ranked by relevance, so the control is hidden then. */}
-          {query.trim().length < 2 && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.7rem" }}>
-              <GridDensityPicker value={density} onChange={setDensity} />
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginInlineStart: "auto" }}>
-              <label htmlFor="kt-sort" style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>מיון:</label>
-              <select
-                id="kt-sort"
-                value={sort}
-                onChange={(e) => setSort(e.target.value as "name" | "price_asc" | "price_desc")}
-                style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", color: tokens.text, background: "#fff", border: `1px solid ${tokens.border}`, borderRadius: 999, padding: "0.4rem 0.9rem", cursor: "pointer" }}
-              >
-                <option value="name">שם (א-ת)</option>
-                <option value="price_asc">מחיר: מהזול ליקר</option>
-                <option value="price_desc">מחיר: מהיקר לזול</option>
-              </select>
-              </div>
-            </div>
-          )}
+          {!ffLeanSticky && belowBar}
         </div>
+        {ffLeanSticky && <div style={{ padding: "0.2rem 0 0.6rem" }}>{belowBar}</div>}
 
         {loadingProducts && products.length === 0 ? (
           ffMobile ? (

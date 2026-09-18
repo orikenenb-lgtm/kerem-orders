@@ -1,6 +1,9 @@
 "use client";
 
 import { useGridDensity, gridColumns, GridDensityPicker } from "../../lib/gridDensity";
+import { featureFlags } from "../../lib/featureFlags";
+// The "בשורה" picker scrolls away with the page instead of pinning (see ff_lean_sticky).
+const ffLeanSticky = featureFlags.ff_lean_sticky;
 
 // Customer-specific curated catalog ("קישור לרשת"): /collection/?k=<slug>
 // shows ONLY the products the manager put into that collection — built for
@@ -182,10 +185,17 @@ function CollectionCatalog() {
           onChange={(e) => setInput(e.target.value)}
           style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
         />
-        <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "0.7rem" }}>
+        {!ffLeanSticky && (
+          <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "0.7rem" }}>
+            <GridDensityPicker value={density} onChange={setDensity} />
+          </div>
+        )}
+      </div>
+      {ffLeanSticky && (
+        <div style={{ display: "flex", justifyContent: "flex-start", padding: "0.2rem 0 0.6rem" }}>
           <GridDensityPicker value={density} onChange={setDensity} />
         </div>
-      </div>
+      )}
 
       {loading && products.length === 0 ? (
         <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>

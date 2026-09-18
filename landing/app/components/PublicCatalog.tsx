@@ -1,6 +1,9 @@
 "use client";
 
 import { useGridDensity, gridColumns, GridDensityPicker } from "../../lib/gridDensity";
+import { featureFlags } from "../../lib/featureFlags";
+// The "בשורה" picker scrolls away with the page instead of pinning (see ff_lean_sticky).
+const ffLeanSticky = featureFlags.ff_lean_sticky;
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SiteHeader from "./SiteHeader";
@@ -221,10 +224,17 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
               })}
             </div>
           )}
-          <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "0.7rem" }}>
+          {!ffLeanSticky && (
+            <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "0.7rem" }}>
+              <GridDensityPicker value={density} onChange={setDensity} />
+            </div>
+          )}
+        </div>
+        {ffLeanSticky && (
+          <div style={{ display: "flex", justifyContent: "flex-start", padding: "0.2rem 0 0.6rem" }}>
             <GridDensityPicker value={density} onChange={setDensity} />
           </div>
-        </div>
+        )}
 
         {loadingProducts && products.length === 0 ? (
           <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>

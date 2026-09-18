@@ -126,6 +126,15 @@ export const featureFlags = {
    *  screen is exactly the one-at-a-time flow it was. DEFAULT ON at the
    *  owner's request. */
   ff_collection_bulk: true,
+  /** Leaner sticky bar on every catalogue. The price-bucket row and the
+   *  "בשורה / מיון" row stay at the top of the page but no longer STICK: on a
+   *  390px phone the pinned bar (search + categories + prices + tools) left
+   *  room for two rows of products; the owner asked to see the products.
+   *  Search and category chips still stick. Presentation only — the rows are
+   *  the same elements, same state, just rendered under the sticky block.
+   *  Off = they are pinned again exactly as before. DEFAULT ON at the
+   *  owner's request. */
+  ff_lean_sticky: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
