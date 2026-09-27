@@ -55,6 +55,10 @@
   `update site_settings set value='off' where key='enforce_order_rules';` — כיבוי מיידי.
 - **מינימום הזמנה חזרה ל-500**:
   `update site_settings set value='500' where key='min_order_total';`
+- **תיקון כיוון אוטומטי לתמונות חדשות (27.9.2026) — ביטול**:
+  `select cron.unschedule('orient-scan-15m');` — הסריקה (detect-orientation, כל 15 דק')
+  מפסיקה; סיבובים שכבר נכתבו נשארים וניתנים לעריכה ב-/admin/images-review.
+  מתועד ב-`supabase/2026-09-orient-cron.sql`.
 - **סנכרון כל 15 דק' — ביטול**:
   `select cron.unschedule('rivhit-products-15m');` (הלילי ב-03:00 נשאר).
 - **סדר הקטגוריות (8.9.2026) — חזרה ל״הכי גדולה קודם״**: שלוש הפונקציות
