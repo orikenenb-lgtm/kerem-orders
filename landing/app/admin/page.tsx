@@ -451,14 +451,35 @@ function ProductsTab() {
     // are hidden on purpose and never something the father would tick.
     setHiddenGroups(rows.filter((g) => g.group_id !== 999 && g.group_id !== 9999));
   }, []);
-  // Loaded together with the audit verdict: the two answer the same question
+  // Group moves the sync recognised in Rivhit (rivhit_moves, written by the
+  // trg_log_rivhit_move trigger when rivhit-sync v21+ records an item's real
+  // group). Above all: items the owner's father moved to "ניגמרים" — the site
+  // hides them within one sync run, and this is where he can SEE that it did.
+  // The one-time catch-up of older moves is flagged `initial` and not shown.
+  type Move = { name: string | null; from_group: number | null; from_category: string | null; to_group: number | null; to_category: string | null; detected_at: string };
+  const [moves, setMoves] = useState<Move[]>([]);
+  const [movesOpen, setMovesOpen] = useState(false);
+  const loadMoves = useCallback(async () => {
+    const since = new Date(Date.now() - 14 * 86400000).toISOString();
+    const { data } = await supabase
+      .from("rivhit_moves")
+      .select("name,from_group,from_category,to_group,to_category,detected_at")
+      .eq("initial", false)
+      .gte("detected_at", since)
+      .order("detected_at", { ascending: false })
+      .limit(200);
+    setMoves((data as Move[]) ?? []);
+  }, []);
+
+  // Loaded together with the audit verdict: the three answer the same question
   // ("does the site show what Rivhit sells?") and refresh together.
   const loadAudit = useCallback(async () => {
     const { data } = await supabase.rpc("latest_sync_audit");
     const row = Array.isArray(data) ? data[0] : data;
     if (row) setAudit(row);
     loadHiddenGroups();
-  }, [loadHiddenGroups]);
+    loadMoves();
+  }, [loadHiddenGroups, loadMoves]);
 
   const showGroup = async (g: HiddenGroup) => {
     if (unhiding) return;
@@ -646,6 +667,52 @@ function ProductsTab() {
             {auditing ? "בודק…" : "בדיקה עכשיו"}
           </button>
         </div>
+        {(() => {
+          // 999 = "ניגמרים" in Rivhit. Into it = hidden from customers; out of
+          // it into a sold group = back on sale.
+          const out = moves.filter((m) => m.to_group === 999);
+          const back = moves.filter((m) => m.from_group === 999 && m.to_group !== 999);
+          return (
+            <div role="region" aria-label="מוצרים שהועברו לניגמרים ברווחית" style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem" }}>
+              <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: tokens.text }}>
+                {out.length > 0
+                  ? `✓ זוהו ${out.length.toLocaleString("he-IL")} מוצרים שהועברו ל״ניגמרים״ ברווחית — הוסתרו מהאתר`
+                  : "✓ העברה ל״ניגמרים״ ברווחית מזוהה אוטומטית"}
+              </div>
+              <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, lineHeight: 1.6 }}>
+                {out.length > 0 ? "ב-14 הימים האחרונים. " : "ב-14 הימים האחרונים לא הועבר מוצר. "}
+                מוצר שמועבר ל״ניגמרים״ ברווחית יורד מהאתר בעדכון הבא — תוך 15 דקות, או מיד עם ״עדכן עכשיו״ — ומופיע כאן.
+                {back.length > 0 ? ` ${back.length.toLocaleString("he-IL")} מוצרים חזרו מ״ניגמרים״ למכירה.` : ""}
+              </div>
+              {moves.length > 0 && (
+                <>
+                  <button onClick={() => setMovesOpen((v) => !v)} aria-expanded={movesOpen} style={{ ...ghostBtn, minHeight: 40, marginTop: "0.5rem" }}>
+                    {movesOpen ? "הסתרת הרשימה" : `הצגת הרשימה (${moves.length.toLocaleString("he-IL")})`}
+                  </button>
+                  {movesOpen && (
+                    <div style={{ display: "grid", gap: "0.3rem", marginTop: "0.5rem", maxHeight: 360, overflowY: "auto" }}>
+                      {moves.map((m, i) => {
+                        const gone = m.to_group === 999;
+                        const returned = m.from_group === 999 && !gone;
+                        return (
+                          <div key={i} style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap", border: `1px solid ${tokens.border}`, borderRadius: 8, padding: "0.35rem 0.6rem", background: "#fff" }}>
+                            <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.72rem", whiteSpace: "nowrap", padding: "0.1rem 0.45rem", borderRadius: 999, color: gone ? "#C0143C" : returned ? "#1A7A4D" : tokens.body, background: gone ? "rgba(192,20,60,0.08)" : returned ? "rgba(37,199,126,0.12)" : tokens.surface }}>
+                              {gone ? "ירד מהאתר" : returned ? "חזר למכירה" : "הועבר קטגוריה"}
+                            </span>
+                            <span style={{ flex: 1, minWidth: 140, fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.text }}>{m.name}</span>
+                            <span style={{ fontFamily: tokens.assistant, fontSize: "0.75rem", color: tokens.dim }}>
+                              {(m.from_category || "—")} ← {(m.to_category || "—")} · {dateTimeHe(m.detected_at)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })()}
         {hiddenGroups.length > 0 && (
           <div role="region" aria-label="קבוצות שרווחית מוכרת והאתר מסתיר" style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem" }}>
             <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", color: "#B45309" }}>

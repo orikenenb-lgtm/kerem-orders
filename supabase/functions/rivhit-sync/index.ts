@@ -1,6 +1,16 @@
 // rivhit-sync — the 15-minute (products) and nightly (products + customers)
 // pull from Rivhit into the site. Mirror of the deployed function
-// (mcdchalyzeqjkkgfeznd, v20). Change here AND deploy there.
+// (mcdchalyzeqjkkgfeznd, v21). Change here AND deploy there.
+//
+// v21 (2026-09-27): the sync now RECOGNISES group moves. When the owner's
+// father moves an item to "ניגמרים" (or any group the site does not sell),
+// the item used to be hidden but kept its OLD group in the database — 222
+// such items were found, still filed as "מוצרי בנים" etc., with no record of
+// the move. Now every item the site does not sell gets its real Rivhit group
+// written (group_id + category), and the products trigger
+// trg_log_rivhit_move logs the move with its time into rivhit_moves, which
+// the manager dashboard shows. Read-only against Rivhit, as always. The
+// summary reports group_moves; dryrun computes it without writing.
 //
 // v20 (2026-09-18): Item.Groups is no longer optional. It used to be wrapped
 // in a silent catch — if that one call failed or came back empty, every
@@ -116,8 +126,46 @@ Deno.serve(async (req) => {
           }))
         const { count: existing } = await admin.from('products').select('rivhit_id', { count: 'exact', head: true }).not('rivhit_id', 'is', null)
         if (rows.length === 0 && (existing || 0) > 0) throw new Error('Item.List returned 0 sellable while DB has products — aborting to avoid wipe')
+
+        // v21 — group moves of items the site does NOT sell (ניגמרים above all).
+        // Sellable items already carry their group in the upsert below; this
+        // covers the rest: items already known to the site whose recorded
+        // group differs from the one Rivhit reports now.
+        const sellable = new Set<number>(rows.map((r) => r.rivhit_id))
+        const dbGroup = new Map<number, number | null>()
+        for (let from = 0; ; from += 1000) {
+          const { data, error } = await admin.from('products').select('rivhit_id,group_id')
+            .not('rivhit_id', 'is', null).order('rivhit_id', { ascending: true }).range(from, from + 999)
+          if (error) throw new Error(`products read: ${error.message}`)
+          for (const r of (data ?? []) as { rivhit_id: number; group_id: number | null }[]) dbGroup.set(Number(r.rivhit_id), r.group_id)
+          if (!data || data.length < 1000) break
+        }
+        const moves = new Map<number, number[]>()
+        for (const it of items) {
+          const iid = Number(it.item_id)
+          const gid = it.item_group_id
+          if (!(iid > 0) || gid == null || sellable.has(iid) || !dbGroup.has(iid)) continue
+          if (dbGroup.get(iid) === gid) continue
+          if (!moves.has(gid)) moves.set(gid, [])
+          moves.get(gid)!.push(iid)
+        }
+        summary.group_moves = {
+          count: [...moves.values()].reduce((n, a) => n + a.length, 0),
+          to: Object.fromEntries([...moves.entries()].map(([g, a]) => [`${g} ${groupName.get(g) || ''}`.trim(), a.length])),
+        }
+
         if (mode === 'sync') {
           await upsertAll('products', rows, 'rivhit_id')
+          // Not sellable → never active; the group written is Rivhit's own, so
+          // the database now says "ניגמרים" when Rivhit does.
+          for (const [gid, ids] of moves) {
+            for (let i = 0; i < ids.length; i += 200) {
+              const { error } = await admin.from('products')
+                .update({ group_id: gid, category: groupName.get(gid) || '', is_active: false })
+                .in('rivhit_id', ids.slice(i, i + 200))
+              if (error) throw new Error(`group move @${gid}: ${error.message}`)
+            }
+          }
           await admin.from('products').update({ is_active: false }).lt('updated_at', nowIso).not('rivhit_id', 'is', null)
         }
         summary.products = { from_rivhit: items.length, synced: rows.length, hidden_groups: [...excluded], mode }
