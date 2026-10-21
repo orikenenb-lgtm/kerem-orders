@@ -10,6 +10,12 @@ on:
     paths:
       - "landing/**"
       - ".github/workflows/deploy-pages.yml"
+  # The public product pages (/p/) are static HTML built from the catalogue
+  # at deploy time, so a product added or hidden in Rivhit only reaches them
+  # on the next build. One rebuild of main a day — after the nightly Rivhit
+  # sync (03:07 UTC) — keeps them current. Same job, same main, same checks.
+  schedule:
+    - cron: "41 3 * * *"
   workflow_dispatch:
 
 permissions:

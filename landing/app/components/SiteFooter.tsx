@@ -6,6 +6,7 @@ import { tokens } from "../../lib/ui";
 import { getMinOrderTotal } from "../../lib/siteSettings";
 import { MIN_ORDER_FALLBACK } from "../../lib/config";
 import { CONTACT } from "./SiteHeader";
+import { featureFlags } from "../../lib/featureFlags";
 
 // פוטר מקצועי משותף לעמודי החנות — מותג, קישורים מהירים ופרטי קשר.
 export default function SiteFooter() {
@@ -72,6 +73,9 @@ export default function SiteFooter() {
         <div style={col}>
           <span style={head}>ניווט מהיר</span>
           <Link href="/catalog" style={link}>הקטלוג</Link>
+          {/* A plain link to the public product index — how a crawler that
+              lands anywhere on the site reaches every product page. */}
+          {featureFlags.ff_public_product_pages && <Link href="/p/" style={link}>כל המוצרים</Link>}
           <Link href="/account" style={link}>ההזמנות שלי</Link>
           <Link href="/register" style={link}>פתיחת חשבון סיטונאי</Link>
           <Link href="/login" style={link}>התחברות</Link>

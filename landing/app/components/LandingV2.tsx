@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getMinOrderTotal } from "../../lib/siteSettings";
 import { tokens } from "../../lib/ui";
+import { featureFlags } from "../../lib/featureFlags";
 import {
   MIN_ORDER_FALLBACK,
   PHONE_DISPLAY,
@@ -73,6 +74,16 @@ export default function LandingV2() {
           <Link href="/accessibility" className="lv2-a11y">
             הצהרת נגישות
           </Link>
+          {/* The crawlable route to every public product page (ff_public_product_pages):
+              same quiet text-link style, so the screen itself does not change. */}
+          {featureFlags.ff_public_product_pages && (
+            <>
+              {" · "}
+              <Link href="/p/" className="lv2-a11y">
+                כל המוצרים
+              </Link>
+            </>
+          )}
         </p>
       </footer>
 

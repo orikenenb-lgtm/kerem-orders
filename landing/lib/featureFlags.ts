@@ -144,6 +144,15 @@ export const featureFlags = {
    *  Rollback = false: the screen goes back to sending exactly the queries it
    *  sent before; the database rules stay (they are what protect the data). */
   ff_agent_customers: true,
+  /** Public product pages for Google: /p/ (every product, by category) and
+   *  /p/<id>/ (one page per product — name, photo, category; never a price,
+   *  sku or stock count, exactly what the public /view already shows), built
+   *  as static HTML at deploy from the same anon catalog_public() RPC, plus
+   *  their sitemap entries and a "כל המוצרים" footer link. Nothing existing
+   *  changes. Off = no product pages are generated, the sitemap and footer
+   *  return to before. See lib/publicProducts.ts. DEFAULT ON at the owner's
+   *  request (2026-10-21). */
+  ff_public_product_pages: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
