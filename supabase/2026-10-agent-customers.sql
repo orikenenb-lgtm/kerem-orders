@@ -1,16 +1,17 @@
 -- ============================================================================
 -- STATUS (2026-10-21):
---   staging (ahptrtlnrpmevlpgqeac): ONLY the new nullable columns are applied
---     (customers.agent_id; profiles.rivhit_agent_id / agent_user_id /
---     agent_source / agent_assigned_at, with their check, unique index and
---     index). Inert: nothing reads or writes them yet.
---   production (mcdchalyzeqjkkgfeznd): nothing applied.
---   Everything that touches permissions — the log table's policy, GRANT /
---   REVOKE, SECURITY DEFINER functions, triggers, the RLS policies — was
---   cancelled before it ran when sent from the assistant's session. Apply
---   this whole file (it is idempotent) in the Supabase SQL editor on staging,
---   run the RLS tests, then on production.
---   Until then the live schema is supabase/2026-09-agents-and-visibility.sql.
+--   staging (ahptrtlnrpmevlpgqeac): APPLIED by the owner in the SQL editor.
+--     Role-switched RLS test, 24/24 in a rolled-back transaction: each agent
+--     sees only himself + his customers and only his own Rivhit cards;
+--     discount refused on another agent's customer and above the cap; claim
+--     refused for another agent's customer, works for an unassigned one and
+--     auto-links to the agent's own card; agents cannot call manager RPCs or
+--     raise their own number/cap/role; a customer cannot unassign/unlink
+--     himself; a manual choice survives Rivhit changes; release goes back
+--     to the card's agent. The test found ONE bug — the link-time assignment
+--     was not logged — fixed below (trg_log_agent_assignment).
+--   production (mcdchalyzeqjkkgfeznd): nothing applied yet.
+--   The file is idempotent: run it whole, in the Supabase SQL editor.
 -- ============================================================================
 -- Agents own their customers — the SQL layer. Mirror of the live project.
 -- Rehearsed on staging (ahptrtlnrpmevlpgqeac) first, with role-switched RLS
@@ -238,9 +239,14 @@ begin
   return new;
 end $$;
 revoke execute on function public.log_agent_assignment() from public, anon, authenticated;
+-- NOT "after update OF agent_user_id": a column-list trigger fires only when
+-- the column is named in the UPDATE's SET list, and the link-time assignment
+-- is made by the BEFORE trigger above (the UPDATE names rivhit_customer_id
+-- only) — the staging RLS test caught that exact assignment going unlogged.
+-- Fire on every update; the WHEN clause keeps it to real changes.
 drop trigger if exists trg_log_agent_assignment on public.profiles;
 create trigger trg_log_agent_assignment
-  after update of agent_user_id on public.profiles
+  after update on public.profiles
   for each row when (old.agent_user_id is distinct from new.agent_user_id)
   execute function public.log_agent_assignment();
 
