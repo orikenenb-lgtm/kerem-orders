@@ -39,6 +39,10 @@ type Person = {
   zip_code: string | null;
   delivery_notes: string | null;
   rivhit_customer_id: number | null;
+  // ff_agent_customers — present only when the flag is on (see COLS).
+  rivhit_agent_id?: number | null;
+  agent_user_id?: string | null;
+  agent_source?: "rivhit" | "pulled" | "manager" | null;
 };
 
 type OrderStat = { orders: number; total: number; last: string | null };
@@ -63,6 +67,13 @@ type CustomerOrder = {
 
 const ffAdminOrders = featureFlags.ff_admin_customer_orders;
 const ffAgentDiscounts = featureFlags.ff_agent_discounts;
+const ffAgentCustomers = featureFlags.ff_agent_customers;
+
+const SOURCE_HE: Record<string, string> = {
+  rivhit: "לפי כרטיס הלקוח ברווחית",
+  pulled: "הסוכן משך אליו",
+  manager: "נקבע ידנית על ידי המנהל",
+};
 
 /** One page of a customer's history. 9 orders exist in the whole system today,
  *  but this screen must not become the reason the manager waits when that is
@@ -106,7 +117,10 @@ function topProducts(orders: CustomerOrder[], take = 5) {
 }
 
 const COLS =
-  "id,email,full_name,business_name,phone,role,created_at,vat_number,discount_percent,max_discount_percent,city,street,house_number,zip_code,delivery_notes,rivhit_customer_id";
+  "id,email,full_name,business_name,phone,role,created_at,vat_number,discount_percent,max_discount_percent,city,street,house_number,zip_code,delivery_notes,rivhit_customer_id" +
+  // The agent columns exist only once the migration is applied; with the flag
+  // off the select is byte-for-byte what it was.
+  (ffAgentCustomers ? ",rivhit_agent_id,agent_user_id,agent_source" : "");
 
 /** Everything about a person that is worth matching a search against, folded
  *  the same way the catalogue folds product names (final letters, punctuation,
@@ -137,7 +151,10 @@ export default function CustomersAdminPage() {
   // no order history, no contact panel, just the customers and the one dial
   // they are allowed to turn. RLS backs this up — profiles_select only exposes
   // customer rows to an agent, so a hand-written query gets the same answer.
-  const canSeeOrders = isManager;
+  // With ff_agent_customers an agent sees his OWN customers in full — contact
+  // details and orders. RLS (profiles_select / orders_select) returns only
+  // customers assigned to him, so this widens nothing beyond his own book.
+  const canSeeOrders = isManager || (ffAgentCustomers && isAgent);
   const myCap = Number(profile?.max_discount_percent ?? 0) || 0;
 
   const [people, setPeople] = useState<Person[]>([]);
@@ -199,6 +216,17 @@ export default function CustomersAdminPage() {
     setSaveMsg((m) => new Map(m).set(userId, role === "agent" ? `נשמר: סוכן עד ${cap}%` : "נשמר: לקוח רגיל"));
   }, []);
 
+  // ---- ff_agent_customers ------------------------------------------------
+  // Which agent number each Rivhit card carries (manager only — RLS gives the
+  // manager every card; an agent never needs this map).
+  const [cardAgent, setCardAgent] = useState<Map<number, number | null>>(new Map());
+  // "all" | "none" | <agent profile id>
+  const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [claimInput, setClaimInput] = useState("");
+  const [claimBusy, setClaimBusy] = useState(false);
+  const [claimMsg, setClaimMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+
   useEffect(() => {
     if (loading) return;
     if (!session) router.replace("/login");
@@ -222,7 +250,13 @@ export default function CustomersAdminPage() {
     if (!mountedRef.current) return;
     if (error) { setErr("טעינת הלקוחות נכשלה. בדקו את החיבור ונסו שוב."); setBusy(false); return; }
     setErr("");
-    setPeople((data as Person[]) ?? []);
+    setPeople((data as unknown as Person[]) ?? []);
+
+    if (ffAgentCustomers && isManager) {
+      const { data: cards } = await supabase.from("customers").select("rivhit_id,agent_id");
+      if (!mountedRef.current) return;
+      setCardAgent(new Map(((cards ?? []) as { rivhit_id: number; agent_id: number | null }[]).map((c) => [c.rivhit_id, c.agent_id])));
+    }
 
     // Order history per person. The manager can already read every order on
     // /admin, so this adds no access — it just saves him from cross-checking
@@ -258,13 +292,70 @@ export default function CustomersAdminPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Manager: fix a customer's agent by hand (null = none). Rivhit never
+  // overrides a manual choice until it is released below.
+  const setCustomerAgent = useCallback(async (customerId: string, agentId: string | null) => {
+    setSavingFor(customerId);
+    setSaveMsg((m) => { const n2 = new Map(m); n2.delete(customerId); return n2; });
+    const { error } = await supabase.rpc("set_customer_agent", { p_customer: customerId, p_agent: agentId });
+    if (!mountedRef.current) return;
+    setSavingFor(null);
+    if (error) { setSaveMsg((m) => new Map(m).set(customerId, error.message || "השמירה נכשלה.")); return; }
+    setPeople((ps) => ps.map((x) => (x.id === customerId ? { ...x, agent_user_id: agentId, agent_source: "manager" } : x)));
+    setSaveMsg((m) => new Map(m).set(customerId, agentId ? "נשמר: הסוכן נקבע ידנית" : "נשמר: ללא סוכן"));
+  }, []);
+
+  // Manager: drop the manual choice and go back to the Rivhit card's agent.
+  const releaseCustomerAgent = useCallback(async (customerId: string) => {
+    setSavingFor(customerId);
+    const { data, error } = await supabase.rpc("release_customer_agent", { p_customer: customerId });
+    if (!mountedRef.current) return;
+    setSavingFor(null);
+    if (error) { setSaveMsg((m) => new Map(m).set(customerId, error.message || "השמירה נכשלה.")); return; }
+    const agentId = (data as string | null) ?? null;
+    setPeople((ps) => ps.map((x) => (x.id === customerId ? { ...x, agent_user_id: agentId, agent_source: agentId ? "rivhit" : null } : x)));
+    setSaveMsg((m) => new Map(m).set(customerId, "נשמר: השיוך חזר להיות לפי רווחית"));
+  }, []);
+
+  // Manager: "Rivhit agent N = this account". Returns how many customers moved.
+  const saveAgentNumber = useCallback(async (userId: string, n: number | null) => {
+    setSavingFor(userId);
+    setSaveMsg((m) => { const n2 = new Map(m); n2.delete(userId); return n2; });
+    const { data, error } = await supabase.rpc("set_agent_rivhit_number", { p_agent: userId, p_number: n });
+    if (!mountedRef.current) return;
+    setSavingFor(null);
+    if (error) { setSaveMsg((m) => new Map(m).set(userId, error.message || "השמירה נכשלה.")); return; }
+    const moved = Number(data) || 0;
+    setSaveMsg((m) => new Map(m).set(userId, n
+      ? `נשמר: מספר סוכן ${n} ברווחית${moved > 0 ? ` · ${moved.toLocaleString("he-IL")} לקוחות שויכו אליו` : ""}`
+      : "נשמר: בלי מספר סוכן"));
+    // Assignments may have changed for many rows — reload the list.
+    void load();
+  }, [load]);
+
+  // Agent: pull a customer with no agent, by exact phone or ח.פ. The server
+  // refuses anyone else's customer and anything ambiguous, in Hebrew.
+  const claim = useCallback(async () => {
+    const q = claimInput.trim();
+    if (!q || claimBusy) return;
+    setClaimBusy(true);
+    setClaimMsg(null);
+    const { data, error } = await supabase.rpc("claim_customer", { p_query: q });
+    if (!mountedRef.current) return;
+    setClaimBusy(false);
+    if (error) { setClaimMsg({ ok: false, text: error.message || "המשיכה נכשלה." }); return; }
+    setClaimMsg({ ok: true, text: `"${String(data || "הלקוח")}" משויך אליכם עכשיו.` });
+    setClaimInput("");
+    void load();
+  }, [claimInput, claimBusy, load]);
+
   // One round trip per customer: the orders plus their lines, newest first.
   // RLS already lets a manager read every order and every order_item
   // (orders_select / order_items_select both fall back to is_manager()), so
   // this grants no access the account did not already have — it just puts the
   // answer on the screen the question is asked on.
   const loadOrders = useCallback(async (userId: string) => {
-    if (!ffAdminOrders || !isManager) return;
+    if (!ffAdminOrders || !canSeeOrders) return;
     setOrdersBusyFor(userId);
     const { data, error } = await supabase
       .from("orders")
@@ -281,7 +372,7 @@ export default function CustomersAdminPage() {
     }
     setOrdersErrFor((m) => { const n = new Map(m); n.delete(userId); return n; });
     setOrdersByUser((m) => new Map(m).set(userId, (data as CustomerOrder[]) ?? []));
-  }, [isManager]);
+  }, [canSeeOrders]);
 
   const toggleCustomer = useCallback((id: string) => {
     setOpenId((cur) => {
@@ -291,19 +382,35 @@ export default function CustomersAdminPage() {
     });
   }, [ordersByUser, loadOrders]);
 
+  // The people an agent can be assigned to: agents and the manager himself.
+  const agents = useMemo(() => people.filter((p) => p.role === "agent" || p.role === "manager"), [people]);
+  const agentName = useCallback((id: string | null | undefined) => {
+    if (!id) return null;
+    const a = people.find((x) => x.id === id);
+    return a ? (a.full_name || a.business_name || a.email || "סוכן") : "סוכן";
+  }, [people]);
+
   const shown = useMemo(() => {
     const q = normalizeHe(query);
-    if (!q) return people;
+    // An agent's own profile comes back from RLS (id = auth.uid()) but is not
+    // one of his customers — keep it out of his list and his count.
+    let list = ffAgentCustomers && !isManager ? people.filter((p) => p.role === "customer") : people;
+    if (ffAgentCustomers && isManager && agentFilter !== "all") {
+      list = list.filter((p) => p.role === "customer" && (agentFilter === "none" ? !p.agent_user_id : p.agent_user_id === agentFilter));
+    }
+    if (!q) return list;
     const words = q.split(" ").filter(Boolean);
     // Every word has to appear somewhere, in any order — so "אבי תל אביב"
     // finds the right shop even though the words come from three fields.
-    return people.filter((p) => {
+    return list.filter((p) => {
       const h = haystack(p);
       return words.every((w) => h.includes(w));
     });
-  }, [people, query]);
+  }, [people, query, agentFilter, isManager]);
 
-  const customerCount = people.filter((p) => p.role !== "manager").length;
+  const customerCount = ffAgentCustomers && !isManager
+    ? people.filter((p) => p.role === "customer").length
+    : people.filter((p) => p.role !== "manager").length;
 
   if (loading || !(isManager || (ffAgentDiscounts && isAgent))) return null;
 
@@ -313,7 +420,7 @@ export default function CustomersAdminPage() {
       <main id="main-content" tabIndex={-1} style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 5rem" }}>
         {/* An agent has no /admin, so do not offer them a crumb that bounces
             them straight back to the catalogue. */}
-        {canSeeOrders ? (
+        {isManager ? (
           <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "0.8rem" }}>
             <Link href="/admin" style={{ color: tokens.accent, textDecoration: "none" }}>ניהול</Link> · לקוחות
           </div>
@@ -324,10 +431,39 @@ export default function CustomersAdminPage() {
           לקוחות
         </h1>
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.4rem", maxWidth: 720 }}>
-          {canSeeOrders
+          {isManager
             ? "כל מי שרשום במערכת. אפשר לחפש לפי שם העסק, שם איש הקשר, אימייל, טלפון, ח״פ או עיר — ולפתוח כרטיס לקוח כדי לראות את כתובת המשלוח, ההנחה הקבועה, וכל ההזמנות שלו: מה בדיוק הזמין בכל הזמנה, באיזו כמות, באיזה מחיר, וכמה הוציא בסך הכול."
-            : `הלקוחות שלכם. פתחו כרטיס כדי לקבוע ללקוח הנחה קבועה — עד ${myCap}% לפי ההרשאה שלכם. כל שינוי נרשם ביומן עם השם שלכם.`}
+            : ffAgentCustomers
+              ? `הלקוחות שמשויכים אליכם — לפי כרטיס הלקוח ברווחית, או שמשכתם אליכם. פתחו כרטיס כדי לראות פרטים והזמנות ולקבוע הנחה קבועה — עד ${myCap}% לפי ההרשאה שלכם. כל שינוי נרשם ביומן עם השם שלכם.`
+              : `הלקוחות שלכם. פתחו כרטיס כדי לקבוע ללקוח הנחה קבועה — עד ${myCap}% לפי ההרשאה שלכם. כל שינוי נרשם ביומן עם השם שלכם.`}
         </p>
+
+        {ffAgentCustomers && isAgent && !isManager && (
+          <section aria-label="משיכת לקוח אליי" style={{ marginTop: "1rem", border: `1px solid ${tokens.border}`, borderRadius: 14, background: tokens.surface, padding: "0.9rem 1rem" }}>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: tokens.text }}>משיכת לקוח אליי</div>
+            <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, margin: "0.25rem 0 0.6rem" }}>
+              לקוח שנרשם לאתר ועוד אין לו סוכן — מקלידים את הטלפון או הח״פ שלו, והוא עובר אליכם. לקוח של סוכן אחר רק המנהל מעביר.
+            </p>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <input
+                inputMode="numeric"
+                aria-label="טלפון או ח״פ של הלקוח"
+                placeholder="טלפון או ח״פ"
+                value={claimInput}
+                onChange={(e) => setClaimInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void claim(); }}
+                dir="ltr"
+                style={{ flex: 1, minWidth: 180, minHeight: 44, fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.5rem 0.8rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text }}
+              />
+              <button onClick={() => void claim()} disabled={claimBusy || !claimInput.trim()} style={{ ...miniBtn, minHeight: 44, fontWeight: 800, background: claimBusy || !claimInput.trim() ? "#fff" : tokens.accent, color: claimBusy || !claimInput.trim() ? tokens.dim : "#fff" }}>
+                {claimBusy ? "מושך…" : "משיכה אליי"}
+              </button>
+            </div>
+            {claimMsg && (
+              <p role={claimMsg.ok ? "status" : "alert"} style={{ fontFamily: tokens.assistant, fontSize: "0.88rem", color: claimMsg.ok ? "#1A7A4D" : "#C0143C", margin: "0.5rem 0 0" }}>{claimMsg.text}</p>
+            )}
+          </section>
+        )}
 
         <div style={{ position: "sticky", top: "var(--kt-header-h, 96px)", zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
           <input
@@ -345,6 +481,20 @@ export default function CustomersAdminPage() {
                 ? `${shown.length.toLocaleString("he-IL")} מתוך ${people.length.toLocaleString("he-IL")}`
                 : `${customerCount.toLocaleString("he-IL")} לקוחות רשומים`}
           </p>
+          {ffAgentCustomers && isManager && !busy && (
+            <div role="group" aria-label="סינון לפי סוכן" style={{ display: "flex", gap: "0.4rem", overflowX: "auto", paddingBottom: "0.2rem", marginTop: "0.4rem" }}>
+              {[
+                { key: "all", label: "כל הלקוחות", n: people.filter((p) => p.role === "customer").length },
+                { key: "none", label: "ללא סוכן", n: people.filter((p) => p.role === "customer" && !p.agent_user_id).length },
+                ...agents.map((a) => ({ key: a.id, label: (a.full_name || a.business_name || a.email || "סוכן") + (a.rivhit_agent_id ? ` · ${a.rivhit_agent_id}` : ""), n: people.filter((p) => p.role === "customer" && p.agent_user_id === a.id).length })),
+              ].map((c) => (
+                <button key={c.key} onClick={() => setAgentFilter(c.key)} aria-pressed={agentFilter === c.key}
+                  style={{ ...miniBtn, whiteSpace: "nowrap", minHeight: 36, background: agentFilter === c.key ? tokens.accent : "#fff", color: agentFilter === c.key ? "#fff" : tokens.body, borderColor: agentFilter === c.key ? "transparent" : tokens.border }}>
+                  {c.label} ({c.n.toLocaleString("he-IL")})
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {err && (
@@ -381,6 +531,11 @@ export default function CustomersAdminPage() {
                       <span dir="ltr">{p.phone || "בלי טלפון"}</span>
                     </div>
                   </div>
+                  {ffAgentCustomers && isManager && p.role === "customer" && (
+                    <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.75rem", color: p.agent_user_id ? tokens.body : tokens.dim, background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 999, padding: "0.2rem 0.6rem", whiteSpace: "nowrap" }}>
+                      {p.agent_user_id ? `סוכן: ${agentName(p.agent_user_id)}` : "ללא סוכן"}
+                    </span>
+                  )}
                   {discount > 0 && (
                     <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.75rem", color: "#1A7A4D", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 999, padding: "0.2rem 0.6rem" }}>
                       הנחה קבועה {discount}%
@@ -413,6 +568,18 @@ export default function CustomersAdminPage() {
                     <Row label="הזמנה אחרונה" value={st?.last ? dateHe(st.last) : "—"} />
                     <Row label="מספר לקוח ברווחית" value={p.rivhit_customer_id ? String(p.rivhit_customer_id) : "לא מקושר"} ltr={!!p.rivhit_customer_id} />
                   </dl>
+                )}
+
+                {open && ffAgentCustomers && isManager && (
+                  <AgentPanel
+                    person={p}
+                    agents={agents}
+                    cardAgentNumber={p.rivhit_customer_id != null ? (cardAgent.get(p.rivhit_customer_id) ?? null) : null}
+                    busy={savingFor === p.id}
+                    onSetAgent={(agentId) => setCustomerAgent(p.id, agentId)}
+                    onRelease={() => releaseCustomerAgent(p.id)}
+                    onSaveNumber={(n) => saveAgentNumber(p.id, n)}
+                  />
                 )}
 
                 {open && ffAgentDiscounts && (
@@ -729,6 +896,80 @@ function CustomerOrders({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** Manager-only: who this customer belongs to, and — on an agent's or the
+ *  manager's own card — which Rivhit agent number is theirs. Every write is an
+ *  RPC whose rules live in the database (supabase/2026-10-agent-customers.sql). */
+function AgentPanel({
+  person, agents, cardAgentNumber, busy, onSetAgent, onRelease, onSaveNumber,
+}: {
+  person: Person;
+  agents: Person[];
+  cardAgentNumber: number | null;
+  busy: boolean;
+  onSetAgent: (agentId: string | null) => void;
+  onRelease: () => void;
+  onSaveNumber: (n: number | null) => void;
+}) {
+  const [num, setNum] = useState(person.rivhit_agent_id ? String(person.rivhit_agent_id) : "");
+  const box: React.CSSProperties = { borderTop: `1px solid ${tokens.border}`, marginTop: "0.8rem", paddingTop: "0.8rem" };
+  const h: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: tokens.text, marginBottom: "0.4rem" };
+  const note: React.CSSProperties = { fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, marginTop: "0.35rem" };
+
+  if (person.role === "agent" || person.role === "manager") {
+    const parsed = num.trim() === "" ? null : Number(num);
+    const bad = parsed !== null && (!Number.isInteger(parsed) || parsed <= 0);
+    const same = (parsed ?? null) === (person.rivhit_agent_id ?? null);
+    return (
+      <div style={box}>
+        <div style={h}>מספר סוכן ברווחית</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+          <input type="number" inputMode="numeric" min={1} step={1} value={num} onChange={(e) => setNum(e.target.value)}
+            aria-label="מספר הסוכן ברווחית" placeholder="למשל 548"
+            style={{ width: 110, minHeight: 44, fontFamily: tokens.assistant, fontSize: "1rem", textAlign: "center", padding: "0.5rem", borderRadius: 10, border: `1px solid ${bad ? "#C0143C" : tokens.border}`, background: "#fff", color: tokens.text }} />
+          <button onClick={() => onSaveNumber(parsed)} disabled={busy || bad || same}
+            style={{ ...miniBtn, minHeight: 44, fontWeight: 800, background: busy || bad || same ? "#fff" : tokens.accent, color: busy || bad || same ? tokens.dim : "#fff" }}>
+            {busy ? "שומר…" : "שמירה"}
+          </button>
+        </div>
+        <p style={note}>
+          כל לקוח שבכרטיס שלו ברווחית רשום המספר הזה ישויך {person.role === "manager" ? "אליך" : "לסוכן הזה"} אוטומטית — עכשיו, וגם בכל לקוח שיקושר לרווחית בהמשך. לקוח שקבעת לו סוכן ידנית לא יזוז.
+        </p>
+      </div>
+    );
+  }
+
+  const source = person.agent_source ? SOURCE_HE[person.agent_source] : null;
+  return (
+    <div style={box}>
+      <div style={h}>סוכן אחראי</div>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+        <select value={person.agent_user_id ?? ""} disabled={busy} onChange={(e) => onSetAgent(e.target.value || null)}
+          aria-label="הסוכן האחראי על הלקוח"
+          style={{ minHeight: 44, minWidth: 180, fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.4rem 0.6rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text }}>
+          <option value="">ללא סוכן</option>
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>
+              {(a.full_name || a.business_name || a.email || "סוכן") + (a.role === "manager" ? " (מנהל)" : "") + (a.rivhit_agent_id ? ` · ${a.rivhit_agent_id}` : "")}
+            </option>
+          ))}
+        </select>
+        {person.agent_source === "manager" && (
+          <button onClick={onRelease} disabled={busy} style={{ ...miniBtn, minHeight: 44 }}>חזרה לשיוך לפי רווחית</button>
+        )}
+      </div>
+      <p style={note}>
+        {source ? `${source}. ` : ""}
+        {person.rivhit_customer_id == null
+          ? "הלקוח לא מקושר לכרטיס ברווחית."
+          : cardAgentNumber
+            ? `בכרטיס ברווחית: סוכן ${cardAgentNumber}.`
+            : "בכרטיס ברווחית לא רשום סוכן."}
+        {" "}בחירה כאן נשמרת כשיוך ידני, ורווחית לא תשנה אותה.
+      </p>
     </div>
   );
 }

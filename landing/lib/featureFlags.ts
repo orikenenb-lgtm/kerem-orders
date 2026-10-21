@@ -135,6 +135,14 @@ export const featureFlags = {
    *  Off = they are pinned again exactly as before. DEFAULT ON at the
    *  owner's request. */
   ff_lean_sticky: true,
+  /** Agents own their customers (/admin/customers). The manager maps each
+   *  Rivhit agent number to a site account and can set any customer's agent;
+   *  an agent sees only his own customers (with their orders), can pull an
+   *  unassigned customer by exact phone / ח.פ, and can discount only his own.
+   *  REQUIRES supabase/2026-10-agent-customers.sql applied first — the screen
+   *  selects the new columns and calls the new RPCs. OFF until then: with it
+   *  off the screen sends exactly the queries it sent before. */
+  ff_agent_customers: false,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
