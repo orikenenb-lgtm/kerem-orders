@@ -1,6 +1,16 @@
 // rivhit-sync — the 15-minute (products) and nightly (products + customers)
 // pull from Rivhit into the site. Mirror of the deployed function
-// (mcdchalyzeqjkkgfeznd, v21). Change here AND deploy there.
+// (mcdchalyzeqjkkgfeznd). Change here AND deploy there.
+//
+// DEPLOY STATE (2026-10-21): the LIVE function is v21. The v22 change below
+// is committed but NOT deployed — it waits for supabase/2026-10-agent-
+// customers.sql on production (the customers.agent_id column it writes).
+//
+// v22 (2026-10-21): customers also carry their Rivhit agent number
+// (customers.agent_id, from Customer.List's agent_id; 0 = none → null).
+// The trg_reassign_on_card_agent trigger then follows it onto every site
+// account linked to that card (supabase/2026-10-agent-customers.sql). Needs
+// that migration first: without the column the customer upsert would fail.
 //
 // v21 (2026-09-27): the sync now RECOGNISES group moves. When the owner's
 // father moves an item to "ניגמרים" (or any group the site does not sell),
@@ -184,6 +194,7 @@ Deno.serve(async (req) => {
             email: String(c.email || '').toLowerCase().trim(),
             vat_number: String(c.vat_number ?? '').replace(/\D/g, ''),
             price_list_id: c.price_list_id ?? null, discount_percent: Number(c.discount_percent) || 0,
+            agent_id: Number(c.agent_id) > 0 ? Number(c.agent_id) : null,
             is_active: true, updated_at: nowIso,
           }))
         if (mode === 'sync' && rows.length > 0) {
