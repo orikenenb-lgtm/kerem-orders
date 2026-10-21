@@ -139,10 +139,11 @@ export const featureFlags = {
    *  Rivhit agent number to a site account and can set any customer's agent;
    *  an agent sees only his own customers (with their orders), can pull an
    *  unassigned customer by exact phone / ח.פ, and can discount only his own.
-   *  REQUIRES supabase/2026-10-agent-customers.sql applied first — the screen
-   *  selects the new columns and calls the new RPCs. OFF until then: with it
-   *  off the screen sends exactly the queries it sent before. */
-  ff_agent_customers: false,
+   *  Needs supabase/2026-10-agent-customers.sql — applied on staging and
+   *  production 2026-10-21 (RLS-tested on staging). ON from 2026-10-21.
+   *  Rollback = false: the screen goes back to sending exactly the queries it
+   *  sent before; the database rules stay (they are what protect the data). */
+  ff_agent_customers: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;

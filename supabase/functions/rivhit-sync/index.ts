@@ -1,10 +1,9 @@
 // rivhit-sync — the 15-minute (products) and nightly (products + customers)
 // pull from Rivhit into the site. Mirror of the deployed function
-// (mcdchalyzeqjkkgfeznd). Change here AND deploy there.
+// (mcdchalyzeqjkkgfeznd, v22). Change here AND deploy there.
 //
-// DEPLOY STATE (2026-10-21): the LIVE function is v21. The v22 change below
-// is committed but NOT deployed — it waits for supabase/2026-10-agent-
-// customers.sql on production (the customers.agent_id column it writes).
+// v22 deployed 2026-10-21, after supabase/2026-10-agent-customers.sql
+// was applied on production (the customers.agent_id column it writes).
 //
 // v22 (2026-10-21): customers also carry their Rivhit agent number
 // (customers.agent_id, from Customer.List's agent_id; 0 = none → null).

@@ -10,7 +10,11 @@
 --     himself; a manual choice survives Rivhit changes; release goes back
 --     to the card's agent. The test found ONE bug — the link-time assignment
 --     was not logged — fixed below (trg_log_agent_assignment).
---   production (mcdchalyzeqjkkgfeznd): nothing applied yet.
+--   production (mcdchalyzeqjkkgfeznd): APPLIED by the owner in the SQL
+--     editor (with the log fix). Verified read-only afterwards: all objects
+--     present; anon can run none of the new functions; the manager still
+--     sees 7/7 profiles and 9/9 orders; a customer still sees only himself
+--     and his own orders. rivhit-sync v22 then filled customers.agent_id.
 --   The file is idempotent: run it whole, in the Supabase SQL editor.
 -- ============================================================================
 -- Agents own their customers — the SQL layer. Mirror of the live project.
