@@ -1,9 +1,16 @@
 -- ============================================================================
--- STATUS: DRAFT — NOT APPLIED to staging or production (2026-10-20).
--- The staging apply was cancelled before it ran; both databases were checked
--- afterwards and contain none of the objects below. Apply staging first,
--- run the role-switched RLS tests, then production. Until then the live
--- schema is supabase/2026-09-agents-and-visibility.sql.
+-- STATUS (2026-10-21):
+--   staging (ahptrtlnrpmevlpgqeac): ONLY the new nullable columns are applied
+--     (customers.agent_id; profiles.rivhit_agent_id / agent_user_id /
+--     agent_source / agent_assigned_at, with their check, unique index and
+--     index). Inert: nothing reads or writes them yet.
+--   production (mcdchalyzeqjkkgfeznd): nothing applied.
+--   Everything that touches permissions — the log table's policy, GRANT /
+--   REVOKE, SECURITY DEFINER functions, triggers, the RLS policies — was
+--   cancelled before it ran when sent from the assistant's session. Apply
+--   this whole file (it is idempotent) in the Supabase SQL editor on staging,
+--   run the RLS tests, then on production.
+--   Until then the live schema is supabase/2026-09-agents-and-visibility.sql.
 -- ============================================================================
 -- Agents own their customers — the SQL layer. Mirror of the live project.
 -- Rehearsed on staging (ahptrtlnrpmevlpgqeac) first, with role-switched RLS
