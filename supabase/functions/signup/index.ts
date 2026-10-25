@@ -23,6 +23,11 @@
 //     it away, so the gate was decoration. The token is now checked against
 //     Cloudflare's siteverify.
 //
+//  3. (2026-10-25) The reserved phone-login domain is refused. Accounts opened
+//     through "לקוח קיים" (rivhit-express) sign in through a fixed address on
+//     @phone.kerem-toys.invalid; registering such an address by hand would let
+//     someone sit on another customer's phone login.
+//
 // What was deliberately NOT changed, even though a stricter version exists:
 //
 //  * `email_confirm: true` stays. Switching to Auth's confirmation-email flow
@@ -36,12 +41,20 @@
 //    worth removing; here the alternative is telling a wholesale buyer his
 //    signup worked when it did not, and then watching him fail to log in.
 //
-//  * Turnstile fails CLOSED only on positive evidence that the TOKEN is bad —
-//    missing, invalid, replayed, or solved for another action or hostname. An
-//    unset secret, a secret not paired with the site key this build uses, a
-//    malformed request and a Cloudflare outage all fail OPEN. An operator
-//    mistake must not be able to take registration offline for every real
-//    customer. Cloudflare's error codes are logged; the token never is.
+//  * A signup is refused ONLY on evidence that a key mismatch could not have
+//    produced: no token at all, or a token already spent. Everything else —
+//    including a token Cloudflare calls invalid — lets the registration through
+//    and is logged. See lib.ts CALLER_FAULT_CODES for why that asymmetry is the
+//    whole point: `invalid-input-response` means EITHER a junk token OR a
+//    secret paired with a different site key, and refusing on it would turn
+//    away every real customer while the log blamed them for it.
+//
+// HOW TO TIGHTEN THIS LATER (needs one real registration, not a probe):
+//   A probe cannot prove the key pair matches — sending a deliberately-bad
+//   token yields `invalid-input-response` either way. Have someone register
+//   through the real form, then look for a log line `{"evt":"signup",
+//   "captcha":"ok"}`. Once that has been seen, `invalid-input-response` can be
+//   moved back into CALLER_FAULT_CODES and forged tokens will be refused again.
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { classifySiteverify, normalizeEmail, isValidEmail } from './lib.ts'
@@ -70,12 +83,12 @@ type CaptchaOutcome =
   | { verdict: 'ok' | 'bad_token' | 'unconfigured' | 'unreachable' | 'misconfigured'; codes?: string[] }
 
 /** Check the Turnstile token with Cloudflare and report WHY, not just yes/no.
- *  A signup is refused ONLY on positive evidence that the token is bad; a
- *  missing secret, a secret that is not paired with the site key the site was
- *  built with, a malformed request or a Cloudflare outage all let the
- *  registration through, because an operator mistake must not be able to take
- *  registration offline. Cloudflare's error codes are logged (they name the
- *  problem and are not sensitive); the secret and the token never are. */
+ *  A signup is refused ONLY on evidence a key mismatch could not have produced.
+ *  A missing secret, a secret paired with the wrong site key, a malformed
+ *  request or a Cloudflare outage all let the registration through, because an
+ *  operator mistake must not be able to take registration offline. Cloudflare's
+ *  error codes are logged (they name the problem and are not sensitive); the
+ *  secret and the token never are. */
 async function checkTurnstile(token: unknown, remoteIp: string | null): Promise<CaptchaOutcome> {
   const secret = Deno.env.get('TURNSTILE_SECRET')
   if (!secret) return { verdict: 'unconfigured' }
@@ -116,6 +129,8 @@ Deno.serve(async (req) => {
 
     const cleanEmail = normalizeEmail(email)
     if (!isValidEmail(cleanEmail)) return json({ error: 'כתובת האימייל אינה תקינה' }, 400)
+    // Reserved for phone accounts (rivhit-express) — see header note 3.
+    if (cleanEmail.endsWith('@phone.kerem-toys.invalid')) return json({ error: 'כתובת האימייל אינה תקינה' }, 400)
 
     const remoteIp = req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for')
     const captcha = await checkTurnstile(body?.turnstileToken, remoteIp)

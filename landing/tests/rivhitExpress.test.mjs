@@ -31,11 +31,21 @@ await t("canonPhone: one form however the phone is typed", () => {
   for (const s of ["", "0", "123", "05012345678901", "abc", null, undefined]) assert.equal(X.canonPhone(s), "", String(s));
 });
 
-await t("canonVat: leading zeros ignored, the single-digit '0' Rivhit stores is not an id", () => {
-  assert.equal(X.canonVat("012345678"), "12345678");
-  assert.equal(X.canonVat("12345678"), "12345678");
-  assert.equal(X.canonVat("51-123456-7"), "511234567");
-  for (const s of ["0", "", "0000", "123"]) assert.equal(X.canonVat(s), "", s);
+await t("canonVat: leading zeros ignored; must pass the Israeli check digit", () => {
+  assert.equal(X.canonVat("012345674"), "12345674");
+  assert.equal(X.canonVat("12345674"), "12345674");
+  assert.equal(X.canonVat("51-123456-9"), "511234569");
+  for (const s of ["0", "", "0000", "123", "012345678", "123456789", "111111111", "511234567", "1234567890"]) assert.equal(X.canonVat(s), "", s);
+});
+
+await t("check digit: real-looking ids pass, made-up and repeated ones fail", () => {
+  for (const s of ["012345674", "511234569", "519999999", "030000004"]) assert.ok(X.isIsraeliIdValid(s), s);
+  for (const s of ["123456789", "999999999", "11111", "000000000", "51123456", "abc"]) assert.ok(!X.isIsraeliIdValid(s), s);
+});
+
+await t("guessable phones are never proof of a card", () => {
+  for (const s of ["500000000", "521111111", "541234567", "507654321", "48000000"]) assert.ok(X.isGuessablePhone(s), s);
+  for (const s of ["539871231", "48123456", "502468135"]) assert.ok(!X.isGuessablePhone(s), s);
 });
 
 await t("login address: fixed, undeliverable, identical in the function and on the site", () => {
@@ -63,23 +73,24 @@ await t("formatPhone: mobile and landline", () => {
 });
 
 const CARDS = [
-  { rivhit_id: 1, name: "צעצועי רון", city: "חיפה", phone: "050-1234567", vat_number: "012345678" },
-  { rivhit_id: 2, name: "מתנות טל", city: "", phone: "", vat_number: "511234567" },
+  { rivhit_id: 1, name: "צעצועי רון", city: "חיפה", phone: "050-2468135", vat_number: "012345674" },
+  { rivhit_id: 2, name: "מתנות טל", city: "", phone: "", vat_number: "511234569" },
   { rivhit_id: 3, name: "ללא מזהה", city: "", phone: "", vat_number: "0" },
-  { rivhit_id: 4, name: "סניף שני", city: "עכו", phone: "0521112222", vat_number: "511234567" },
-  { rivhit_id: 1, name: "צעצועי רון", city: "חיפה", phone: "050-1234567", vat_number: "012345678" },
+  { rivhit_id: 4, name: "סניף שני", city: "עכו", phone: "0539871234", vat_number: "511234569" },
+  { rivhit_id: 5, name: "טלפון דמה", city: "", phone: "050-0000000", vat_number: "123456789" },
+  { rivhit_id: 1, name: "צעצועי רון", city: "חיפה", phone: "050-2468135", vat_number: "012345674" },
 ];
 
 await t("matchCards: by ח״פ (with or without the leading zero) or by phone; once per card", () => {
-  assert.deepEqual(X.matchCards(CARDS, "12345678").map((c) => c.rivhit_id), [1]);
-  assert.deepEqual(X.matchCards(CARDS, "012345678").map((c) => c.rivhit_id), [1]);
-  assert.deepEqual(X.matchCards(CARDS, "+972-50-123-4567").map((c) => c.rivhit_id), [1]);
-  assert.deepEqual(X.matchCards(CARDS, "51-123456-7").map((c) => c.rivhit_id), [2, 4]);
-  assert.deepEqual(X.matchCards(CARDS, "052-111-2222").map((c) => c.rivhit_id), [4]);
+  assert.deepEqual(X.matchCards(CARDS, "12345674").map((c) => c.rivhit_id), [1]);
+  assert.deepEqual(X.matchCards(CARDS, "012345674").map((c) => c.rivhit_id), [1]);
+  assert.deepEqual(X.matchCards(CARDS, "+972-50-246-8135").map((c) => c.rivhit_id), [1]);
+  assert.deepEqual(X.matchCards(CARDS, "51-123456-9").map((c) => c.rivhit_id), [2, 4]);
+  assert.deepEqual(X.matchCards(CARDS, "053-987-1234").map((c) => c.rivhit_id), [4]);
 });
 
-await t("matchCards: nothing for junk, for '0', or for a number nobody has", () => {
-  for (const s of ["", "0", "abc", "000", "053-9999999", "999999999"]) assert.deepEqual(X.matchCards(CARDS, s), [], s);
+await t("matchCards: nothing for junk, '0', a placeholder id or phone, or a number nobody has", () => {
+  for (const s of ["", "0", "abc", "000", "053-9999999", "999999999", "123456789", "050-0000000", "0500000000"]) assert.deepEqual(X.matchCards(CARDS, s), [], s);
 });
 
 await t("maskName: recognisable, not readable", () => {

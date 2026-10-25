@@ -18,12 +18,39 @@ export function canonPhone(raw: unknown): string {
   return d.length === 8 || d.length === 9 ? d : "";
 }
 
+/** The Israeli check digit shared by ת״ז, ע״מ and ח״פ (9 digits, zero-padded,
+ *  weights 1,2,1,2…, digit sums, total divisible by 10). 341 of the 351 ids in
+ *  Rivhit pass it; requiring it means a made-up number like 123456789 or
+ *  11111 cannot be "guessed" into someone's card. */
+export function isIsraeliIdValid(raw: unknown): boolean {
+  const d = digitsOnly(raw).replace(/^0+/, "");
+  if (d.length < 5 || d.length > 9 || /^(\d)\1+$/.test(d)) return false;
+  const p = d.padStart(9, "0");
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let x = Number(p[i]) * (i % 2 === 0 ? 1 : 2);
+    if (x > 9) x -= 9;
+    sum += x;
+  }
+  return sum % 10 === 0;
+}
+
 /** ח״פ / ע״מ / ת״ז as digits without leading zeros (Rivhit stores 012345678
- *  as 12345678). "" for anything too short to identify a business — 203
- *  Rivhit cards carry a single "0" in this field. */
+ *  as 12345678), or "" when it is not a valid id — 203 Rivhit cards carry a
+ *  single "0" in this field, 10 carry a number that fails the check digit. */
 export function canonVat(raw: unknown): string {
   const d = digitsOnly(raw).replace(/^0+/, "");
-  return d.length >= 5 && d.length <= 10 ? d : "";
+  return isIsraeliIdValid(d) ? d : "";
+}
+
+/** A phone too easy to guess to stand as proof of anything: the 7-digit
+ *  subscriber part made of one or two repeated digits, or a plain run
+ *  (050-0000000, 052-1111111, 054-1234567). Never matched to a card. */
+export function isGuessablePhone(canon: string): boolean {
+  const sub = canon.slice(-7);
+  if (sub.length < 7) return true;
+  if (new Set(sub).size <= 2) return true;
+  return "01234567890".includes(sub) || "09876543210".includes(sub);
 }
 
 /** Supabase Auth needs an email; most Rivhit customers have none (38 of 554).
@@ -53,10 +80,12 @@ export type Card = {
 };
 
 /** The Rivhit cards a typed ח״פ-or-phone points at: the ח״פ field equal to it
- *  (leading zeros ignored), or the phone field equal to it as a phone. */
+ *  (leading zeros ignored, check digit valid), or the phone field equal to it
+ *  as a phone (never a guessable one). */
 export function matchCards<T extends Card>(cards: T[], ident: unknown): T[] {
   const v = canonVat(ident);
-  const p = canonPhone(ident);
+  const pc = canonPhone(ident);
+  const p = pc && !isGuessablePhone(pc) ? pc : "";
   if (!v && !p) return [];
   const seen = new Set<number>();
   return cards.filter((c) => {

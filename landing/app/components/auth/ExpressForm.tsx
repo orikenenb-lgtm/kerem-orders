@@ -30,6 +30,8 @@ type Step =
   | { kind: "search" }
   | { kind: "not_found" }
   | { kind: "already_linked" }
+  | { kind: "blocked" }
+  | { kind: "created" }
   | { kind: "found"; options: Option[] };
 
 async function callExpress(body: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -84,6 +86,7 @@ export default function ExpressForm({ onSwitch }: { onSwitch: (t: AuthTab) => vo
     if (typeof r.error === "string") { setError(r.error); return; }
     if (r.status === "not_found") { setStep({ kind: "not_found" }); return; }
     if (r.status === "already_linked") { setStep({ kind: "already_linked" }); return; }
+    if (r.status === "blocked") { setStep({ kind: "blocked" }); return; }
     if (r.status === "found" && Array.isArray(r.options) && r.options.length > 0) {
       setChoice(0);
       // The phone he typed is the obvious one to sign in with; a ח״פ is not.
@@ -112,15 +115,18 @@ export default function ExpressForm({ onSwitch }: { onSwitch: (t: AuthTab) => vo
     if (typeof r.error === "string") {
       setBusy(false);
       if (r.status === "already_linked") { setStep({ kind: "already_linked" }); return; }
+      if (r.status === "blocked") { setStep({ kind: "blocked" }); return; }
       setError(r.error);
       return;
     }
     if (r.ok === true && typeof r.login_email === "string") {
       const { error: sErr } = await supabase.auth.signInWithPassword({ email: r.login_email, password });
       if (!sErr) { router.replace("/catalog"); return; }
+      // The account exists; only the automatic sign-in failed. Say so here —
+      // and hand the phone to the login tab, which pre-fills it.
       setBusy(false);
-      setError("החשבון נפתח. התחברו עכשיו עם מספר הטלפון והסיסמה שבחרתם.");
-      onSwitch("login");
+      try { localStorage.setItem("kt_last_email", phone.trim()); } catch { /* ignore */ }
+      setStep({ kind: "created" });
       return;
     }
     setBusy(false);
@@ -152,12 +158,36 @@ export default function ExpressForm({ onSwitch }: { onSwitch: (t: AuthTab) => vo
     );
   }
 
+  if (step.kind === "created") {
+    return (
+      <div ref={panelRef} tabIndex={-1} role="status" style={{ display: "grid", gap: "0.9rem", outline: "none" }}>
+        <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.15rem", color: "#1A7A4D", margin: 0 }}>✓ החשבון נפתח</p>
+        <p style={{ fontFamily: tokens.assistant, color: tokens.body, lineHeight: 1.6, margin: 0 }}>
+          התחברו עכשיו עם מספר הטלפון <span dir="ltr" style={{ fontWeight: 700 }}>{phone.trim()}</span> והסיסמה שבחרתם.
+        </p>
+        <button type="button" onClick={() => onSwitch("login")} style={primaryBtn(false)}>להתחברות</button>
+      </div>
+    );
+  }
+
+  if (step.kind === "blocked") {
+    return (
+      <div ref={panelRef} tabIndex={-1} role="status" style={{ display: "grid", gap: "0.9rem", outline: "none" }}>
+        <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.15rem", color: tokens.text, margin: 0 }}>צריך לדבר איתנו</p>
+        <p style={{ fontFamily: tokens.assistant, color: tokens.body, lineHeight: 1.6, margin: 0 }}>
+          לכרטיס הזה לא ניתן להיכנס בדרך המהירה. התקשרו אלינו ונסדר לכם חשבון: {callUs}
+        </p>
+        <button type="button" onClick={() => onSwitch("register")} style={primaryBtn(false)}>להרשמה רגילה</button>
+      </div>
+    );
+  }
+
   if (step.kind === "already_linked") {
     return (
       <div ref={panelRef} tabIndex={-1} role="status" style={{ display: "grid", gap: "0.9rem", outline: "none" }}>
         <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.15rem", color: tokens.text, margin: 0 }}>כבר יש לכם חשבון באתר</p>
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, lineHeight: 1.6, margin: 0 }}>
-          התחברו עם מספר הטלפון והסיסמה. שכחתם את הסיסמה? התקשרו אלינו: {callUs}
+          התחברו עם האימייל או הטלפון שאיתו נרשמתם. שכחתם את הסיסמה? התקשרו אלינו: {callUs}
         </p>
         <button type="button" onClick={() => onSwitch("login")} style={primaryBtn(false)}>להתחברות</button>
         <p style={{ fontFamily: tokens.assistant, color: tokens.body, textAlign: "center", margin: 0 }}>
@@ -191,7 +221,7 @@ export default function ExpressForm({ onSwitch }: { onSwitch: (t: AuthTab) => vo
           )}
           <label style={{ display: "grid", gap: "0.35rem" }}>
             <span style={lbl}>מספר טלפון (איתו תתחברו)</span>
-            <input type="tel" inputMode="tel" autoComplete="tel" dir="ltr" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="050-0000000" style={inp} />
+            <input type="tel" inputMode="tel" autoComplete="tel" dir="ltr" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="מספר הנייד שלכם" style={inp} />
           </label>
           <div style={{ display: "grid", gap: "0.35rem" }}>
             <label htmlFor="express-password" style={lbl}>בחרו סיסמה (לפחות 6 תווים)</label>

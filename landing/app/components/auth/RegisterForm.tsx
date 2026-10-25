@@ -11,6 +11,7 @@ import Turnstile from "../Turnstile";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
 import { featureFlags } from "../../../lib/featureFlags";
+import { isPhoneLoginEmail } from "../../../lib/phoneLogin";
 import { tokens, primaryBtn, linkBtn } from "../../../lib/ui";
 import type { AuthTab } from "./AuthShell";
 import { isTurnstileConfigured, canSubmitSignup } from "../../../lib/turnstile";
@@ -343,6 +344,11 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
       return;
     }
     setFieldErrors((p) => ({ ...p, password2: undefined }));
+    // Reserved for phone accounts ("לקוח קיים"); the signup function refuses it too.
+    if (isPhoneLoginEmail(form.email.trim())) {
+      setError("כתובת האימייל אינה תקינה");
+      return;
+    }
     if (ADDR) {
       // Same rules as the on-blur checks — one last look before sending.
       const errs = {

@@ -162,11 +162,10 @@ export const featureFlags = {
    *  rivhit-express (captcha fails closed, one site account per card, 30 an
    *  hour at most); every such account is listed on the dashboard (ניהול ←
    *  לקוחות). Off = the tab, the phone login and the notes disappear; accounts
-   *  already opened stay as they are. Requested ON by the owner; committed
-   *  OFF (2026-10-25) until the independent security review is done and the
-   *  rivhit-express function + profiles.signup_source are live in
-   *  production — then this flips to true. */
-  ff_rivhit_express: false,
+   *  already opened stay as they are. ON from 2026-10-25, after an
+   *  independent security review (its findings fixed) and staging tests;
+   *  rivhit-express is live in production. DEFAULT ON at the owner's request. */
+  ff_rivhit_express: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;
