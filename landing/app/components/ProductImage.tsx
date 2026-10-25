@@ -147,7 +147,6 @@ export default function ProductImage({
   const transform = [directRotate, imgStyle?.transform].filter(Boolean).join(" ") || undefined;
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
     <img
       key={attempt}
       src={src}

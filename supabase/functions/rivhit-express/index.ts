@@ -24,6 +24,9 @@
 //     → takes the card away from that account: link, discount, agent and the
 //       copied business name cleared, and the card refused by this door from
 //       now on (it can still be linked by hand).
+//   { action: "admin_set_password", user_id, password }
+//     → a new password for a phone account (they have no mailbox for a reset
+//       link); the owner tells the customer by phone. Phone accounts only.
 //
 // The record of who came in this way lives in the auth user's app_metadata
 // ({ express: { rivhit_id, at, revoked? } }) — writable by the service role
@@ -308,7 +311,7 @@ Deno.serve(async (req) => {
     }
 
     // ---------------------------------------------------------- admin
-    if (body.action === 'admin_list' || body.action === 'admin_revoke') {
+    if (body.action === 'admin_list' || body.action === 'admin_revoke' || body.action === 'admin_set_password') {
       const mgr = await managerId(req, admin)
       if (!mgr) return json({ error: 'להנהלה בלבד' }, 403)
       const all = await expressUsers(admin)
@@ -342,6 +345,15 @@ Deno.serve(async (req) => {
 
       const target = all.find((u) => u.id === body.user_id)
       if (!target) return json({ error: 'החשבון לא נמצא ברשימה.' }, 404)
+
+      if (body.action === 'admin_set_password') {
+        if (!isAcceptablePassword(body.password)) return json({ error: 'הסיסמה צריכה להיות באורך 6 תווים לפחות.' }, 400)
+        const { error: sErr } = await admin.auth.admin.updateUserById(target.id, { password: body.password as string })
+        if (sErr) return json({ error: TRY_AGAIN }, 500)
+        console.log(JSON.stringify({ evt: 'express-set-password', id: target.id, by: mgr }))
+        return json({ ok: true })
+      }
+
       const { error: rErr } = await admin.from('profiles')
         .update({ rivhit_customer_id: null, discount_percent: 0, agent_user_id: null, agent_source: null, agent_assigned_at: null, business_name: '' })
         .eq('id', target.id)

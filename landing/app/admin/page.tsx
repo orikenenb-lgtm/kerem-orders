@@ -1167,6 +1167,11 @@ function ExpressSignups({ onChanged }: { onChanged: () => void }) {
   const [err, setErr] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // "סיסמה חדשה": a phone account has no mailbox for a reset link, so the
+  // owner sets one here and tells the customer.
+  const [pwFor, setPwFor] = useState<string | null>(null);
+  const [pwVal, setPwVal] = useState("");
+  const [pwMsg, setPwMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
   // Taken once per mount — render itself must stay pure.
   const [recent] = useState(() => Date.now() - 30 * 86_400_000);
 
@@ -1187,6 +1192,17 @@ function ExpressSignups({ onChanged }: { onChanged: () => void }) {
     setBusyId(null);
     if (r.ok === true) { setReloadKey((n) => n + 1); onChanged(); }
     else setErr(typeof r.error === "string" ? r.error : "הניתוק נכשל.");
+  };
+
+  const savePassword = async (row: ExpressRow) => {
+    if (pwVal.length < 6) { setPwMsg({ id: row.id, ok: false, text: "לפחות 6 תווים." }); return; }
+    setBusyId(row.id);
+    const r = await expressCall({ action: "admin_set_password", user_id: row.id, password: pwVal });
+    setBusyId(null);
+    if (r.ok === true) {
+      setPwMsg({ id: row.id, ok: true, text: `נשמר. מסרו ל${row.full_name || "לקוח"}: טלפון ${row.phone || "—"} והסיסמה ${pwVal}` });
+      setPwFor(null); setPwVal("");
+    } else setPwMsg({ id: row.id, ok: false, text: typeof r.error === "string" ? r.error : "השמירה נכשלה." });
   };
 
   const n = rows?.length ?? 0;
@@ -1216,11 +1232,30 @@ function ExpressSignups({ onChanged }: { onChanged: () => void }) {
               <span style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: p.revoked ? "#C0143C" : "#1A7A4D" }}>
                 {p.revoked ? `נותק מכרטיס ${p.card}` : p.linked_to != null ? `מחובר לכרטיס ${p.linked_to}` : `כרטיס ${p.card}`}
               </span>
-              {!p.revoked && (
-                <button onClick={() => void revoke(p)} disabled={busyId === p.id}
-                  style={{ marginInlineStart: "auto", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", minHeight: 36, padding: "0.35rem 0.8rem", borderRadius: 999, border: "1px solid rgba(192,20,60,0.4)", background: "#fff", color: "#C0143C", cursor: "pointer" }}>
-                  {busyId === p.id ? "מנתק…" : "ניתוק מהכרטיס"}
+              <span style={{ marginInlineStart: "auto", display: "inline-flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                <button onClick={() => { setPwFor(pwFor === p.id ? null : p.id); setPwVal(""); setPwMsg(null); }} disabled={busyId === p.id}
+                  style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", minHeight: 36, padding: "0.35rem 0.8rem", borderRadius: 999, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, cursor: "pointer" }}>
+                  סיסמה חדשה
                 </button>
+                {!p.revoked && (
+                  <button onClick={() => void revoke(p)} disabled={busyId === p.id}
+                    style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", minHeight: 36, padding: "0.35rem 0.8rem", borderRadius: 999, border: "1px solid rgba(192,20,60,0.4)", background: "#fff", color: "#C0143C", cursor: "pointer" }}>
+                    {busyId === p.id ? "רגע…" : "ניתוק מהכרטיס"}
+                  </button>
+                )}
+              </span>
+              {pwFor === p.id && (
+                <span style={{ flexBasis: "100%", display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                  <input value={pwVal} onChange={(e) => setPwVal(e.target.value)} dir="ltr" autoComplete="off" aria-label={`סיסמה חדשה ל${p.full_name || "לקוח"}`} placeholder="סיסמה חדשה (לפחות 6 תווים)"
+                    style={{ flex: "1 1 180px", minHeight: 40, fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.4rem 0.7rem", borderRadius: 10, border: `1px solid ${tokens.border}` }} />
+                  <button onClick={() => void savePassword(p)} disabled={busyId === p.id}
+                    style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", minHeight: 40, padding: "0.4rem 1rem", borderRadius: 999, border: "none", background: tokens.accent, color: "#fff", cursor: "pointer" }}>
+                    {busyId === p.id ? "שומר…" : "שמירה"}
+                  </button>
+                </span>
+              )}
+              {pwMsg?.id === p.id && (
+                <span role={pwMsg.ok ? "status" : "alert"} style={{ flexBasis: "100%", fontFamily: tokens.assistant, fontSize: "0.88rem", color: pwMsg.ok ? "#1A7A4D" : "#C0143C" }}>{pwMsg.text}</span>
               )}
             </li>
           ))}

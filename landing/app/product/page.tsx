@@ -136,7 +136,9 @@ function ProductDetail() {
     } else {
       setRelated([]);
     }
-  }, [session, id]);
+  // setQty is a useState setter (stable) — listed so the React compiler can
+  // keep this memoization; it never changes and never re-runs the load.
+  }, [session, id, setQty]);
 
   useEffect(() => { load(); }, [load]);
 
