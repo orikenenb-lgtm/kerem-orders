@@ -443,6 +443,16 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
                 success screen below both have to change with it. */}
             כמה פרטים וסיימתם — ואפשר להתחבר ולהזמין מיד, בלי לחכות לאישור במייל.
           </p>
+          {featureFlags.ff_rivhit_express && (
+            // Existing Rivhit customers have a shorter way in (ExpressForm).
+            <p style={{ fontFamily: tokens.assistant, color: tokens.text, background: "rgba(37,199,126,0.08)", border: "1px solid rgba(37,199,126,0.3)", borderRadius: 12, padding: "0.7rem 0.9rem", marginTop: "-0.6rem", marginBottom: "1.2rem", fontSize: "0.92rem", lineHeight: 1.5 }}>
+              כבר קונים אצלנו?{" "}
+              <button type="button" onClick={() => onSwitch("express")} style={linkBtn}>
+                כניסה מהירה עם ח״פ או טלפון
+              </button>
+              {" "}— בלי למלא את כל הטופס.
+            </p>
+          )}
 
           <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
             {ADDR ? (

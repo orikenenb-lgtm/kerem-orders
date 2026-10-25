@@ -1134,10 +1134,66 @@ type SiteProfile = {
   rivhit_customer_id: number | null;
   // Optional: column may not exist until discount-setup.sql is applied.
   discount_percent?: number | null;
+  created_at?: string;
+  /** "rivhit_express" = opened by the customer himself through "לקוח קיים". */
+  signup_source?: string | null;
 };
 type RivhitCustomer = { rivhit_id: number; name: string; city: string; phone: string; email: string };
 
 const digits = (s: string) => (s || "").replace(/\D/g, "");
+
+// Everyone who opened his own account through "לקוח קיים" (ff_rivhit_express)
+// in the last 30 days — the owner asked to see each one. The account was
+// linked to a Rivhit card because the ח״פ or phone typed matched that card;
+// "ניתוק מהכרטיס" undoes the link (same update as the link button below), so
+// a stranger who used someone else's number loses that customer's prices.
+function ExpressSignups({ profiles, rivhit, savingId, onUnlink }: {
+  profiles: SiteProfile[];
+  rivhit: RivhitCustomer[];
+  savingId: string | null;
+  onUnlink: (p: SiteProfile) => void;
+}) {
+  // Taken once per mount — render itself must stay pure.
+  const [since] = useState(() => Date.now() - 30 * 86_400_000);
+  const rows = profiles.filter((p) => p.signup_source === "rivhit_express" && p.created_at && new Date(p.created_at).getTime() >= since);
+  return (
+    <section aria-label="נרשמו לבד דרך לקוח קיים" style={{ border: "1px solid rgba(37,199,126,0.35)", background: "rgba(37,199,126,0.06)", borderRadius: 14, padding: "0.9rem 1.1rem", marginBottom: "1.25rem" }}>
+      <h3 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.02rem", color: tokens.text, margin: 0 }}>
+        נכנסו לבד דרך ״לקוח קיים״ — 30 הימים האחרונים ({rows.length.toLocaleString("he-IL")})
+      </h3>
+      <p style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, margin: "0.3rem 0 0.6rem", lineHeight: 1.5 }}>
+        כל אחד הקליד ח״פ או טלפון שרשום בכרטיס שלו ברווחית, והחשבון חובר לכרטיס אוטומטית עם המחירים שלו. לא מכירים מישהו? ״ניתוק מהכרטיס״.
+      </p>
+      {rows.length === 0 ? (
+        <p style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.dim, margin: 0 }}>עוד אף אחד.</p>
+      ) : (
+        <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: "0.45rem" }}>
+          {rows.map((p) => {
+            const card = p.rivhit_customer_id != null ? rivhit.find((c) => c.rivhit_id === p.rivhit_customer_id) : undefined;
+            return (
+              <li key={p.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.4rem 0.8rem", background: "#fff", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.55rem 0.8rem" }}>
+                <span style={{ fontFamily: tokens.rubik, fontWeight: 700, color: tokens.text }}>{p.business_name || card?.name || "—"}</span>
+                <span style={{ fontFamily: tokens.assistant, fontSize: "0.88rem", color: tokens.body }}>
+                  {p.full_name}{p.phone ? <> · <span dir="ltr">{p.phone}</span></> : null}
+                  {" · "}{p.created_at ? new Date(p.created_at).toLocaleDateString("he-IL") : ""}
+                </span>
+                <span style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: p.rivhit_customer_id != null ? "#1A7A4D" : "#C0143C" }}>
+                  {p.rivhit_customer_id != null ? `מחובר לכרטיס ${p.rivhit_customer_id}` : "נותק מהכרטיס"}
+                </span>
+                {p.rivhit_customer_id != null && (
+                  <button onClick={() => onUnlink(p)} disabled={savingId === p.id}
+                    style={{ marginInlineStart: "auto", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", minHeight: 36, padding: "0.35rem 0.8rem", borderRadius: 999, border: "1px solid rgba(192,20,60,0.4)", background: "#fff", color: "#C0143C", cursor: "pointer" }}>
+                    ניתוק מהכרטיס
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 function CustomersTab() {
   const [profiles, setProfiles] = useState<SiteProfile[]>([]);
@@ -1244,6 +1300,10 @@ function CustomersTab() {
             נסו שוב
           </button>
         </p>
+      )}
+
+      {featureFlags.ff_rivhit_express && (
+        <ExpressSignups profiles={profiles} rivhit={rivhit} savingId={savingId} onUnlink={(p) => link(p, null)} />
       )}
 
       <input

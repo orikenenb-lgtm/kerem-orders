@@ -44,6 +44,13 @@ export default function LandingV2() {
           </Link>
         </div>
 
+        {featureFlags.ff_rivhit_express && (
+          // The door for existing Rivhit customers (ExpressForm).
+          <Link href="/login/?tab=express" className="lv2-browse">
+            כבר קונים אצלנו? כניסה מהירה עם ח״פ או טלפון ←
+          </Link>
+        )}
+
         <Link href="/view" className="lv2-browse">
           לצפייה בקטלוג — בלי צורך בחשבון ←
         </Link>

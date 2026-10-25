@@ -153,6 +153,20 @@ export const featureFlags = {
    *  return to before. See lib/publicProducts.ts. DEFAULT ON at the owner's
    *  request (2026-10-21). */
   ff_public_product_pages: true,
+  /** "לקוח קיים" on the customer entry screen: someone who is already a
+   *  customer in Rivhit types his ח״פ or phone and his name; if his card is
+   *  found he only picks a password and is in, his account opened already
+   *  linked to his card (his prices, his discount, his agent). Not found →
+   *  "לא קיים ברווחית" and the normal registration. The login form also takes
+   *  a phone instead of an email. Server side: supabase/functions/
+   *  rivhit-express (captcha fails closed, one site account per card, 30 an
+   *  hour at most); every such account is listed on the dashboard (ניהול ←
+   *  לקוחות). Off = the tab, the phone login and the notes disappear; accounts
+   *  already opened stay as they are. Requested ON by the owner; committed
+   *  OFF (2026-10-25) until the independent security review is done and the
+   *  rivhit-express function + profiles.signup_source are live in
+   *  production — then this flips to true. */
+  ff_rivhit_express: false,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;

@@ -11,7 +11,12 @@ import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
 import { authErrorHe } from "../../../lib/authErrors";
 import { tokens, primaryBtn, linkBtn } from "../../../lib/ui";
+import { featureFlags } from "../../../lib/featureFlags";
+import { loginIdentifier } from "../../../lib/phoneLogin";
 import type { AuthTab } from "./AuthShell";
+
+// Accounts opened through "לקוח קיים" sign in with their phone (ff_rivhit_express).
+const PHONE_LOGIN = featureFlags.ff_rivhit_express;
 
 export default function LoginForm({ onSwitch }: { onSwitch: (t: AuthTab) => void }) {
   const router = useRouter();
@@ -44,7 +49,7 @@ export default function LoginForm({ onSwitch }: { onSwitch: (t: AuthTab) => void
     setBusy(true);
     try {
       const { error: err } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
+        email: PHONE_LOGIN ? loginIdentifier(email) : email.trim().toLowerCase(),
         password,
       });
       if (err) {
@@ -67,11 +72,12 @@ export default function LoginForm({ onSwitch }: { onSwitch: (t: AuthTab) => void
 
       <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
         <label style={{ display: "grid", gap: "0.35rem" }}>
-          <span style={lbl}>אימייל</span>
+          <span style={lbl}>{PHONE_LOGIN ? "אימייל או טלפון" : "אימייל"}</span>
           <input
-            type="email"
-            autoComplete="email"
-            inputMode="email"
+            type={PHONE_LOGIN ? "text" : "email"}
+            autoComplete={PHONE_LOGIN ? "username" : "email"}
+            inputMode={PHONE_LOGIN ? "text" : "email"}
+            dir={PHONE_LOGIN ? "ltr" : undefined}
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -119,6 +125,15 @@ export default function LoginForm({ onSwitch }: { onSwitch: (t: AuthTab) => void
           שכחתם סיסמה?
         </button>
       </p>
+
+      {PHONE_LOGIN && (
+        <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.6rem", textAlign: "center" }}>
+          כבר קונים אצלנו ועוד אין לכם חשבון באתר?{" "}
+          <button type="button" onClick={() => onSwitch("express")} style={linkBtn}>
+            כניסה מהירה עם ח״פ או טלפון
+          </button>
+        </p>
+      )}
 
       <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.6rem", textAlign: "center" }}>
         עוד אין לכם חשבון?{" "}

@@ -17,15 +17,20 @@ import SiteFooter from "../SiteFooter";
 import LoginForm from "./LoginForm";
 import RegisterForm from "./RegisterForm";
 import ForgotForm from "./ForgotForm";
+import ExpressForm from "./ExpressForm";
 import { tokens } from "../../../lib/ui";
+import { featureFlags } from "../../../lib/featureFlags";
 
-export type AuthTab = "login" | "register" | "forgot";
+export type AuthTab = "login" | "express" | "register" | "forgot";
 
 // Each form owns its own intro text, because that text changes with the
 // form's state (e.g. after a registration is submitted) — only the heading
 // belongs to the shell.
+// "לקוח קיים" (ff_rivhit_express) sits right after התחברות: it is the door
+// for the owner's existing customers, who are most of the people arriving.
 const TABS: { id: AuthTab; label: string; title: string }[] = [
   { id: "login", label: "התחברות", title: "התחברות" },
+  ...(featureFlags.ff_rivhit_express ? [{ id: "express" as const, label: "לקוח קיים", title: "כניסה ללקוחות קיימים" }] : []),
   { id: "register", label: "הרשמה", title: "פתיחת חשבון לקוח" },
   { id: "forgot", label: "שכחתי סיסמה", title: "איפוס סיסמה" },
 ];
@@ -36,7 +41,7 @@ export default function AuthShell({ initial = "login" }: { initial?: AuthTab }) 
   // ?tab=register on the single link, so one URL can still open on any tab.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "login" || t === "register" || t === "forgot") setTab(t);
+    if (t && TABS.some((x) => x.id === t)) setTab(t as AuthTab);
   }, []);
 
   // Switching tabs is not navigation — but the address bar should still show
@@ -88,7 +93,7 @@ export default function AuthShell({ initial = "login" }: { initial?: AuthTab }) 
             aria-label="כניסה לחשבון"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
+              gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,
               gap: "0.3rem",
               background: tokens.surface,
               border: `1px solid ${tokens.border}`,
@@ -121,8 +126,9 @@ export default function AuthShell({ initial = "login" }: { initial?: AuthTab }) 
                   style={{
                     fontFamily: tokens.rubik,
                     fontWeight: 700,
-                    fontSize: "0.85rem",
-                    padding: "0.6rem 0.4rem",
+                    fontSize: TABS.length > 3 ? "0.8rem" : "0.85rem",
+                    lineHeight: 1.2,
+                    padding: "0.6rem 0.3rem",
                     borderRadius: 999,
                     border: "none",
                     cursor: "pointer",
@@ -150,6 +156,7 @@ export default function AuthShell({ initial = "login" }: { initial?: AuthTab }) 
             </h1>
 
             {tab === "login" && <LoginForm onSwitch={onSwitch} />}
+            {tab === "express" && <ExpressForm onSwitch={onSwitch} />}
             {tab === "register" && <RegisterForm onSwitch={onSwitch} />}
             {tab === "forgot" && <ForgotForm onSwitch={onSwitch} />}
           </div>

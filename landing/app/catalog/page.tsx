@@ -13,6 +13,7 @@ import { useAuth } from "../../lib/auth";
 import { tokens, ils, discountPct, disabledBtn } from "../../lib/ui";
 import { buildPriceMap, resolvePrice, hasSpecialPrice, type PriceMap, type PriceOverrideRow } from "../../lib/pricing";
 import { featureFlags } from "../../lib/featureFlags";
+import { isPhoneLoginEmail } from "../../lib/phoneLogin";
 import { VAT_RATE, MIN_ORDER_FALLBACK } from "../../lib/config";
 import { resolveQuantity, stepOf, describeQuantity, pluralPack } from "../../lib/quantity";
 import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
@@ -692,7 +693,8 @@ export default function CatalogPage() {
           note,
           contact_name: contactName || profile?.full_name || meta.full_name || "",
           contact_phone: contactPhone || profile?.phone || meta.phone || "",
-          contact_email: session.user.email ?? "",
+          // A phone account's internal sign-in address is not a mailbox.
+          contact_email: isPhoneLoginEmail(session.user.email) ? "" : (session.user.email ?? ""),
           business_name: profile?.business_name || meta.business_name || "",
           status: "new",
         })

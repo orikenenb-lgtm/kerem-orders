@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, type Profile } from "./supabaseClient";
+import { isPhoneLoginEmail } from "./phoneLogin";
 
 type AuthValue = {
   session: Session | null;
@@ -86,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const meta = (u?.user?.user_metadata ?? {}) as Record<string, string>;
     const fresh = {
       id: uid,
-      email: u?.user?.email ?? "",
+      email: isPhoneLoginEmail(u?.user?.email) ? "" : (u?.user?.email ?? ""),
       full_name: meta.full_name ?? "",
       business_name: meta.business_name ?? "",
       phone: meta.phone ?? "",

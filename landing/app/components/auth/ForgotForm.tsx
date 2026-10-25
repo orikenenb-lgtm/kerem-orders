@@ -8,7 +8,13 @@ import { useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { authErrorHe } from "../../../lib/authErrors";
 import { tokens, primaryBtn, linkBtn } from "../../../lib/ui";
+import { featureFlags } from "../../../lib/featureFlags";
+import { canonPhone } from "../../../lib/phoneLogin";
+import { CONTACT } from "../SiteHeader";
 import type { AuthTab } from "./AuthShell";
+
+// A phone account (ff_rivhit_express) has no mailbox to send a reset link to.
+const PHONE_LOGIN = featureFlags.ff_rivhit_express;
 
 export default function ForgotForm({ onSwitch }: { onSwitch: (t: AuthTab) => void }) {
   const [email, setEmail] = useState("");
@@ -19,6 +25,10 @@ export default function ForgotForm({ onSwitch }: { onSwitch: (t: AuthTab) => voi
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    if (PHONE_LOGIN && !email.includes("@") && canonPhone(email)) {
+      setError(`לחשבון שנפתח עם מספר טלפון אין קישור באימייל. התקשרו אלינו ונאפס לכם את הסיסמה: ${CONTACT.phone}`);
+      return;
+    }
     setBusy(true);
     try {
       // Absolute URL back to /reset, honoring the GitHub Pages basePath.
@@ -63,8 +73,8 @@ export default function ForgotForm({ onSwitch }: { onSwitch: (t: AuthTab) => voi
       </p>
       <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
         <label style={{ display: "grid", gap: "0.35rem" }}>
-          <span style={lbl}>אימייל</span>
-          <input type="email" autoComplete="email" inputMode="email" required value={email} onChange={(e) => setEmail(e.target.value)} style={inp} />
+          <span style={lbl}>{PHONE_LOGIN ? "אימייל או טלפון" : "אימייל"}</span>
+          <input type={PHONE_LOGIN ? "text" : "email"} autoComplete="email" inputMode={PHONE_LOGIN ? "text" : "email"} dir={PHONE_LOGIN ? "ltr" : undefined} required value={email} onChange={(e) => setEmail(e.target.value)} style={inp} />
         </label>
 
         {error && (
