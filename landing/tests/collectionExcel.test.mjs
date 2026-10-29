@@ -112,6 +112,53 @@ try {
     assert.equal(fallback.workbook.worksheets[0].name, "קטלוג");
   });
 
+  await at("pictures fill their whole square cell — big, centred, no sliver at the side", async () => {
+    // A stand-in for the browser's fetch+canvas path: any bytes will do, the
+    // check is WHERE exceljs anchors them. (Regression: fractional 0.06→0.94
+    // corners came out 13 px wide in a 103 px cell — exceljs converts
+    // fractions with the wrong units.)
+    const fakeJpeg = async () => new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer;
+    const withImgs = [
+      { name: "א", barcode: "1", price: 1, imageUrl: "u1" },
+      { name: "ב", barcode: "2", price: 2, imageUrl: "" },
+      { name: "ג", barcode: "3", price: 3, imageUrl: "u3" },
+    ];
+    const { workbook, imagesFailed } = await buildCollectionWorkbook("תמונות", withImgs, undefined, fakeJpeg);
+    assert.equal(imagesFailed, 0);
+    const ws = workbook.worksheets[0];
+    // Every product on its own consecutive row — no empty row slipped in
+    // under a picture (an exceljs anchor side effect this guards against).
+    assert.deepEqual([2, 3, 4].map((r) => ws.getRow(r).getCell(2).value), ["א", "ב", "ג"]);
+    assert.equal(ws.rowCount, 4, "header + 3 products, nothing more");
+    // The picture cell is a square in Excel's own units: column ≈ 7 px per
+    // character + 5, row = 4/3 px per point.
+    const colPx = ws.getColumn(1).width * 7 + 5;
+    const rowPx = ws.getRow(2).height * 4 / 3;
+    assert.ok(colPx >= 160 && rowPx >= 160, `cell must be big (got ${colPx}x${rowPx.toFixed(0)} px)`);
+    assert.ok(Math.abs(colPx - rowPx) / colPx < 0.05, `cell must be square (got ${colPx}x${rowPx.toFixed(0)} px)`);
+
+    const buf = await workbook.xlsx.writeBuffer();
+    const { default: JSZip } = await import("jszip");
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file("xl/drawings/drawing1.xml").async("string");
+    const anchors = [...xml.matchAll(/<xdr:twoCellAnchor[\s\S]*?<\/xdr:twoCellAnchor>/g)].map((m) => m[0]);
+    assert.equal(anchors.length, 2, "one picture per row that has an image");
+    const num = (a, side, tag) => Number(new RegExp(`<xdr:${side}>[\\s\\S]*?<xdr:${tag}>(\\d+)</xdr:${tag}>`).exec(a)[1]);
+    const dataRows = [1, 3]; // 0-based sheet rows of א and ג (row 0 is the header, ב at 2 has no picture)
+    anchors.forEach((a, k) => {
+      assert.equal(num(a, "from", "col"), 0, "starts at the picture column");
+      assert.equal(num(a, "from", "colOff"), 0, "no fractional offset to mis-convert");
+      assert.equal(num(a, "from", "row"), dataRows[k]);
+      assert.equal(num(a, "from", "rowOff"), 0);
+      assert.equal(num(a, "to", "col"), 1, "ends exactly at the next column — the whole cell width");
+      assert.equal(num(a, "to", "colOff"), 0);
+      assert.equal(num(a, "to", "row"), dataRows[k] + 1, "the whole row height");
+      assert.equal(num(a, "to", "rowOff"), 0);
+    });
+    const media = Object.keys(zip.files).filter((f) => f.startsWith("xl/media/") && !f.endsWith("/"));
+    assert.ok(media.length >= 1 && media.every((f) => f.endsWith(".jpeg")), `pictures embedded as JPEG (got ${media.join(",")})`);
+  });
+
   console.log(`\n${n} collectionExcel tests passed`);
 } finally {
   rmSync(tmp, { recursive: true, force: true });

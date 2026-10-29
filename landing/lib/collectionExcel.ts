@@ -18,22 +18,35 @@ export type ExcelRow = {
   imageUrl: string;
 };
 
-/** Fetch one product image and normalize it to a SQUARE 240x240 PNG, the
- *  photo centered on white with its own proportions kept. Square on purpose:
- *  the picture is anchored to fill its cell with a tl+br anchor (see below),
- *  and a square source means filling the box can never stretch the photo.
- *  Canvas also converts whatever the proxy served (JPEG or WebP — exceljs
- *  embeds only png/jpeg/gif). An 8-second timeout per image so one stuck
- *  thumbnail cannot stall a 241-product export; any failure returns null —
- *  a missing picture must never sink the file. */
-async function fetchAsPng(url: string): Promise<ArrayBuffer | null> {
+// The picture cell is a SQUARE of about 173 px, and the picture fills it
+// exactly (see the anchor below). Excel sizes a column in characters
+// (≈ 7 px each + 5 px) and a row in points (4/3 px each), so these two
+// numbers are the same square in Excel's own units.
+const IMG_COL_CHARS = 24; // ≈ 173 px
+const IMG_ROW_PT = 130; //   ≈ 173 px
+/** Pixels of the embedded picture: twice the cell, so it stays sharp when
+ *  the sheet is zoomed or printed. */
+const IMG_SIDE = 360;
+
+/** Fetch one product image and normalize it to a SQUARE IMG_SIDE JPEG, the
+ *  photo centered on white with its own proportions kept and a small white
+ *  margin. Square on purpose: the picture fills its square cell, so it can
+ *  never be stretched. Canvas also converts whatever the proxy served (JPEG
+ *  or WebP — exceljs embeds only png/jpeg/gif); JPEG keeps a 241-product file
+ *  at a few MB where a PNG of the same photos would be several times that.
+ *  The proxy URL already carries the orientation fix and the manual rotation,
+ *  exactly what the site shows. An 8-second timeout per image so one stuck
+ *  thumbnail cannot stall the export; any failure returns null — a missing
+ *  picture must never sink the file. */
+async function fetchAsJpeg(url: string): Promise<ArrayBuffer | null> {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return null;
     const blob = await res.blob();
     const bitmap = await createImageBitmap(blob);
-    const SIDE = 240;
-    const scale = Math.min(SIDE / Math.max(bitmap.width, 1), SIDE / Math.max(bitmap.height, 1), 1);
+    const SIDE = IMG_SIDE;
+    const BOX = Math.round(SIDE * 0.92);
+    const scale = Math.min(BOX / Math.max(bitmap.width, 1), BOX / Math.max(bitmap.height, 1));
     const w = Math.max(1, Math.round(bitmap.width * scale));
     const h = Math.max(1, Math.round(bitmap.height * scale));
     const canvas = document.createElement("canvas");
@@ -41,14 +54,14 @@ async function fetchAsPng(url: string): Promise<ArrayBuffer | null> {
     canvas.height = SIDE;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
-    // White ground: catalogue photos assume it, and PNG transparency renders
-    // as black in some Excel viewers.
+    // White ground: catalogue photos assume it.
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, SIDE, SIDE);
+    ctx.imageSmoothingQuality = "high";
     ctx.drawImage(bitmap, (SIDE - w) / 2, (SIDE - h) / 2, w, h);
     bitmap.close();
-    const png = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
-    return png ? await png.arrayBuffer() : null;
+    const jpg = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.88));
+    return jpg ? await jpg.arrayBuffer() : null;
   } catch {
     return null;
   }
@@ -60,6 +73,9 @@ export async function buildCollectionWorkbook(
   collectionName: string,
   rows: ExcelRow[],
   onProgress?: (done: number, total: number) => void,
+  // Injectable for the Node test, which has no canvas; the site always uses
+  // the browser path.
+  fetchImage: (url: string) => Promise<ArrayBuffer | null> = fetchAsJpeg,
 ): Promise<{ workbook: ExcelJS.Workbook; imagesFailed: number }> {
   const wb = new ExcelJS.Workbook();
   // The sheet carries the catalogue's name — trimmed to Excel's rules
@@ -70,10 +86,14 @@ export async function buildCollectionWorkbook(
     // Right-to-left like the site, and the header row frozen so scrolling 241
     // products never loses the column names.
     views: [{ rightToLeft: true, state: "frozen", ySplit: 1 }],
+    // Printed, all five columns fit the page width (as many pages long as it
+    // takes) — with the bigger pictures the price columns used to fall onto
+    // a second sheet of paper.
+    pageSetup: { paperSize: 9, orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
 
   ws.columns = [
-    { header: "תמונה", key: "img", width: 14 },
+    { header: "תמונה", key: "img", width: IMG_COL_CHARS },
     { header: "תיאור פריט", key: "name", width: 48 },
     { header: "ברקוד", key: "barcode", width: 18 },
     { header: "מחיר", key: "price", width: 11 },
@@ -86,7 +106,7 @@ export async function buildCollectionWorkbook(
 
   // Images first, in small batches — one slow thumbnail must not serialize
   // fifty others, and fifty at once would hammer the proxy.
-  const pngs = new Array<ArrayBuffer | null>(rows.length).fill(null);
+  const pngs = new Array<ArrayBuffer | null>(rows.length).fill(null); // JPEG bytes
   let done = 0;
   // 10 at a time: measured against a cold proxy this roughly halves a
   // 241-product export versus 6, while staying under the edge function's own
@@ -95,7 +115,7 @@ export async function buildCollectionWorkbook(
   const BATCH = 10;
   for (let i = 0; i < rows.length; i += BATCH) {
     await Promise.all(rows.slice(i, i + BATCH).map(async (r, j) => {
-      if (r.imageUrl) pngs[i + j] = await fetchAsPng(r.imageUrl);
+      if (r.imageUrl) pngs[i + j] = await fetchImage(r.imageUrl);
       done++;
       onProgress?.(done, rows.length);
     }));
@@ -112,26 +132,31 @@ export async function buildCollectionWorkbook(
       price: r.price,
       net: "",
     });
-    row.height = 58;
+    row.height = IMG_ROW_PT;
     row.alignment = { vertical: "middle", wrapText: true };
     row.getCell("barcode").numFmt = "@";
     if (r.price != null) row.getCell("price").numFmt = "0.00";
 
-    const png = pngs[i];
-    if (png) {
-      const imgId = wb.addImage({ buffer: png, extension: "png" });
-      // tl+br BOTH inside the תמונה column, so the picture is clamped to its
-      // own cell's rectangle. The earlier tl+ext (pixel offset) anchor is
-      // exactly the form Excel misplaces on right-to-left sheets — pictures
-      // drifted over the text columns and the owner reported "you can't see
-      // everything". A cell-bounded anchor follows the cell wherever the
-      // sheet direction puts it. The source PNG is square, so filling the
-      // near-square box cannot stretch the photo.
-      // exceljs's TS type for a tl+br range demands the full internal Anchor
-      // shape, but the documented public form is plain {col,row} — cast.
+    const img = pngs[i];
+    if (img) {
+      const imgId = wb.addImage({ buffer: img, extension: "jpeg" });
+      // The picture fills its own cell EXACTLY: from the cell's corner to the
+      // next cell's corner, whole numbers only. Fractions (the 0.06 → 0.94
+      // margin this used before) are turned into offsets by exceljs with the
+      // wrong units — it counts a column as width×10000 EMU where Excel uses
+      // ≈ width×66,700 — so the "94% of the cell" picture came out 13 px wide
+      // inside a 103 px cell: a thin strip pushed against the side. The owner
+      // reported exactly that ("ממש קטנות והולכות לצד"). Whole-cell corners
+      // carry zero offsets, so there is nothing to convert. The margin now
+      // lives inside the picture itself (fetchAsJpeg), and a cell-bounded
+      // twoCellAnchor still follows its cell on the right-to-left sheet.
+      // The corners are given in exceljs's NATIVE form (col/row + offset,
+      // 0-based): the {col,row} form makes exceljs measure the row below the
+      // corner, and getRow() creates that row — an empty row was being
+      // inserted under every picture, pushing every later product down.
       ws.addImage(imgId, {
-        tl: { col: 0.06, row: row.number - 1 + 0.06 } as unknown as ExcelJS.Anchor,
-        br: { col: 0.94, row: row.number - 0.06 } as unknown as ExcelJS.Anchor,
+        tl: { nativeCol: 0, nativeColOff: 0, nativeRow: row.number - 1, nativeRowOff: 0 } as unknown as ExcelJS.Anchor,
+        br: { nativeCol: 1, nativeColOff: 0, nativeRow: row.number, nativeRowOff: 0 } as unknown as ExcelJS.Anchor,
         editAs: "oneCell",
       });
     }
