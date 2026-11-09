@@ -144,7 +144,9 @@ export default function ImagesReviewPage() {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, rotation_override: value } : r)));
     const { data, error } = await supabase
       .from("products")
-      .update({ rotation_override: value })
+      // A manager's save is a person's decision: the automatic straightening
+      // (detect-orientation) never overrides a photo marked like this.
+      .update({ rotation_override: value, orient_human_ok: true, orient_ai_set: false })
       .eq("id", id)
       .select("id");
     if (!mountedRef.current) return; // navigated away mid-save — don't touch state
@@ -181,7 +183,7 @@ export default function ImagesReviewPage() {
         if (error) {
           let msg = "שגיאה בסריקה.";
           try { const ctx = (error as { context?: Response }).context; if (ctx && typeof ctx.json === "function") { const b = await ctx.json(); if (b?.error) msg = b.error; } } catch { /* */ }
-          setAiMsg("נעצר: " + msg + (msg.includes("ANTHROPIC") ? " — יש להוסיף מפתח API בהגדרות." : ""));
+          setAiMsg("נעצר: " + msg);
           break;
         }
         const d = (data ?? {}) as { checked?: number; flipped?: number; remaining?: number | null; error?: string };
@@ -190,7 +192,7 @@ export default function ImagesReviewPage() {
         setAiMsg(`נסרקו ${checked.toLocaleString("he-IL")} · סובבו ${flipped.toLocaleString("he-IL")} · נותרו ${(d.remaining ?? 0).toLocaleString("he-IL")}`);
         loadFixedCount();
         if (!d.remaining || d.remaining <= 0) { setAiMsg(`✓ הסריקה הושלמה — סובבו ${flipped.toLocaleString("he-IL")} תמונות מתוך ${checked.toLocaleString("he-IL")} שנבדקו.`); break; }
-        if ((d.checked ?? 0) === 0) { setAiMsg("נעצר: לא ניתן היה לעבד תמונות (בדקו מפתח API / מכסה) ונסו שוב."); break; }
+        if ((d.checked ?? 0) === 0) { setAiMsg("נעצר: לא ניתן היה לקרוא את התמונות כרגע. נסו שוב בעוד כמה דקות."); break; }
       }
     } catch (e) {
       if (mountedRef.current) setAiMsg("שגיאת רשת בסריקה: " + String((e as Error)?.message ?? e));
@@ -234,13 +236,13 @@ export default function ImagesReviewPage() {
           ביטול מחזיר את התמונה למצב השמור. <b>כבר תוקנו: {fixedCount.toLocaleString("he-IL")} תמונות.</b>
         </p>
 
-        {/* AI auto-scan: goes over every not-yet-scanned image, detects
-            upside-down / rotated ones with a vision model, and fixes them. */}
+        {/* Automatic straightening: reads the rotation the phone saved inside
+            each new photo (EXIF) and applies it — see detect-orientation. */}
         <div style={{ marginTop: "1.1rem", background: "linear-gradient(120deg, rgba(138,63,252,0.08), rgba(37,199,126,0.08))", border: `1px solid ${tokens.border}`, borderRadius: 16, padding: "1rem 1.2rem", display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 260px" }}>
-            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: tokens.text }}>🤖 סריקת AI אוטומטית</div>
+            <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: tokens.text }}>🔄 יישור אוטומטי</div>
             <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: aiMsg.startsWith("נעצר") ? "#C0143C" : tokens.body, marginTop: "0.25rem", lineHeight: 1.5 }}>
-              {aiMsg || "המערכת תעבור על כל התמונות שעוד לא נסרקו, תזהה הפוכות/מסובבות ותסובב אותן אוטומטית. תמונות שכבר סובבו לא ייגעו. אפשר לעצור בכל רגע (השאירו את החלון פתוח)."}
+              {aiMsg || "המערכת קוראת מכל תמונה חדשה איך הטלפון הוחזק בצילום ומיישרת אותה לפי זה (קורה לבד כל רבע שעה). תמונות שתיקנתם ידנית לא ייגעו. אפשר לעצור בכל רגע (השאירו את החלון פתוח)."}
             </div>
           </div>
           <button
@@ -252,7 +254,7 @@ export default function ImagesReviewPage() {
               border: aiRunning ? `1px solid ${tokens.border}` : "none",
             }}
           >
-            {aiRunning ? "⏹ עצור" : "🤖 התחל סריקה"}
+            {aiRunning ? "⏹ עצור" : "🔄 יישר עכשיו"}
           </button>
         </div>
 

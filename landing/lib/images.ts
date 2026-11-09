@@ -11,9 +11,12 @@ const SUPA =
 // pipeline stripped the tag without rotating, serving them sideways — the
 // old cached variants must be skipped, not waited out for 30 days).
 //
-// rot: a MANUAL extra clockwise rotation for photos that are crooked but carry
-// no EXIF tag — set from products.rotation_override by the manager in the
-// image-fixing screen. It joins the cache key so a corrected image replaces
+// rot: products.rotation_override — set by the manager in the image-fixing
+// screens, or automatically to 180 by detect-orientation for phone photos.
+// NOTE: the proxy turns photos COUNTER-clockwise (imagescript quirk), both
+// for the EXIF tag and for rot, so every upright phone photo needs rot=180
+// to show right. See supabase/functions/detect-orientation/lib.ts before
+// changing anything about rotation here or in rivhit-img. It joins the cache key so a corrected image replaces
 // the crooked cached one immediately.
 //
 // ANY angle 0-359 is allowed: the proxy also straightens slightly-tilted

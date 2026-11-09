@@ -14,6 +14,19 @@ concurrency and sanitized-error layers are the hardening this PR adds on top.
 Deployment and the exact rollback (from the private archive) are in
 `docs/edge-functions-runbook.md`.
 
+## ⚠ Rotation direction (measured 2026-11-09)
+
+imagescript 1.3.0's `Image.rotate(deg)` turns **counter-clockwise**, while
+this proxy passes it clockwise degrees — for the EXIF tag and for `rot`.
+So an upright phone photo (EXIF 6/8) is served upside down unless
+`rotation_override` is 180, and ~300 products rely on exactly that
+(set by hand, and automatically by `detect-orientation` v20). Changing the
+rotation direction here without migrating every `rotation_override` in the
+same step turns all of them upside down. Details and an executable check:
+`supabase/functions/detect-orientation/lib.ts`,
+`landing/tests/orientation.test.mjs`. The table below predates this finding
+(its "clockwise" is what the code intends, not what it does).
+
 ## What this directory IS
 
 A **proposed replacement** implementation, written to the live function's
