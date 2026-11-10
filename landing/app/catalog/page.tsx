@@ -63,6 +63,10 @@ type Cart = Record<string, CartLine>;
 // Products per request. 48 (was 24): half as many stops on a long category;
 // the public RPCs cap a request at 60, so 48 is always served in full.
 const PAGE_SIZE = 48;
+// The first cards' photos load immediately and first (ProductImage priority):
+// they are on the opening screen — or the first row just under the search and
+// categories on a phone. All later photos load lazily as they come near.
+const PRIORITY_IMAGES = 6;
 const ffQty = featureFlags.ff_display_quantities;
 // Wave 5: minimum-order progress bar + VAT breakdown in the cart drawer.
 const ffMinVat = featureFlags.ff_min_order_vat_ui;
@@ -960,7 +964,7 @@ export default function CatalogPage() {
                         </span>
                       )}
                       <span style={{ position: "absolute", inset: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>
-                        <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} />
+                        <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} priority={i < PRIORITY_IMAGES} />
                       </span>
                     </Link>
                     <Link href={`/product/?id=${p.id}`} style={{ textDecoration: "none" }}>

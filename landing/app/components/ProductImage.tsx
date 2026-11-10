@@ -40,6 +40,7 @@ export default function ProductImage({
   placeholderStyle,
   onStatus,
   retryKey = 0,
+  priority = false,
 }: {
   pictureLink: string | null | undefined;
   /** Product name — becomes the alt text. */
@@ -55,6 +56,10 @@ export default function ProductImage({
   onStatus?: (s: ProductImageStatus) => void;
   /** Bump to restart the whole chain (the admin "נסה שוב" button). */
   retryKey?: number;
+  /** One of the first cards of a grid — on screen (or just below it) the
+   *  moment the page opens: load it right away, ahead of the rest, instead of
+   *  waiting for the lazy-loading pass. Every other image stays lazy. */
+  priority?: boolean;
 }) {
   const link = pictureLink || "";
   const rot = rotation ?? 0;
@@ -151,7 +156,8 @@ export default function ProductImage({
       key={attempt}
       src={src}
       alt={name}
-      loading="lazy"
+      loading={priority ? "eager" : "lazy"}
+      fetchPriority={priority ? "high" : undefined}
       decoding="async"
       onLoad={() => setPhase("loaded")}
       onError={onError}

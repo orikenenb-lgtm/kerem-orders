@@ -37,6 +37,10 @@ type PublicProduct = {
 // Products per request. 48 (was 24): half as many stops on a long category;
 // the public RPCs cap a request at 60, so 48 is always served in full.
 const PAGE_SIZE = 48;
+// The first cards' photos load immediately and first (ProductImage priority):
+// they are on the opening screen — or the first row just under the search and
+// categories on a phone. All later photos load lazily as they come near.
+const PRIORITY_IMAGES = 6;
 
 export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   const rpcName = showPrices ? "catalog_public_prices" : "catalog_public";
@@ -290,7 +294,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                         ever cropped or stretched, small inner padding, one
                         background for photographed-on-white images. */}
                     <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
-                      <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} />
+                      <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} priority={i < PRIORITY_IMAGES} />
                     </div>
                     {/* Clamped to three lines. Rivhit names run to 120 characters, and one
                         long name stretched its card to 453px against 300px for its
