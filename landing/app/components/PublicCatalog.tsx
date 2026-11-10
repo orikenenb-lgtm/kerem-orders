@@ -8,6 +8,7 @@ const ffLeanSticky = featureFlags.ff_lean_sticky;
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SiteHeader from "./SiteHeader";
 import SiteFooter from "./SiteFooter";
+import LoadMoreTail from "./LoadMoreTail";
 import { supabase } from "../../lib/supabaseClient";
 import ProductImage from "./ProductImage";
 import { tokens, ils } from "../../lib/ui";
@@ -33,7 +34,9 @@ type PublicProduct = {
   rotation_override?: number | null;
 };
 
-const PAGE_SIZE = 24;
+// Products per request. 48 (was 24): half as many stops on a long category;
+// the public RPCs cap a request at 60, so 48 is always served in full.
+const PAGE_SIZE = 48;
 
 export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   const rpcName = showPrices ? "catalog_public_prices" : "catalog_public";
@@ -94,8 +97,15 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   const gridGen = useRef(-1);
 
   // debounce search -> query, reset to page 0
+  // Only a REAL change of the search text starts a new filter generation. On
+  // mount (and after typing back to the same text) there is nothing to apply;
+  // bumping the generation anyway made the first scroll's page-2 response look
+  // stale, so the grid threw it away and fetched page 1 and page 2 again — the
+  // extra wait at the bottom of the first products.
+  const appliedInput = useRef(input);
   useEffect(() => {
-    const t = setTimeout(() => { filterGen.current++; setQuery(input); setPage(0); }, 350);
+    if (input === appliedInput.current) return;
+    const t = setTimeout(() => { appliedInput.current = input; filterGen.current++; setQuery(input); setPage(0); }, 350);
     return () => clearTimeout(t);
   }, [input]);
 
@@ -164,7 +174,9 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
     if (!el || !hasMore || loadingProducts || loadErr) return;
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) setPage((p) => p + 1); },
-      { rootMargin: "700px" }
+      // Start the next request ~3 phone screens early, so a customer who
+      // scrolls fast meets products, not the loading line.
+      { rootMargin: "2000px" }
     );
     obs.observe(el);
     return () => obs.disconnect();
@@ -310,9 +322,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                 <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
               </div>
             ) : hasMore || loadingProducts ? (
-              <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
-                טוען עוד מוצרים…
-              </p>
+              <LoadMoreTail shown={products.length} total={total} columns={gridColumns(density)} />
             ) : products.length > PAGE_SIZE ? (
               <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
                 זהו — רואים את כל {total.toLocaleString("he-IL")} המוצרים ✔

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
+import LoadMoreTail from "../components/LoadMoreTail";
 import ProductImage from "../components/ProductImage";
 import { supabase } from "../../lib/supabaseClient";
 import { useAuth } from "../../lib/auth";
@@ -59,7 +60,9 @@ type CartLine = {
 };
 type Cart = Record<string, CartLine>;
 
-const PAGE_SIZE = 24;
+// Products per request. 48 (was 24): half as many stops on a long category;
+// the public RPCs cap a request at 60, so 48 is always served in full.
+const PAGE_SIZE = 48;
 const ffQty = featureFlags.ff_display_quantities;
 // Wave 5: minimum-order progress bar + VAT breakdown in the cart drawer.
 const ffMinVat = featureFlags.ff_min_order_vat_ui;
@@ -251,8 +254,15 @@ export default function CatalogPage() {
   const gridGen = useRef(-1);
 
   // debounce search -> query, reset to page 0
+  // Only a REAL change of the search text starts a new filter generation. On
+  // mount (and after typing back to the same text) there is nothing to apply;
+  // bumping the generation anyway made the first scroll's page-2 response look
+  // stale, so the grid threw it away and fetched page 1 and page 2 again — the
+  // extra wait at the bottom of the first products.
+  const appliedInput = useRef(input);
   useEffect(() => {
-    const t = setTimeout(() => { filterGen.current++; setQuery(input); setPage(0); }, 350);
+    if (input === appliedInput.current) return;
+    const t = setTimeout(() => { appliedInput.current = input; filterGen.current++; setQuery(input); setPage(0); }, 350);
     return () => clearTimeout(t);
   }, [input]);
 
@@ -418,7 +428,9 @@ export default function CatalogPage() {
     if (!el || !hasMore || loadingProducts || loadErr) return;
     const obs = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) setPage((p) => p + 1); },
-      { rootMargin: "700px" }
+      // Start the next request ~3 phone screens early, so a customer who
+      // scrolls fast meets products, not the loading line.
+      { rootMargin: "2000px" }
     );
     obs.observe(el);
     return () => obs.disconnect();
@@ -1089,9 +1101,7 @@ export default function CatalogPage() {
                 <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
               </div>
             ) : hasMore || loadingProducts ? (
-              <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
-                טוען עוד מוצרים…
-              </p>
+              <LoadMoreTail shown={products.length} total={total} columns={gridColumns(density)} />
             ) : products.length > PAGE_SIZE ? (
               <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
                 זהו — רואים את כל {total.toLocaleString("he-IL")} המוצרים ✔
