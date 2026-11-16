@@ -19,6 +19,14 @@ import { VAT_RATE, MIN_ORDER_FALLBACK } from "../../lib/config";
 import { resolveQuantity, stepOf, describeQuantity, pluralPack } from "../../lib/quantity";
 import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
 import { readCart, CART_KEY } from "../../lib/cart";
+import css from "./catalog.module.css";
+
+// 2026-11 premium redesign: pastel tints rotated across category chips and
+// product image frames. Presentation only — the index is the same `i` the map
+// already had.
+const CHIP_TINTS = [css.chipLav, css.chipMint, css.chipSky, css.chipPeach, css.chipPink];
+const FRAME_TINTS = [css.frameLav, css.frameMint, css.frameSky, css.framePeach, css.framePink];
+const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
 type Product = {
   id: string;
@@ -250,6 +258,18 @@ export default function CatalogPage() {
       setCategories((data as { category: string; n: number }[]) ?? []);
     });
   }, [session]);
+
+  // Optional deep link from the home page's category tiles: /catalog?cat=<name>
+  // pre-selects that category once, on first load. Nothing else changes — the
+  // existing [activeCat] effect below resets paging exactly as a chip click
+  // does. Deferred to a task so the read stays out of the effect body (and a
+  // StrictMode double-mount clears the first timer, so it applies once).
+  useEffect(() => {
+    const cat = new URLSearchParams(window.location.search).get("cat");
+    if (!cat) return;
+    const t = window.setTimeout(() => setActiveCat(cat), 0);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // Filter generation: bumped whenever the query or category changes. The grid
   // remembers which generation its rows belong to, so a page>0 response can
@@ -527,7 +547,8 @@ export default function CatalogPage() {
               like the category chips above — to never imply a filter that is not
               applied. */}
           {ffFilters && query.trim().length < 2 && (
-            <div role="group" aria-label="סינון לפי מחיר" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+            <div role="group" aria-label="סינון לפי מחיר" className={css.bucketRow}>
+              <span aria-hidden="true" className={css.bucketLabel}>מחיר:</span>
               {PRICE_BUCKETS.map((b) => {
                 const active = priceBucket === b.key;
                 return (
@@ -535,13 +556,7 @@ export default function CatalogPage() {
                     key={b.key}
                     onClick={() => setPriceBucket(b.key)}
                     aria-pressed={active}
-                    style={{
-                      whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem",
-                      padding: "0.45rem 0.95rem", borderRadius: 999, cursor: "pointer",
-                      border: `1.5px solid ${active ? "transparent" : tokens.border}`,
-                      background: active ? tokens.accent : "#fff",
-                      color: active ? "#fff" : tokens.body,
-                    }}
+                    className={cx(css.bucket, active && css.bucketActive)}
                   >
                     {b.label}
                   </button>
@@ -552,15 +567,15 @@ export default function CatalogPage() {
           {/* Sorting applies while browsing; during a text search results are
               ranked by relevance, so the control is hidden then. */}
           {query.trim().length < 2 && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.7rem" }}>
+            <div className={css.toolRow}>
               <GridDensityPicker value={density} onChange={setDensity} />
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginInlineStart: "auto" }}>
-              <label htmlFor="kt-sort" style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>מיון:</label>
+              <div className={css.sortWrap}>
+              <label htmlFor="kt-sort" className={css.sortLabel}>מיון:</label>
               <select
                 id="kt-sort"
                 value={sort}
                 onChange={(e) => setSort(e.target.value as "name" | "price_asc" | "price_desc")}
-                style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", color: tokens.text, background: "#fff", border: `1px solid ${tokens.border}`, borderRadius: 999, padding: "0.4rem 0.9rem", cursor: "pointer" }}
+                className={css.sort}
               >
                 <option value="name">שם (א-ת)</option>
                 <option value="price_asc">מחיר: מהזול ליקר</option>
@@ -574,17 +589,11 @@ export default function CatalogPage() {
 
   const catToggle =
     ffCatSheet && categories.length > 0 && query.trim().length < 2 && (hiddenCats > 0 || catsExpanded) ? (
-      <div style={{ marginTop: "0.4rem" }}>
+      <div style={{ marginTop: "0.35rem" }}>
         <button
           onClick={() => setCatsExpanded((v) => !v)}
           aria-expanded={catsExpanded}
-          style={{
-            whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.8rem",
-            padding: "0.4rem 1rem", borderRadius: 999, cursor: "pointer",
-            border: catsExpanded ? "1.5px solid transparent" : `1.5px dashed ${tokens.border}`,
-            background: catsExpanded ? tokens.accent : "#fff",
-            color: catsExpanded ? "#fff" : tokens.body,
-          }}
+          className={cx(css.catToggle, catsExpanded && css.catToggleOpen)}
         >
           {catsExpanded ? "✕ סגירת הקטגוריות" : `עוד ${hiddenCats} קטגוריות ↓`}
         </button>
@@ -754,7 +763,7 @@ export default function CatalogPage() {
     return (
       <>
         <SiteHeader />
-        <main id="main-content" tabIndex={-1} style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
+        <main id="main-content" tabIndex={-1} className={css.authLoading}>
           טוען…
         </main>
         <SiteFooter />
@@ -766,15 +775,18 @@ export default function CatalogPage() {
     return (
       <>
         <SiteHeader />
-        <main id="main-content" tabIndex={-1} style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
-          <div style={{ fontSize: "4rem", marginBottom: "1rem" }}>🎉</div>
-          <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "2rem", color: tokens.text, marginBottom: "0.6rem" }}>ההזמנה נשלחה!</h1>
-          <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginBottom: "2rem" }}>
-            ההזמנה התקבלה ונשלחה למנהל. מספר הזמנה: <b dir="ltr">{placed.slice(0, 8)}</b>
-          </p>
-          <div style={{ display: "flex", gap: "0.8rem", justifyContent: "center", flexWrap: "wrap" }}>
-            <button onClick={() => setPlaced(null)} style={ghostBtn}>להזמנה נוספת</button>
-            <button onClick={() => router.push("/account")} style={solidBtn}>ההזמנות שלי</button>
+        <main id="main-content" tabIndex={-1} className={css.placed}>
+          <div className={css.placedCard}>
+            <div aria-hidden="true" className={css.placedBand} />
+            <div aria-hidden="true" className={css.placedIcon}>🎉</div>
+            <h1 className={css.placedTitle}>ההזמנה נשלחה!</h1>
+            <p className={css.placedText}>
+              ההזמנה התקבלה ונשלחה למנהל. מספר הזמנה: <b dir="ltr" className={css.orderNo}>{placed.slice(0, 8)}</b>
+            </p>
+            <div className={css.placedActions}>
+              <button onClick={() => setPlaced(null)} className={css.btnGhost}>להזמנה נוספת</button>
+              <button onClick={() => router.push("/account")} className={css.btnPrimary}>ההזמנות שלי</button>
+            </div>
           </div>
         </main>
       </>
@@ -784,70 +796,64 @@ export default function CatalogPage() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
-        <section
-          style={{
-            position: "relative",
-            overflow: "hidden",
-            borderRadius: 28,
-            background: "linear-gradient(125deg, #8A3FFC 0%, #2E7DFF 26%, #25C77E 46%, #FFC400 62%, #FF8A00 80%, #FF2E93 100%)",
-            padding: "clamp(1.8rem,5vw,3.2rem)",
-            boxShadow: "0 16px 44px rgba(138,63,252,0.28)",
-          }}
-        >
-          {/* soft scrim keeps the white text crisp over the bright bands */}
-          <div aria-hidden style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.16)" }} />
-          <div aria-hidden style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
-            <span style={{ position: "absolute", insetInlineEnd: "3%", top: "-12%", fontSize: 155, opacity: 0.25 }}>🧸</span>
-            <span style={{ position: "absolute", insetInlineEnd: "26%", bottom: "-22%", fontSize: 95, opacity: 0.2 }}>🎈</span>
-            <span style={{ position: "absolute", insetInlineStart: "4%", bottom: "-14%", fontSize: 82, opacity: 0.18 }}>🚗</span>
-            <span style={{ position: "absolute", insetInlineStart: "24%", top: "-6%", fontSize: 60, opacity: 0.16 }}>⭐</span>
-          </div>
-          <div style={{ position: "relative" }}>
-            <span style={{ display: "inline-block", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.72rem", letterSpacing: "0.12em", color: "#fff", background: "rgba(255,255,255,0.22)", border: "1px solid rgba(255,255,255,0.45)", borderRadius: 999, padding: "0.35rem 1rem", marginBottom: "1rem", backdropFilter: "blur(4px)" }}>
-              🎉 הקטלוג הסיטונאי · כרם טויס
-            </span>
-            <h1 style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "clamp(1.9rem,5vw,3.2rem)", color: "#fff", lineHeight: 1.08, maxWidth: 640, textShadow: "0 2px 14px rgba(0,0,0,0.22)" }}>
-              כל הצעצועים שילדים אוהבים — במחירי סיטונאות 🎈
-            </h1>
-            <p style={{ fontFamily: tokens.assistant, color: "rgba(255,255,255,0.96)", marginTop: "0.8rem", fontSize: "1.05rem", fontWeight: 500, textShadow: "0 1px 8px rgba(0,0,0,0.18)" }}>
-              {total.toLocaleString("he-IL")} מוצרים · מעודכן ישירות מהמלאי{vatLabel ? " · המחירים כוללים מע״מ" : ""}
-            </p>
+      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1rem,3vw,2rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
+        <section className={css.hero}>
+          <div aria-hidden="true" className={css.heroGlowA} />
+          <div aria-hidden="true" className={css.heroGlowB} />
+          <span aria-hidden="true" className={css.heroToy}>🧸</span>
+          <div className={css.heroInner}>
+            <span className={css.heroEyebrow}>✦ כרם טויס · לקוחות עסקיים</span>
+            <h1 className={css.heroTitle}>הקטלוג הסיטונאי</h1>
+            <p className={css.heroTag}>כל הצעצועים שילדים אוהבים — במחירי סיטונאות</p>
+            <ul className={css.heroStats}>
+              <li className={css.heroStat}><span className={css.heroStatStrong}>{total.toLocaleString("he-IL")}</span> מוצרים</li>
+              <li className={css.heroStat}>מעודכן ישירות מהמלאי</li>
+              {vatLabel ? <li className={css.heroStat}>המחירים כוללים מע״מ</li> : null}
+            </ul>
           </div>
         </section>
         {/* Wave 5 (ff_min_order_vat_ui): quiet reminder of the minimum while
             the cart is still under it — disappears once the minimum is met. */}
-        {ffMinVat && minOrder > 0 && cartTotal < minOrder && (
-          <div style={{ marginTop: "0.6rem" }}>
-            <span style={{ display: "inline-block", fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, background: tokens.surface, border: `1px solid ${tokens.border}`, borderRadius: 999, padding: "0.35rem 0.9rem" }}>
-              מינימום הזמנה: {ils(minOrder)} · בעגלה: {ils(cartTotal)}
-            </span>
-          </div>
-        )}
-        {discount > 0 && (
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", marginTop: "0.7rem", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.9rem", color: "#1A7A4D", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 999, padding: "0.45rem 1.1rem" }}>
-            🎁 יש לך הנחה קבועה של {discount}% — כל המחירים כבר מחושבים אחרי ההנחה
+        {((ffMinVat && minOrder > 0 && cartTotal < minOrder) || discount > 0) && (
+          <div className={css.infoRow}>
+            {ffMinVat && minOrder > 0 && cartTotal < minOrder && (
+              <span className={css.infoPill}>
+                <span aria-hidden="true" className={css.infoDot} />
+                מינימום הזמנה: {ils(minOrder)} · בעגלה: {ils(cartTotal)}
+              </span>
+            )}
+            {discount > 0 && (
+              <span className={cx(css.infoPill, css.infoPillMint)}>
+                🎁 יש לך הנחה קבועה של {discount}% — כל המחירים כבר מחושבים אחרי ההנחה
+              </span>
+            )}
           </div>
         )}
 
-        <div style={{ position: "sticky", top: "var(--kt-header-h, 96px)", zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
-          <input
-            type="search"
-            id="kt-catalog-search"
-            name="catalog-search"
-            // A real programmatic name — placeholder alone is not a label
-            // (it vanishes on input and many screen readers skip it).
-            aria-label="חיפוש מוצר לפי שם, קוד פריט או ברקוד"
-            placeholder="🔍 חיפוש לפי שם, קוד פריט או ברקוד…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            // Wave 5 (ff_mobile_polish): a real search keyboard, and Enter closes
-            // it instead of doing nothing — the results are already live-filtered
-            // by the debounce, so there is no form to submit.
-            enterKeyHint={ffMobile ? "search" : undefined}
-            onKeyDown={ffMobile ? (e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } } : undefined}
-            style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
-          />
+        <div className={css.sticky}>
+          <div className={css.searchWrap}>
+            <svg className={css.searchIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="2.2" />
+              <path d="M15.5 15.5L20.5 20.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+            <input
+              type="search"
+              id="kt-catalog-search"
+              name="catalog-search"
+              // A real programmatic name — placeholder alone is not a label
+              // (it vanishes on input and many screen readers skip it).
+              aria-label="חיפוש מוצר לפי שם, קוד פריט או ברקוד"
+              placeholder="חיפוש לפי שם, קוד פריט או ברקוד…"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              // Wave 5 (ff_mobile_polish): a real search keyboard, and Enter closes
+              // it instead of doing nothing — the results are already live-filtered
+              // by the debounce, so there is no form to submit.
+              enterKeyHint={ffMobile ? "search" : undefined}
+              onKeyDown={ffMobile ? (e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } } : undefined}
+              className={css.search}
+            />
+          </div>
           {/* Category chips apply while browsing. A text search runs across ALL
               categories (search_products takes no category argument), so the
               chips are hidden during search — leaving them visible and
@@ -868,11 +874,10 @@ export default function CatalogPage() {
               than another filter. */}
           {catsExpanded && catToggle}
           {categories.length > 0 && query.trim().length < 2 && (
-            <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", flexWrap: ffCatSheet && catsExpanded ? "wrap" : "nowrap", overflowX: ffCatSheet && catsExpanded ? "visible" : "auto", maxHeight: ffCatSheet && catsExpanded ? "38vh" : undefined, overflowY: ffCatSheet && catsExpanded ? "auto" : undefined, paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+            <div role="group" aria-label="סינון לפי קטגוריה" className={css.catRow} style={{ display: "flex", gap: "0.45rem", flexWrap: ffCatSheet && catsExpanded ? "wrap" : "nowrap", overflowX: ffCatSheet && catsExpanded ? "visible" : "auto", maxHeight: ffCatSheet && catsExpanded ? "38vh" : undefined, overflowY: ffCatSheet && catsExpanded ? "auto" : undefined, marginTop: "0.6rem" }}>
               {[{ category: "all", n: 0 }, ...visibleCats].map((c, i) => {
                 const active = activeCat === c.category;
                 const isAll = c.category === "all";
-                const accent = isAll ? tokens.accent : tokens.rainbowColors[i % tokens.rainbowColors.length];
                 return (
                   <button
                     key={c.category}
@@ -882,64 +887,61 @@ export default function CatalogPage() {
                     // back on screen instead of leaving 24 chips in front of them.
                     onClick={() => { setActiveCat(c.category); if (ffCatSheet) setCatsExpanded(false); }}
                     aria-pressed={active}
-                    style={{
-                      whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.82rem",
-                      padding: "0.5rem 1.1rem", borderRadius: 999, cursor: "pointer",
-                      // categories carry their own rainbow tint; only literal hex
-                      // colors (rainbowColors) get the alpha suffix, never the
-                      // var()-based accent used for "all".
-                      border: `1.5px solid ${active ? "transparent" : isAll ? tokens.border : `${accent}55`}`,
-                      background: active ? accent : isAll ? "#fff" : `${accent}18`,
-                      color: active ? "#fff" : isAll ? tokens.body : accent,
-                      boxShadow: active ? `0 4px 12px ${isAll ? "rgba(138,63,252,0.30)" : `${accent}66`}` : "none",
-                    }}
+                    // Pastel tint rotates per chip; "הכל" is the white reset
+                    // chip; the active one is solid purple with white text.
+                    className={cx(css.chip, isAll ? css.chipAll : CHIP_TINTS[(i - 1) % CHIP_TINTS.length], active && css.chipActive)}
                   >
-                    {isAll ? "הכל" : `${c.category} (${c.n})`}
+                    {isAll ? "הכל" : <>{c.category} <span className={css.chipCount}>({c.n})</span></>}
                   </button>
                 );
               })}
             </div>
           )}
           {!catsExpanded && catToggle}
-          {!ffLeanSticky && belowBar}
+          {!ffLeanSticky && <div className={css.tools}>{belowBar}</div>}
         </div>
-        {ffLeanSticky && <div style={{ padding: "0.2rem 0 0.6rem" }}>{belowBar}</div>}
+        {ffLeanSticky && <div className={css.tools} style={{ marginTop: 0, paddingBottom: "0.3rem" }}>{belowBar}</div>}
 
         {loadingProducts && products.length === 0 ? (
           ffMobile ? (
             // Wave 5: skeleton cards instead of a bare line — the page looks like
             // the catalogue immediately instead of an empty screen. Decorative
             // only; the live region below still announces the load.
-            <div aria-busy="true" data-density={density} style={{ display: "grid", gridTemplateColumns: gridColumns(density), gap: "1rem", marginTop: "1rem" }}>
-              <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clipPath: "inset(50%)" }} role="status">טוען מוצרים…</span>
+            <div aria-busy="true" data-density={density} className={css.grid} style={{ display: "grid", gridTemplateColumns: gridColumns(density) }}>
+              <span className={css.srOnly} role="status">טוען מוצרים…</span>
               {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} aria-hidden="true" style={{ border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                  <div style={{ aspectRatio: "1 / 1", borderRadius: 12, background: tokens.surface }} />
-                  <div style={{ height: "0.85em", borderRadius: 6, background: tokens.surface }} />
-                  <div style={{ height: "0.85em", width: "60%", borderRadius: 6, background: tokens.surface }} />
+                <div key={i} aria-hidden="true" className={cx(css.skelCard, "kt-skel")}>
+                  <div className={css.skelImg} />
+                  <div className={css.skelLine} />
+                  <div className={cx(css.skelLine, css.skelShort)} />
+                  <div className={css.skelBtn} />
                 </div>
               ))}
             </div>
           ) : (
-            <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>
+            <p className={css.loadingText}>טוען מוצרים…</p>
           )
         ) : loadErr && products.length === 0 ? (
-          <div style={{ textAlign: "center", marginTop: "2rem" }}>
-            <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת הקטלוג נכשלה. בדקו את החיבור ונסו שוב.</p>
-            <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
+          <div className={css.panel}>
+            <span aria-hidden="true" className={cx(css.panelIcon, css.panelIconWarn)}>📡</span>
+            <p className={cx(css.panelText, css.panelErr)}>טעינת הקטלוג נכשלה. בדקו את החיבור ונסו שוב.</p>
+            <button onClick={loadProducts} className={css.btnPrimary}>נסו שוב</button>
           </div>
         ) : products.length === 0 ? (
-          <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>
-            לא נמצאו מוצרים{query ? ` עבור “${query}”` : ""}. נסו לכתוב חלק מהשם — החיפוש יודע להשלים לבד.
-          </p>
+          <div className={css.panel}>
+            <span aria-hidden="true" className={css.panelIcon}>🔍</span>
+            <p className={css.panelText}>
+              לא נמצאו מוצרים{query ? ` עבור “${query}”` : ""}. נסו לכתוב חלק מהשם — החיפוש יודע להשלים לבד.
+            </p>
+          </div>
         ) : (
           <>
             {fuzzyNote && (
-              <div style={{ fontFamily: tokens.assistant, fontSize: "0.95rem", color: tokens.body, background: "rgba(138,63,252,0.08)", border: "1px solid rgba(138,63,252,0.25)", borderRadius: 12, padding: "0.7rem 1rem", marginTop: "1rem" }}>
+              <div className={css.fuzzy}>
                 🔎 לא מצאנו התאמה מדויקת ל־“{query}” — אלה המוצרים הכי דומים:
               </div>
             )}
-            <div data-density={density} style={{ display: "grid", gridTemplateColumns: gridColumns(density), gap: "1rem", marginTop: "1rem" }}>
+            <div data-density={density} className={css.grid} style={{ display: "grid", gridTemplateColumns: gridColumns(density) }}>
               {products.map((p, i) => {
                 const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
                 const qty = cart[p.id]?.qty ?? 0;
@@ -950,24 +952,26 @@ export default function CatalogPage() {
                 const displaySold = ffQty && step > 1 && dq > 1;
                 const packName = (p.display_name || "מארז").trim() || "מארז";
                 return (
-                  <div key={p.id} className={ffMotion ? "kt-card kt-press" : "kt-card"} style={{ border: `1px solid ${tokens.border}`, borderTop: ffCardV2 ? `1px solid ${tokens.border}` : `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: ffCardIncart && qty > 0 ? `0 0 0 2px #1A7A4D inset, ${tokens.shadowCard}` : tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                  <div key={p.id} className={cx(ffMotion ? "kt-card kt-press" : "kt-card", css.card)} style={{ borderTop: ffCardV2 ? undefined : `3px solid ${accent}`, boxShadow: ffCardIncart && qty > 0 ? `0 0 0 2px #1A7A4D inset, ${tokens.shadowCard}` : tokens.shadowCard }}>
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
                     {/* Uniform frame: square in every column width (aspectRatio,
                         not a fixed height), contain (no cropping/stretching),
-                        small inner padding, one white background. */}
-                    <Link href={`/product/?id=${p.id}`} aria-label={`פרטים על ${p.name}`} style={{ display: "block", position: "relative", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, overflow: "hidden" }}>
+                        small inner padding, a very light pastel backdrop (the
+                        photo multiplies onto it, so a white studio background
+                        takes the tint instead of reading as a box). */}
+                    <Link href={`/product/?id=${p.id}`} aria-label={`פרטים על ${p.name}`} className={cx(css.frame, FRAME_TINTS[i % FRAME_TINTS.length])}>
                       {ffCardIncart && qty > 0 && (
-                        <span aria-hidden="true" style={{ position: "absolute", insetInlineEnd: 6, top: 6, zIndex: 2, background: "#1A7A4D", color: "#fff", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 999 }}>
-                          בעגלה · {qty.toLocaleString("he-IL")}
+                        <span aria-hidden="true" className={css.badgeIn}>
+                          ✓ בעגלה · {qty.toLocaleString("he-IL")}
                         </span>
                       )}
-                      <span style={{ position: "absolute", inset: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2.6rem" }}>
-                        <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} priority={i < PRIORITY_IMAGES} />
+                      <span className={css.frameImg}>
+                        <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} priority={i < PRIORITY_IMAGES} imgStyle={{ mixBlendMode: "multiply" }} />
                       </span>
                     </Link>
-                    <Link href={`/product/?id=${p.id}`} style={{ textDecoration: "none" }}>
+                    <Link href={`/product/?id=${p.id}`} className={css.nameLink}>
                       {/* Clamped to keep every card the same height. Rivhit names run
                           long, and one long name stretched its card to 453px against 300px
                           for its neighbours — which stretches the whole grid row. title
@@ -975,15 +979,15 @@ export default function CatalogPage() {
                           it. ff_card_v2: 2 lines (the longest live name is 54 chars, so a
                           third line was almost always empty) reclaims a row of vertical
                           space. */}
-                      <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: ffCardV2 ? "2.5em" : "2.3em", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: ffCardV2 ? 2 : 3, overflow: "hidden" }} title={p.name}>{p.name}</h3>
+                      <h3 className={css.name} style={{ minHeight: ffCardV2 ? "2.6em" : "2.3em", WebkitLineClamp: ffCardV2 ? 2 : 3 }} title={p.name}>{p.name}</h3>
                     </Link>
                     {/* ff_card_v2: prefer the barcode, fall back to sku — the same rule the
                         Excel export uses. Today every active product's barcode is empty and
                         the EAN lives in sku, so this reads identically now, but it keeps the
                         card and the export in step if barcodes are ever populated. */}
-                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>קוד: <span dir="ltr">{(ffCardV2 ? (p.barcode || p.sku) : p.sku) || "—"}</span></div>
+                    <div className={css.sku}>קוד: <span dir="ltr" className={css.skuCode}>{(ffCardV2 ? (p.barcode || p.sku) : p.sku) || "—"}</span></div>
                     {displaySold && (
-                      <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.78rem", color: tokens.body }}>
+                      <div className={css.pack}>
                         {packName} = {dq.toLocaleString("he-IL")} יחידות
                       </div>
                     )}
@@ -1000,20 +1004,20 @@ export default function CatalogPage() {
                         costs — but the headline number is the unit price,
                         labelled ליחידה so it cannot be misread as the pack's. */}
                     {isSpecial(p) ? (
-                      <div style={{ display: "flex", alignItems: "baseline", gap: "0.45rem", flexWrap: "wrap" }}>
-                        <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: "#1A7A4D" }}>
-                          {ils(unitPrice(p))}{displaySold ? <span style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.8rem", color: tokens.dim }}> ליחידה</span> : null}
+                      <div className={css.priceRow}>
+                        <span className={cx(css.price, css.priceGood)}>
+                          {ils(unitPrice(p))}{displaySold ? <span className={css.perUnit}> ליחידה</span> : null}
                         </span>
-                        <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#1A7A4D", padding: "0.15rem 0.5rem", borderRadius: 999 }}>מחיר מיוחד</span>
+                        <span className={css.priceBadge}>מחיר מיוחד</span>
                       </div>
                     ) : discount > 0 ? (
-                      <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", flexWrap: "wrap" }}>
-                        <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: "#1A7A4D" }}>{ils(unitPrice(p))}{displaySold ? <span style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.8rem", color: tokens.dim }}> ליחידה</span> : null}</span>
-                        <s style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: tokens.dim }}>{ils(listPrice(p))}</s>
-                        <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.68rem", color: "#fff", background: "#25C77E", padding: "0.15rem 0.5rem", borderRadius: 999 }}>‎-{discount}%</span>
+                      <div className={css.priceRow}>
+                        <span className={cx(css.price, css.priceGood)}>{ils(unitPrice(p))}{displaySold ? <span className={css.perUnit}> ליחידה</span> : null}</span>
+                        <s className={css.priceWas}>{ils(listPrice(p))}</s>
+                        <span className={css.priceBadge}>‎-{discount}%</span>
                       </div>
                     ) : (
-                      <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>{ils(unitPrice(p))}{displaySold ? <span style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.8rem", color: tokens.dim }}> ליחידה</span> : null}</div>
+                      <div className={css.priceRow}><span className={css.price}>{ils(unitPrice(p))}{displaySold ? <span className={css.perUnit}> ליחידה</span> : null}</span></div>
                     )}
                     {(() => {
                       // Wave 3 (flag on): the DB carton_qty wins; the legacy
@@ -1033,10 +1037,10 @@ export default function CatalogPage() {
                       if (qty === 0) {
                         return (
                           <>
-                            <div style={{ display: "flex", gap: "0.4rem" }}>
+                            <div className={css.actions}>
                               {/* Flag on: one press adds one whole step (setQty
                                   normalizes anyway). Flag off: step === 1. */}
-                              <button onClick={() => setQty(p, step)} style={{ ...solidBtn, flex: 1, padding: "0.55rem" }}>הוספה</button>
+                              <button onClick={() => setQty(p, step)} className={cx(css.btnPrimary, css.addBtn)}>הוספה</button>
                               {carton && cartonUnits && (
                                 <button
                                   onClick={() => setQty(p, cartonUnits)}
@@ -1052,36 +1056,41 @@ export default function CatalogPage() {
                                   // screen clipped, including the logo, the phone
                                   // link and the first category chip, with no way
                                   // to scroll to them. Two lines beats cut off.
-                                  style={{ ...ghostBtn, flex: 1, padding: "0.55rem 0.4rem", fontSize: "0.8rem", lineHeight: 1.15 }}>
+                                  className={cx(css.btnSoft, css.cartonBtn)}>
                                   📦 קרטון ({cartonUnits.toLocaleString("he-IL")})
                                 </button>
                               )}
                             </div>
                             {displaySold && (
-                              <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim, textAlign: "center" }}>
+                              <div className={css.hint}>
                                 +1 {packName}
                               </div>
                             )}
                           </>
                         );
                       }
+                      // Mounting this block IS the add confirmation: it replaces
+                      // the "הוספה" button on the same render that stored the
+                      // line, and its CSS entrance (with the in-cart badge
+                      // above) is the only feedback — no extra state, no second
+                      // setQty.
                       return (
-                        <div style={{ display: "grid", gap: "0.35rem" }}>
-                          <Stepper qty={qty} onChange={(n) => setQty(p, n)} accent={accent} step={step} label={p.name}
+                        <div className={css.inCart}>
+                          <Stepper qty={qty} onChange={(n) => setQty(p, n)} accent={tokens.accent} step={step} label={p.name}
                             onCommitTyped={ffQty ? (n) => setQty(p, n) : undefined} />
                           {displaySold && (
-                            <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>
+                            <div className={css.lineTotal}>
                               סה״כ: {describeQuantity(p, qty)}
                             </div>
                           )}
                           {ffQty && qtyNotes[p.id] && (
-                            <div role="status" style={{ fontFamily: tokens.assistant, fontSize: "0.75rem", color: "#1A7A4D", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 8, padding: "0.4rem 0.6rem" }}>
+                            <div role="status" className={css.qtyNote}>
                               {qtyNotes[p.id]}
                             </div>
                           )}
                           {carton && cartonUnits && (
                             <button onClick={() => setQty(p, qty + cartonUnits)}
-                              style={{ ...ghostBtn, padding: "0.4rem", fontSize: "0.75rem" }}>
+                              className={cx(css.btnGhost, css.cartonMore)}>
                               📦 ‎+ קרטון ({cartonUnits.toLocaleString("he-IL")})
                             </button>
                           )}
@@ -1100,58 +1109,63 @@ export default function CatalogPage() {
                 grid is full and hasMore is false (e.g. a failed re-search),
                 so a failure is never silent. */}
             {loadErr ? (
-              <div style={{ textAlign: "center", marginTop: "1.5rem" }}>
-                <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת המוצרים נכשלה. בדקו את החיבור.</p>
-                <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
+              <div className={css.inlineErr}>
+                <p className={cx(css.panelText, css.panelErr)}>טעינת המוצרים נכשלה. בדקו את החיבור.</p>
+                <button onClick={loadProducts} className={css.btnPrimary}>נסו שוב</button>
               </div>
             ) : hasMore || loadingProducts ? (
               <LoadMoreTail shown={products.length} total={total} columns={gridColumns(density)} />
             ) : products.length > PAGE_SIZE ? (
-              <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
-                זהו — רואים את כל {total.toLocaleString("he-IL")} המוצרים ✔
-              </p>
+              <div className={css.endNote}>
+                <p className={css.endNoteInner}>
+                  זהו — רואים את כל {total.toLocaleString("he-IL")} המוצרים ✔
+                </p>
+              </div>
             ) : null}
           </>
         )}
       </main>
 
       {itemCount > 0 && !cartOpen && (
-        <button ref={cartOpenerRef} onClick={() => { setUndoLine(null); setCartOpen(true); }} aria-haspopup="dialog" style={{ position: "fixed", insetInlineStart: 20, bottom: ffMobile ? "calc(20px + env(safe-area-inset-bottom))" : 20, zIndex: 60, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.95rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "1rem 1.6rem", borderRadius: 999, boxShadow: "0 12px 30px rgba(138,63,252,0.35)", cursor: "pointer" }}>
+        <button ref={cartOpenerRef} onClick={() => { setUndoLine(null); setCartOpen(true); }} aria-haspopup="dialog" className={css.fab} style={{ insetInlineStart: 20, bottom: ffMobile ? "calc(20px + env(safe-area-inset-bottom))" : 20 }}>
           🛒 העגלה ({itemCount}) · {ils(cartTotal)}
         </button>
       )}
 
       {cartOpen && (
-        <div onClick={() => setCartOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(26,23,48,0.4)", display: "flex", justifyContent: "flex-start" }}>
-          <div ref={drawerRef} role="dialog" aria-modal="true" aria-label="עגלת הקניות" onClick={(e) => e.stopPropagation()} style={{ width: "min(420px, 92vw)", height: "100%", background: "#fff", padding: "1.5rem", overflowY: "auto", boxShadow: "0 0 60px rgba(0,0,0,0.2)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.2rem" }}>
-              <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.4rem", color: tokens.text }}>העגלה ({itemCount})</h2>
-              <button ref={cartCloseRef} onClick={() => setCartOpen(false)} aria-label="סגירת העגלה" style={{ background: "none", border: "none", fontSize: "1.6rem", cursor: "pointer", color: tokens.dim, minWidth: 44, minHeight: 44 }}>×</button>
+        <div onClick={() => setCartOpen(false)} className={css.overlay}>
+          <div ref={drawerRef} role="dialog" aria-modal="true" aria-label="עגלת הקניות" onClick={(e) => e.stopPropagation()} className={css.drawer}>
+            <div className={css.drawerHead}>
+              <h2 className={css.drawerTitle}><span aria-hidden="true" className={css.drawerTitleIcon}>🛒</span>העגלה ({itemCount})</h2>
+              <button ref={cartCloseRef} onClick={() => setCartOpen(false)} aria-label="סגירת העגלה" className={css.closeBtn}>×</button>
             </div>
+            <div className={css.drawerBody}>
             {/* The error banner lives OUTSIDE the empty/non-empty branch, so the
                 "items sold out and were removed" explanation is still visible
                 even when the reconcile emptied the whole cart. */}
-            {error && <div role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C", fontSize: "0.88rem", marginBottom: "0.8rem" }}>{error}</div>}
+            {error && <div role="alert" className={css.alert}>{error}</div>}
             {ffCartDelete && undoLine && (
-              <div role="status" style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", background: "rgba(26,23,48,0.05)", border: `1px solid ${tokens.border}`, borderRadius: 12, padding: "0.6rem 0.8rem", marginBottom: "0.8rem" }}>
-                <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, flex: 1, minWidth: 150 }}>
+              <div role="status" className={css.undo}>
+                <span className={css.undoText}>
                   “{undoLine.line.name}” נמחק מהעגלה.
                 </span>
                 <button
                   onClick={() => { setCart((c) => ({ ...c, [undoLine.id]: undoLine.line })); setUndoLine(null); }}
-                  style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "0.82rem", color: "#fff", background: tokens.accent, border: "none", borderRadius: 999, padding: "0.5rem 1.1rem", minHeight: 44, cursor: "pointer", whiteSpace: "nowrap" }}
+                  className={cx(css.btnPrimary, css.undoBtn)}
                 >
                   ביטול המחיקה
                 </button>
-                <button onClick={() => setUndoLine(null)} aria-label="סגירת ההודעה"
-                  style={{ background: "none", border: "none", color: tokens.dim, fontSize: "1.2rem", lineHeight: 1, cursor: "pointer", minWidth: 44, minHeight: 44 }}>×</button>
+                <button onClick={() => setUndoLine(null)} aria-label="סגירת ההודעה" className={css.iconBtn}>×</button>
               </div>
             )}
             {lines.length === 0 ? (
-              <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>העגלה ריקה.</p>
+              <div className={css.empty}>
+                <span aria-hidden="true" className={css.emptyIcon}>🛒</span>
+                <p className={css.emptyText}>העגלה ריקה.</p>
+              </div>
             ) : (
               <>
-                <div style={{ display: "grid", gap: "0.8rem", marginBottom: "1rem" }}>
+                <div className={css.lines}>
                   {lines.map((l) => {
                     // Wave 3: the drawer is a path into the cart too — when the
                     // flag is on its stepper moves by the pack size and every
@@ -1168,21 +1182,21 @@ export default function CatalogPage() {
                       });
                     };
                     return (
-                      <div key={l.id} style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: ffCartDelete ? "wrap" : undefined, borderBottom: `1px solid ${tokens.border}`, paddingBottom: "0.6rem" }}>
-                        <div style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 8, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>
-                          <ProductImage pictureLink={l.picture_link} name={l.name} />
+                      <div key={l.id} className={css.line} style={{ flexWrap: ffCartDelete ? "wrap" : undefined }}>
+                        <div className={css.thumb}>
+                          <ProductImage pictureLink={l.picture_link} name={l.name} imgStyle={{ mixBlendMode: "multiply" }} />
                         </div>
-                        <div style={{ flex: 1, minWidth: ffCartDelete ? 160 : undefined }}>
-                          <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.88rem", color: tokens.text }}>{l.name}</div>
-                          <div style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim }}>{ils(l.price)} ליח׳</div>
+                        <div className={css.lineInfo} style={{ minWidth: ffCartDelete ? 160 : undefined }}>
+                          <div className={css.lineName}>{l.name}</div>
+                          <div className={css.lineMeta}>{ils(l.price)} ליח׳</div>
                           {ffQty && lineStep > 1 && (
-                            <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.body }}>{describeQuantity(lp, l.qty)}</div>
+                            <div className={css.lineDesc}>{describeQuantity(lp, l.qty)}</div>
                           )}
                           {ffCartV2 && (
-                            <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem", color: tokens.text, marginTop: "0.15rem" }}>סה״כ: {ils(l.price * l.qty)}</div>
+                            <div className={css.lineSum}>סה״כ: {ils(l.price * l.qty)}</div>
                           )}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginInlineStart: ffCartDelete ? "auto" : undefined }}>
+                        <div className={css.lineCtrls} style={{ marginInlineStart: ffCartDelete ? "auto" : undefined }}>
                         <Stepper qty={l.qty} accent={tokens.accent} compact step={lineStep} label={l.name}
                           onCommitTyped={ffQty ? changeLineQty : undefined}
                           onChange={changeLineQty} />
@@ -1191,24 +1205,21 @@ export default function CatalogPage() {
                             onClick={() => { setUndoLine({ id: l.id, line: cart[l.id] }); changeLineQty(0); }}
                             aria-label={`מחיקת ${l.name} מהעגלה`}
                             title={`מחיקת ${l.name} מהעגלה`}
-                            style={{
-                              flexShrink: 0, minWidth: 44, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center",
-                              borderRadius: 10, border: "1px solid rgba(192,20,60,0.35)", background: "rgba(192,20,60,0.07)",
-                              color: "#C0143C", fontSize: "1.1rem", lineHeight: 1, cursor: "pointer",
-                            }}
+                            className={css.delBtn}
                           >
                             🗑
                           </button>
                         ) : ffCartV2 ? (
                           <button onClick={() => changeLineQty(0)} aria-label={`הסרת ${l.name} מהעגלה`}
-                            style={{ flexShrink: 0, minWidth: 32, minHeight: 32, border: "none", background: "none", color: tokens.dim, fontSize: "1.3rem", lineHeight: 1, cursor: "pointer" }}>×</button>
+                            className={css.removeBtn}>×</button>
                         ) : null}
                         </div>
                       </div>
                     );
                   })}
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", color: tokens.text, marginBottom: vatLabel ? "0.2rem" : "1.2rem" }}>
+                <div className={css.totals}>
+                <div className={css.totalRow}>
                   <span>סה״כ</span><span>{ils(cartTotal)}</span>
                 </div>
                 {vatLabel && (ffMinVat ? (() => {
@@ -1218,39 +1229,40 @@ export default function CatalogPage() {
                   // in whole agorot so the three lines always add up exactly.
                   const totalAg = Math.round(cartTotal * 100);
                   const preVatAg = Math.round(totalAg / (1 + VAT_RATE));
-                  const row: React.CSSProperties = { display: "flex", justifyContent: "space-between" };
                   return (
-                    <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body, display: "grid", gap: "0.3rem", marginBottom: "1.2rem" }}>
-                      <div style={row}><span>סה״כ לפני מע״מ:</span><span>{ils(preVatAg / 100)}</span></div>
-                      <div style={row}><span>מע״מ ({Math.round(VAT_RATE * 100)}%):</span><span>{ils((totalAg - preVatAg) / 100)}</span></div>
-                      <div style={{ ...row, borderTop: `1px solid ${tokens.border}`, paddingTop: "0.4rem", fontFamily: tokens.rubik, fontWeight: 700, color: tokens.text }}>
+                    <div className={css.vatBox}>
+                      <div className={css.vatRow}><span>סה״כ לפני מע״מ:</span><span>{ils(preVatAg / 100)}</span></div>
+                      <div className={css.vatRow}><span>מע״מ ({Math.round(VAT_RATE * 100)}%):</span><span>{ils((totalAg - preVatAg) / 100)}</span></div>
+                      <div className={cx(css.vatRow, css.vatTotal)}>
                         <span>סה״כ לתשלום:</span><span>{ils(totalAg / 100)}</span>
                       </div>
                     </div>
                   );
                 })() : (
-                  <div style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim, textAlign: "left", marginBottom: "1.2rem" }}>
+                  <div className={css.vatNote}>
                     המחירים כוללים מע״מ
                   </div>
                 ))}
-                <div style={{ display: "grid", gap: "0.6rem", marginBottom: "1rem" }}>
+                </div>
+                <div aria-hidden="true" className={css.fieldsTitle}>פרטים להזמנה</div>
+                <div className={css.fields}>
                   {/* Real programmatic names — a placeholder vanishes on input
                       and many screen readers skip it entirely. */}
-                  <input aria-label="שם איש קשר" autoComplete="name" placeholder="שם איש קשר" value={contactName} onChange={(e) => setContactName(e.target.value)} style={miniInp} />
-                  <input aria-label="טלפון" autoComplete="tel" placeholder="טלפון" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} style={miniInp} inputMode="tel" />
-                  <textarea aria-label="הערה להזמנה (לא חובה)" placeholder="הערה להזמנה (לא חובה)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} style={{ ...miniInp, resize: "vertical" }} />
+                  <input aria-label="שם איש קשר" autoComplete="name" placeholder="שם איש קשר" value={contactName} onChange={(e) => setContactName(e.target.value)} className={css.field} />
+                  <input aria-label="טלפון" autoComplete="tel" placeholder="טלפון" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className={css.field} inputMode="tel" />
+                  <textarea aria-label="הערה להזמנה (לא חובה)" placeholder="הערה להזמנה (לא חובה)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={css.field} style={{ resize: "vertical" }} />
                 </div>
                 {/* Wave 5 (ff_min_order_vat_ui): minimum-order progress. The
                     track is a flex row, so the fill grows from the inline-start
                     (right, in RTL); capped at 100% once the minimum is met. */}
                 {ffMinVat && minOrder > 0 && (
-                  <div style={{ marginBottom: "0.9rem" }}>
-                    <div style={{ fontFamily: tokens.assistant, fontWeight: 600, fontSize: "0.88rem", color: cartTotal < minOrder ? tokens.body : "#1A7A4D", marginBottom: "0.35rem" }}>
+                  <div className={css.progress}>
+                    <div className={css.progressLabel} style={{ color: cartTotal < minOrder ? tokens.body : "#1A7A4D" }}>
                       {cartTotal < minOrder ? `עוד ${ils(minOrder - cartTotal)} למינימום ההזמנה` : "הגעת למינימום ההזמנה 🎉"}
                     </div>
                     <div role="progressbar" aria-label="התקדמות למינימום ההזמנה" aria-valuemin={0} aria-valuemax={minOrder} aria-valuenow={Math.round(Math.min(cartTotal, minOrder))}
-                      style={{ height: 10, borderRadius: 999, background: tokens.surface, border: `1px solid ${tokens.border}`, overflow: "hidden", display: "flex", justifyContent: "flex-start" }}>
-                      <div style={{ width: `${Math.min(100, (cartTotal / minOrder) * 100)}%`, background: tokens.rainbow, borderRadius: 999, transition: "width 0.3s ease" }} />
+                      className={css.progressTrack}>
+                      <div className={css.progressFill} style={{ width: `${Math.min(100, (cartTotal / minOrder) * 100)}%`, transition: "width 0.3s ease" }} />
                     </div>
                   </div>
                 )}
@@ -1259,25 +1271,26 @@ export default function CatalogPage() {
                     {ffMinVat ? (
                       // Wave 5: the progress bar above carries the message —
                       // the explanation shrinks to a quiet caption beside it.
-                      <div style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.dim, textAlign: "center", marginBottom: "0.6rem" }}>
+                      <div className={css.minCaption}>
                         מינימום הזמנה: {ils(minOrder)} · חסרים עוד {ils(minOrder - cartTotal)}
                       </div>
                     ) : (
-                      <div style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: "#C0143C", background: "rgba(255,138,0,0.1)", border: "1px solid rgba(255,138,0,0.35)", borderRadius: 12, padding: "0.7rem 0.9rem", marginBottom: "0.8rem", textAlign: "center" }}>
+                      <div className={css.minWarn}>
                         מינימום הזמנה: {ils(minOrder)} · חסרים עוד {ils(minOrder - cartTotal)}
                       </div>
                     )}
-                    <button disabled style={{ ...disabledBtn, width: "100%", padding: "0.95rem", fontSize: "0.88rem", marginTop: 0 }}>
+                    <button disabled className={css.sendBtn} style={{ ...disabledBtn, width: "100%", padding: "0.95rem", fontSize: "0.88rem", marginTop: 0 }}>
                       שליחת הזמנה למנהל
                     </button>
                   </>
                 ) : (
-                  <button onClick={placeOrder} disabled={submitting} style={{ ...solidBtn, width: "100%", padding: "0.95rem" }}>
+                  <button onClick={placeOrder} disabled={submitting} className={cx(css.btnPrimary, css.sendBtn)}>
                     {submitting ? "שולח…" : "שליחת הזמנה למנהל"}
                   </button>
                 )}
               </>
             )}
+            </div>
           </div>
         </div>
       )}
@@ -1298,13 +1311,14 @@ function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped, labe
    *  screen reader's form-controls list. */
   label?: string;
 }) {
-  const sz = compact ? 30 : 34;
   const [draft, setDraft] = useState<string | null>(null);
   const suffix = label ? ` — ${label}` : "";
-  const btn: React.CSSProperties = { width: sz, height: sz, borderRadius: 9, border: `1px solid ${accent}`, background: "#fff", color: accent, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.05rem", cursor: "pointer", flexShrink: 0 };
+  // Round 40px buttons on a lavender track (catalog.module.css); the accent
+  // only colours the glyphs.
+  const btn: React.CSSProperties = { color: accent };
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.4rem" }}>
-      <button aria-label={`פחות${suffix}`} style={btn} onClick={() => onChange(qty - step)}>−</button>
+    <div className={css.stepper}>
+      <button aria-label={`פחות${suffix}`} className={css.stepBtn} style={btn} onClick={() => onChange(qty - step)}>−</button>
       <input
         value={draft ?? qty}
         onChange={(e) => {
@@ -1326,13 +1340,8 @@ function Stepper({ qty, onChange, accent, compact, step = 1, onCommitTyped, labe
         } : undefined}
         onKeyDown={onCommitTyped ? (e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); } : undefined}
         aria-label={`כמות${suffix}`}
-        style={{ width: compact ? 44 : 52, textAlign: "center", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", border: `1px solid ${tokens.border}`, borderRadius: 9, padding: "0.4rem 0" }} inputMode="numeric" />
-      <button aria-label={`עוד${suffix}`} style={btn} onClick={() => onChange(qty + step)}>+</button>
+        className={cx(css.stepInput, compact && css.stepInputCompact)} inputMode="numeric" />
+      <button aria-label={`עוד${suffix}`} className={css.stepBtn} style={btn} onClick={() => onChange(qty + step)}>+</button>
     </div>
   );
 }
-
-// Solid accent, not the rainbow: white on the yellow stop measured 1.60:1.
-const solidBtn: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.88rem", color: "#fff", background: tokens.accent, border: "none", padding: "0.7rem 1.3rem", borderRadius: 999, cursor: "pointer" };
-const ghostBtn: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.88rem", color: tokens.accent, background: "#fff", border: `1px solid ${tokens.border}`, padding: "0.7rem 1.3rem", borderRadius: 999, cursor: "pointer" };
-const miniInp: React.CSSProperties = { fontFamily: tokens.assistant, fontSize: "0.95rem", padding: "0.6rem 0.75rem", borderRadius: 10, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text, width: "100%" };
