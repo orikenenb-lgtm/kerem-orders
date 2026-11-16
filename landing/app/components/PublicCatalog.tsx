@@ -15,6 +15,7 @@ import ProductImage from "./ProductImage";
 import { tokens, ils } from "../../lib/ui";
 import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
 import { BUSINESS_NAME, BUSINESS_TAGLINE } from "../../lib/config";
+import { useAuth } from "../../lib/auth";
 import ui from "./PublicCatalog.module.css";
 
 // Shared public, read-only catalog (no login, no ordering) behind both
@@ -57,6 +58,8 @@ const CHIP_PASTELS = [
 
 export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   const rpcName = showPrices ? "catalog_public_prices" : "catalog_public";
+  // Only to pick which call to action the banner shows — no data depends on it.
+  const { session } = useAuth();
 
   const [input, setInput] = useState("");
   // Products per row — the visitor's own choice, remembered per browser.
@@ -69,19 +72,7 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   const [loadErr, setLoadErr] = useState(false);
   const [fuzzyNote, setFuzzyNote] = useState(false);
   const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
-  // Deep link from the home page's category tiles: /view?cat=<name> opens
-  // with that category selected. Read ONCE, when the state is created, in the
-  // browser only (the static prerender has no URL and starts at "all"); after
-  // that the chips own the selection. Hydration-safe: nothing that depends on
-  // activeCat is in the first paint (the chips appear only after the
-  // categories RPC, the grid only after products), and the very first product
-  // request already asks for the right category. Read from window, not
-  // useSearchParams, so the page needs no Suspense boundary.
-  const [activeCat, setActiveCat] = useState(() => {
-    if (typeof window === "undefined") return "all";
-    const cat = new URLSearchParams(window.location.search).get("cat");
-    return cat && cat.trim() ? cat : "all";
-  });
+  const [activeCat, setActiveCat] = useState("all");
   const [vatLabel, setVatLabel] = useState(true);
 
   // Product preview dialog. Holds the product being previewed plus the card
@@ -103,6 +94,28 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
       setCategories((data as { category: string; n: number }[]) ?? []);
     });
   }, []);
+
+  // Optional deep link from the home page's category tiles: ?cat=<name>.
+  // Applied once, only after the real category list has loaded and only if
+  // the name is in it — an unknown or stale name leaves the page on "הכל",
+  // exactly as without the link. The existing [activeCat] effect then resets
+  // paging just like a chip click. The state update runs in a task (not in
+  // the effect body); a StrictMode re-run clears the pending timer and
+  // re-arms it, so it still applies exactly once.
+  const deepLinkDone = useRef(false);
+  useEffect(() => {
+    if (deepLinkDone.current || categories.length === 0) return;
+    const cat = new URLSearchParams(window.location.search).get("cat");
+    if (!cat || !categories.some((c) => c.category === cat)) {
+      deepLinkDone.current = true;
+      return;
+    }
+    const t = window.setTimeout(() => {
+      deepLinkDone.current = true;
+      setActiveCat(cat);
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [categories]);
 
   // VAT note on the prices page only. Anon RLS exposes just this one settings
   // key; a missing row (or a failed read) keeps the default: label shown.
@@ -233,15 +246,28 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
             </p>
           </div>
           {/* Guest call to action — the same two ways in the header and the
-              /p/<id> pages already offer (open an account / log in). */}
+              /p/<id> pages already offer (open an account / log in). A
+              signed-in customer gets the way to their ordering catalogue
+              instead (the same link the header shows them). */}
           <div className={ui.cta}>
-            <p className={ui.ctaTitle}>
-              {showPrices ? "להזמנה אונליין — ללקוחות עסקיים רשומים" : "המחירים מוצגים ללקוחות עסקיים רשומים"}
-            </p>
-            <div className={ui.ctaRow}>
-              <Link href="/register" className={ui.ctaPrimary}>פתיחת חשבון סיטונאי</Link>
-              <Link href="/login" className={ui.ctaGhost}>התחברות ללקוחות</Link>
-            </div>
+            {session ? (
+              <>
+                <p className={ui.ctaTitle}>אתם מחוברים — ההזמנה נעשית מקטלוג הלקוחות</p>
+                <div className={ui.ctaRow}>
+                  <Link href="/catalog" className={ui.ctaPrimary}>לקטלוג הלקוחות</Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className={ui.ctaTitle}>
+                  {showPrices ? "להזמנה אונליין — ללקוחות עסקיים רשומים" : "המחירים מוצגים ללקוחות עסקיים רשומים"}
+                </p>
+                <div className={ui.ctaRow}>
+                  <Link href="/register" className={ui.ctaPrimary}>פתיחת חשבון סיטונאי</Link>
+                  <Link href="/login" className={ui.ctaGhost}>התחברות ללקוחות</Link>
+                </div>
+              </>
+            )}
           </div>
         </section>
 

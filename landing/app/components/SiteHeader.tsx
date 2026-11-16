@@ -190,16 +190,16 @@ export default function SiteHeader() {
       <div className={styles.strip}>
         <div className={styles.stripInner}>
           <p className={styles.stripMsg}>
-            <span className={`${styles.stripPart} ${styles.stripOptional}`}>
+            <span className={styles.stripPart}>
               <TruckIcon />
               משלוח לכל הארץ
             </span>
-            <span className={`${styles.stripSep} ${styles.stripOptional}`} aria-hidden="true">·</span>
+            <span className={styles.stripSep} aria-hidden="true">·</span>
             <span className={styles.stripPart}>
               מינימום הזמנה <bdi className={styles.num}>₪{minOrder.toLocaleString("he-IL")}</bdi>
             </span>
-            <span className={`${styles.stripSep} ${styles.stripOptional}`} aria-hidden="true">·</span>
-            <span className={`${styles.stripPart} ${styles.stripOptional}`}>המחירים כוללים מע״מ</span>
+            <span className={styles.stripSep} aria-hidden="true">·</span>
+            <span className={styles.stripPart}>המחירים כוללים מע״מ</span>
           </p>
           <span className={styles.stripContact}>
             {CONTACT.whatsapp && (

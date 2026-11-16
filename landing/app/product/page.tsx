@@ -174,12 +174,6 @@ function ProductDetail() {
   // the resolved units, not the raw input.
   const effectiveQty = ffQty ? resolveQuantity(p, qty).units : qty;
   const lineTotal = unitPrice * effectiveQty;
-  // Pack facts — display only, the same rule the catalogue card uses
-  // ("מארז = N יחידות" for display-sold products) plus the DB carton size.
-  const dq = Math.floor(Number(p.display_qty) || 0);
-  const displaySold = ffQty && step > 1 && dq > 1;
-  const packName = (p.display_name || "מארז").trim() || "מארז";
-  const cartonQty = ffQty ? Math.floor(Number(p.carton_qty) || 0) : 0;
 
   return (
     <main id="main-content" tabIndex={-1} className={ui.main}>
@@ -229,12 +223,6 @@ function ProductDetail() {
               )}
               <span className={ui.perUnit}>ליחידה{vatLabel ? " · כולל מע״מ" : ""}</span>
             </div>
-            {(displaySold || cartonQty > 0) && (
-              <ul className={ui.packs} aria-label="אריזה">
-                {displaySold && <li className={ui.pack}>{packName} = {dq.toLocaleString("he-IL")} יחידות</li>}
-                {cartonQty > 0 && <li className={ui.pack}>קרטון = {cartonQty.toLocaleString("he-IL")} יחידות</li>}
-              </ul>
-            )}
           </div>
 
           {/* quantity + add */}

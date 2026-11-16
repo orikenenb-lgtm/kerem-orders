@@ -259,17 +259,27 @@ export default function CatalogPage() {
     });
   }, [session]);
 
-  // Optional deep link from the home page's category tiles: /catalog?cat=<name>
-  // pre-selects that category once, on first load. Nothing else changes — the
-  // existing [activeCat] effect below resets paging exactly as a chip click
-  // does. Deferred to a task so the read stays out of the effect body (and a
-  // StrictMode double-mount clears the first timer, so it applies once).
+  // Optional deep link from the home page's category tiles: ?cat=<name>.
+  // Applied once, only after the real category list has loaded and only if
+  // the name is in it — an unknown or stale name leaves the page on "הכל",
+  // exactly as without the link. The existing [activeCat] effect then resets
+  // paging just like a chip click. The state update runs in a task (not in
+  // the effect body); a StrictMode re-run clears the pending timer and
+  // re-arms it, so it still applies exactly once.
+  const deepLinkDone = useRef(false);
   useEffect(() => {
+    if (deepLinkDone.current || categories.length === 0) return;
     const cat = new URLSearchParams(window.location.search).get("cat");
-    if (!cat) return;
-    const t = window.setTimeout(() => setActiveCat(cat), 0);
+    if (!cat || !categories.some((c) => c.category === cat)) {
+      deepLinkDone.current = true;
+      return;
+    }
+    const t = window.setTimeout(() => {
+      deepLinkDone.current = true;
+      setActiveCat(cat);
+    }, 0);
     return () => window.clearTimeout(t);
-  }, []);
+  }, [categories]);
 
   // Filter generation: bumped whenever the query or category changes. The grid
   // remembers which generation its rows belong to, so a page>0 response can

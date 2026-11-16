@@ -356,15 +356,24 @@
   }
 }
 
-/* Top strip at phone width: one compact line — only the minimum + phone. The
- * shipping/VAT lines stay in the footer and on the catalogue pages. */
+/* Top strip at phone width: the same three service lines as before the
+ * redesign (shipping · minimum · VAT), allowed to wrap instead of being cut,
+ * with the phone number on its own line underneath. */
 @media (max-width: 639.98px) {
-  .stripOptional {
-    display: none;
-  }
   .stripInner {
-    min-height: 32px;
+    flex-wrap: wrap;
+    row-gap: 0.15rem;
+    padding-block: 0.3rem;
     font-size: 0.78rem;
+  }
+  .stripMsg {
+    flex-wrap: wrap;
+    row-gap: 0.1rem;
+    column-gap: 0.4rem;
+    white-space: normal;
+  }
+  .stripPart {
+    white-space: nowrap;
   }
 }
 

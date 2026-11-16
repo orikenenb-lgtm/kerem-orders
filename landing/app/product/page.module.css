@@ -145,25 +145,6 @@
   font-size: 0.88rem;
   color: var(--kt-dim, #8B8898);
 }
-.packs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.pack {
-  font-family: var(--font-assistant), system-ui, sans-serif;
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: var(--kt-body, #4B4860);
-  background: var(--kp-white, #fff);
-  border: 1px solid var(--kt-border, rgba(26, 23, 48, 0.08));
-  border-radius: var(--kp-radius-pill, 999px);
-  padding: 0.25rem 0.8rem;
-}
-
 .buyRow {
   display: flex;
   align-items: center;
