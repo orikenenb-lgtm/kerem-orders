@@ -506,7 +506,7 @@
 }
 .frameImg {
   position: absolute;
-  inset: 8px;
+  inset: 4px;
   display: flex;
   align-items: center;
   justify-content: center;

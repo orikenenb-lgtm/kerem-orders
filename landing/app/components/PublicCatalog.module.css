@@ -583,8 +583,52 @@
 }
 
 @media (max-width: 560px) {
+  /* Phones: keep the banner short so the products start near the top.
+     The eyebrow repeats the header wordmark, so it is dropped here; the
+     guest box loses its frame and its two links sit side by side. */
+  .banner {
+    gap: 0.7rem;
+    padding: 1rem 1.1rem 1.05rem;
+    border-radius: var(--kp-radius-md, 18px);
+  }
+  .eyebrow {
+    display: none;
+  }
+  .title {
+    font-size: 1.45rem;
+  }
+  .meta {
+    font-size: 0.92rem;
+    margin-top: 0.2rem;
+  }
+  .offer {
+    margin-top: 0.55rem;
+    font-size: 0.85rem;
+    padding: 0.35rem 0.8rem;
+  }
   .cta {
     flex-basis: 100%;
+    gap: 0.45rem;
+    padding: 0;
+    background: none;
+    border: 0;
+  }
+  .ctaTitle {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.92);
+  }
+  .ctaRow {
+    flex-wrap: nowrap;
+  }
+  .ctaPrimary,
+  .ctaGhost {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: 0.6rem;
+    font-size: 0.86rem;
+    white-space: normal;
+    text-align: center;
   }
 }
 
