@@ -21,7 +21,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
 import { isTurnstileConfigured } from "../../../lib/turnstile";
 import { canonPhone } from "../../../lib/phoneLogin";
-import { tokens, primaryBtn, linkBtn } from "../../../lib/ui";
+import s from "./auth.module.css";
 import { CONTACT } from "../SiteHeader";
 import type { AuthTab } from "./AuthShell";
 
@@ -134,25 +134,25 @@ export default function ExpressForm({ onSwitch }: { onSwitch: (t: AuthTab) => vo
   };
 
   const errorBox = error && (
-    <div role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C", background: "rgba(255,46,147,0.08)", border: "1px solid rgba(255,46,147,0.25)", borderRadius: 12, padding: "0.7rem 0.9rem", fontSize: "0.92rem" }}>
+    <div role="alert" className={s.alert}>
       {error}
     </div>
   );
   const callUs = (
-    <a href={`tel:${CONTACT.phone.replace(/\D/g, "")}`} dir="ltr" style={{ color: tokens.accent, fontWeight: 700 }}>{CONTACT.phone}</a>
+    <a href={`tel:${CONTACT.phone.replace(/\D/g, "")}`} dir="ltr" className={s.inlineLink}>{CONTACT.phone}</a>
   );
   const again = () => { setStep({ kind: "search" }); setError(""); };
 
   if (step.kind === "not_found") {
     return (
-      <div ref={panelRef} tabIndex={-1} role="status" style={{ display: "grid", gap: "0.9rem", outline: "none" }}>
-        <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.15rem", color: "#C0143C", margin: 0 }}>לא קיים ברווחית</p>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, lineHeight: 1.6, margin: 0 }}>
-          לא מצאנו כרטיס לקוח עם הח״פ או הטלפון <span dir="ltr" style={{ fontWeight: 700 }}>{ident.trim()}</span>. אפשר לפתוח חשבון רגיל — זה לוקח דקה.
+      <div ref={panelRef} tabIndex={-1} role="status" className={s.statusPanel}>
+        <p className={`${s.statusTitle} ${s.statusBad}`}>לא קיים ברווחית</p>
+        <p className={s.body}>
+          לא מצאנו כרטיס לקוח עם הח״פ או הטלפון <span dir="ltr" className={s.strong}>{ident.trim()}</span>. אפשר לפתוח חשבון רגיל — זה לוקח דקה.
         </p>
-        <button type="button" onClick={() => onSwitch("register")} style={primaryBtn(false)}>להרשמה</button>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, textAlign: "center", margin: 0 }}>
-          <button type="button" onClick={again} style={linkBtn}>לנסות מספר אחר</button>
+        <button type="button" onClick={() => onSwitch("register")} className={s.primary}>להרשמה</button>
+        <p className={s.center} style={{ margin: 0 }}>
+          <button type="button" onClick={again} className={s.linkBtn}>לנסות מספר אחר</button>
         </p>
       </div>
     );
@@ -160,38 +160,38 @@ export default function ExpressForm({ onSwitch }: { onSwitch: (t: AuthTab) => vo
 
   if (step.kind === "created") {
     return (
-      <div ref={panelRef} tabIndex={-1} role="status" style={{ display: "grid", gap: "0.9rem", outline: "none" }}>
-        <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.15rem", color: "#1A7A4D", margin: 0 }}>✓ החשבון נפתח</p>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, lineHeight: 1.6, margin: 0 }}>
-          התחברו עכשיו עם מספר הטלפון <span dir="ltr" style={{ fontWeight: 700 }}>{phone.trim()}</span> והסיסמה שבחרתם.
+      <div ref={panelRef} tabIndex={-1} role="status" className={s.statusPanel}>
+        <p className={`${s.statusTitle} ${s.statusOk}`}>✓ החשבון נפתח</p>
+        <p className={s.body}>
+          התחברו עכשיו עם מספר הטלפון <span dir="ltr" className={s.strong}>{phone.trim()}</span> והסיסמה שבחרתם.
         </p>
-        <button type="button" onClick={() => onSwitch("login")} style={primaryBtn(false)}>להתחברות</button>
+        <button type="button" onClick={() => onSwitch("login")} className={s.primary}>להתחברות</button>
       </div>
     );
   }
 
   if (step.kind === "blocked") {
     return (
-      <div ref={panelRef} tabIndex={-1} role="status" style={{ display: "grid", gap: "0.9rem", outline: "none" }}>
-        <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.15rem", color: tokens.text, margin: 0 }}>צריך לדבר איתנו</p>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, lineHeight: 1.6, margin: 0 }}>
+      <div ref={panelRef} tabIndex={-1} role="status" className={s.statusPanel}>
+        <p className={s.statusTitle}>צריך לדבר איתנו</p>
+        <p className={s.body}>
           לכרטיס הזה לא ניתן להיכנס בדרך המהירה. התקשרו אלינו ונסדר לכם חשבון: {callUs}
         </p>
-        <button type="button" onClick={() => onSwitch("register")} style={primaryBtn(false)}>להרשמה רגילה</button>
+        <button type="button" onClick={() => onSwitch("register")} className={s.primary}>להרשמה רגילה</button>
       </div>
     );
   }
 
   if (step.kind === "already_linked") {
     return (
-      <div ref={panelRef} tabIndex={-1} role="status" style={{ display: "grid", gap: "0.9rem", outline: "none" }}>
-        <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.15rem", color: tokens.text, margin: 0 }}>כבר יש לכם חשבון באתר</p>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, lineHeight: 1.6, margin: 0 }}>
+      <div ref={panelRef} tabIndex={-1} role="status" className={s.statusPanel}>
+        <p className={s.statusTitle}>כבר יש לכם חשבון באתר</p>
+        <p className={s.body}>
           התחברו עם האימייל או הטלפון שאיתו נרשמתם. שכחתם את הסיסמה? התקשרו אלינו: {callUs}
         </p>
-        <button type="button" onClick={() => onSwitch("login")} style={primaryBtn(false)}>להתחברות</button>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, textAlign: "center", margin: 0 }}>
-          <button type="button" onClick={again} style={linkBtn}>לנסות מספר אחר</button>
+        <button type="button" onClick={() => onSwitch("login")} className={s.primary}>להתחברות</button>
+        <p className={s.center} style={{ margin: 0 }}>
+          <button type="button" onClick={again} className={s.linkBtn}>לנסות מספר אחר</button>
         </p>
       </div>
     );
@@ -200,38 +200,38 @@ export default function ExpressForm({ onSwitch }: { onSwitch: (t: AuthTab) => vo
   if (step.kind === "found") {
     const many = step.options.length > 1;
     return (
-      <div ref={panelRef} tabIndex={-1} style={{ outline: "none" }}>
-        <p role="status" style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: "#1A7A4D", margin: "0 0 0.4rem" }}>
+      <div ref={panelRef} tabIndex={-1} className={s.statusPanel} style={{ gap: 0 }}>
+        <p role="status" className={`${s.statusTitle} ${s.statusOk}`} style={{ marginBottom: "0.6rem" }}>
           ✓ מצאנו אתכם ברווחית
         </p>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, lineHeight: 1.6, margin: "0 0 1.1rem" }}>
+        <p className={s.body} style={{ marginBottom: "1.2rem" }}>
           עוד צעד אחד: מספר טלפון וסיסמה. מעכשיו האתר יזכור אתכם בטלפון הזה.
         </p>
-        <form onSubmit={onCreate} style={{ display: "grid", gap: "0.9rem" }}>
+        <form onSubmit={onCreate} className={s.form}>
           {many && (
-            <fieldset style={{ border: `1px solid ${tokens.border}`, borderRadius: 12, padding: "0.6rem 0.8rem", margin: 0 }}>
-              <legend style={lbl}>איזה מהעסקים שלכם?</legend>
+            <fieldset className={s.fieldset}>
+              <legend className={s.label}>איזה מהעסקים שלכם?</legend>
               {step.options.map((o, i) => (
-                <label key={o.ticket} style={{ display: "flex", alignItems: "center", gap: "0.5rem", minHeight: 40, fontFamily: tokens.assistant, color: tokens.text }}>
+                <label key={o.ticket} className={s.radioRow}>
                   <input type="radio" name="express-card" checked={choice === i} onChange={() => setChoice(i)} />
                   <span>{o.label}{o.city ? ` · ${o.city}` : ""}</span>
                 </label>
               ))}
             </fieldset>
           )}
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            <span style={lbl}>מספר טלפון (איתו תתחברו)</span>
-            <input type="tel" inputMode="tel" autoComplete="tel" dir="ltr" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="מספר הנייד שלכם" style={inp} />
+          <label className={s.field}>
+            <span className={s.label}>מספר טלפון (איתו תתחברו)</span>
+            <input type="tel" inputMode="tel" autoComplete="tel" dir="ltr" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="מספר הנייד שלכם" className={s.input} />
           </label>
-          <div style={{ display: "grid", gap: "0.35rem" }}>
-            <label htmlFor="express-password" style={lbl}>בחרו סיסמה (לפחות 6 תווים)</label>
-            <PasswordInput id="express-password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} style={inp} />
+          <div className={s.field}>
+            <label htmlFor="express-password" className={s.label}>בחרו סיסמה (לפחות 6 תווים)</label>
+            <PasswordInput id="express-password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} className={s.input} />
           </div>
           {errorBox}
-          <button type="submit" disabled={busy} style={primaryBtn(busy)}>{busy ? "רגע…" : "כניסה לאתר"}</button>
+          <button type="submit" disabled={busy} className={s.primary}>{busy ? "רגע…" : "כניסה לאתר"}</button>
         </form>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "1rem", textAlign: "center" }}>
-          <button type="button" onClick={again} style={linkBtn}>זה לא העסק שלי</button>
+        <p className={s.center}>
+          <button type="button" onClick={again} className={s.linkBtn}>זה לא העסק שלי</button>
         </p>
       </div>
     );
@@ -239,38 +239,33 @@ export default function ExpressForm({ onSwitch }: { onSwitch: (t: AuthTab) => vo
 
   return (
     <>
-      <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginBottom: "1.5rem", lineHeight: 1.6 }}>
+      <p className={s.intro}>
         כבר קונים אצלנו? אין צורך בהרשמה מלאה — הקלידו ח״פ או טלפון ושם, ונמצא אתכם ברווחית.
       </p>
-      <form onSubmit={onSearch} style={{ display: "grid", gap: "0.9rem" }}>
-        <label style={{ display: "grid", gap: "0.35rem" }}>
-          <span style={lbl}>ח״פ או מספר טלפון</span>
-          <input inputMode="numeric" autoComplete="off" dir="ltr" required value={ident} onChange={(e) => setIdent(e.target.value)} style={inp} />
+      <form onSubmit={onSearch} className={s.form}>
+        <label className={s.field}>
+          <span className={s.label}>ח״פ או מספר טלפון</span>
+          <input inputMode="numeric" autoComplete="off" dir="ltr" required value={ident} onChange={(e) => setIdent(e.target.value)} className={s.input} />
         </label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.7rem" }}>
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            <span style={lbl}>שם פרטי</span>
-            <input autoComplete="given-name" required value={first} onChange={(e) => setFirst(e.target.value)} style={inp} />
+        <div className={s.twoCol}>
+          <label className={s.field}>
+            <span className={s.label}>שם פרטי</span>
+            <input autoComplete="given-name" required value={first} onChange={(e) => setFirst(e.target.value)} className={s.input} />
           </label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            <span style={lbl}>שם משפחה</span>
-            <input autoComplete="family-name" required value={last} onChange={(e) => setLast(e.target.value)} style={inp} />
+          <label className={s.field}>
+            <span className={s.label}>שם משפחה</span>
+            <input autoComplete="family-name" required value={last} onChange={(e) => setLast(e.target.value)} className={s.input} />
           </label>
         </div>
         <Turnstile key={tsKey} onToken={setToken} action="express" />
         {errorBox}
-        <button type="submit" disabled={!searchReady} style={primaryBtn(!searchReady)}>{busy ? "מחפש…" : "חיפוש ברווחית"}</button>
+        <button type="submit" disabled={!searchReady} className={s.primary}>{busy ? "מחפש…" : "חיפוש ברווחית"}</button>
       </form>
-      <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "1.2rem", textAlign: "center" }}>
+      <p className={s.center}>
         לקוחות חדשים?{" "}
-        <button type="button" onClick={() => onSwitch("register")} style={linkBtn}>פתיחת חשבון לקוח</button>
+        <button type="button" onClick={() => onSwitch("register")} className={s.linkBtn}>פתיחת חשבון לקוח</button>
       </p>
     </>
   );
 }
 
-const lbl: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 600, fontSize: "0.85rem", color: tokens.text };
-const inp: React.CSSProperties = {
-  fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.75rem 0.9rem", borderRadius: 12, width: "100%", boxSizing: "border-box",
-  border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text, outlineColor: tokens.accent,
-};

@@ -1,0 +1,90 @@
+/* Accessibility statement — readable typography only. The content is a legal
+ * statement and is not touched; this file only sets type, measure and spacing. */
+
+.page {
+  background: var(--kt-bg, #FBFAFF);
+  min-height: 100vh;
+}
+
+.main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(1.75rem, 5vw, 3rem) clamp(1rem, 4vw, 2rem) 4rem;
+}
+
+.article {
+  background: var(--kp-white, #FFFFFF);
+  border: 1px solid var(--kt-border, rgba(39, 22, 63, 0.1));
+  border-radius: var(--kp-radius-lg, 28px);
+  box-shadow: var(--kp-shadow-soft, 0 8px 24px rgba(76, 29, 149, 0.08));
+  padding: clamp(1.4rem, 5vw, 3rem) clamp(1.1rem, 5vw, 3rem);
+}
+
+.title {
+  font-family: var(--font-rubik), system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--kt-text, #27163F);
+  margin: 0 0 1.1rem;
+}
+
+.h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-rubik), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.25rem;
+  line-height: 1.35;
+  color: var(--kt-text, #27163F);
+  margin: 2.2rem 0 0.7rem;
+}
+.h2::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 1.1em;
+  border-radius: 999px;
+  background: var(--kp-purple, #6D28D9);
+}
+
+.para,
+.li {
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 1.08rem;
+  line-height: 1.85;
+  color: var(--kt-body, #4A3D63);
+  max-width: 68ch;
+}
+.para {
+  margin: 0 0 0.9rem;
+}
+.para strong {
+  color: var(--kt-text, #27163F);
+}
+
+.list {
+  padding-inline-start: 1.4rem;
+  margin: 0 0 0.9rem;
+}
+.li {
+  margin-bottom: 0.4rem;
+}
+.li::marker {
+  color: var(--kp-purple, #6D28D9);
+}
+
+.link {
+  color: var(--kp-purple, #6D28D9);
+  font-weight: 700;
+  text-underline-offset: 3px;
+  unicode-bidi: isolate;
+}
+.link:focus-visible {
+  outline: 2px solid var(--kp-purple, #6D28D9);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

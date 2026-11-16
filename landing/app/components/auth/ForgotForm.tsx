@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { authErrorHe } from "../../../lib/authErrors";
-import { tokens, primaryBtn, linkBtn } from "../../../lib/ui";
+import s from "./auth.module.css";
 import { featureFlags } from "../../../lib/featureFlags";
 import { canonPhone } from "../../../lib/phoneLogin";
 import { CONTACT } from "../SiteHeader";
@@ -55,11 +55,11 @@ export default function ForgotForm({ onSwitch }: { onSwitch: (t: AuthTab) => voi
   if (sent) {
     return (
       <>
-        <p role="status" aria-live="polite" style={{ fontFamily: tokens.assistant, color: tokens.body, lineHeight: 1.7, marginBottom: "1.4rem" }}>
+        <p role="status" aria-live="polite" className={s.intro}>
           ✉️ אם קיים חשבון עם הכתובת הזו — נשלח אליה מייל עם קישור לאיפוס הסיסמה.
           בדקו גם בתיקיית הספאם. הקישור תקף לזמן מוגבל.
         </p>
-        <button type="button" onClick={() => onSwitch("login")} style={{ ...linkBtn, fontFamily: tokens.rubik, fontWeight: 700 }}>
+        <button type="button" onClick={() => onSwitch("login")} className={`${s.linkBtn} ${s.backLink}`}>
           ← חזרה להתחברות
         </button>
       </>
@@ -68,35 +68,30 @@ export default function ForgotForm({ onSwitch }: { onSwitch: (t: AuthTab) => voi
 
   return (
     <>
-      <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginBottom: "1.5rem", lineHeight: 1.6 }}>
+      <p className={s.intro}>
         הזינו את האימייל שאיתו נרשמתם, ונשלח אליכם קישור לבחירת סיסמה חדשה.
       </p>
-      <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
-        <label style={{ display: "grid", gap: "0.35rem" }}>
-          <span style={lbl}>{PHONE_LOGIN ? "אימייל או טלפון" : "אימייל"}</span>
-          <input type={PHONE_LOGIN ? "text" : "email"} autoComplete="email" inputMode={PHONE_LOGIN ? "text" : "email"} dir={PHONE_LOGIN ? "ltr" : undefined} required value={email} onChange={(e) => setEmail(e.target.value)} style={inp} />
+      <form onSubmit={onSubmit} className={s.form}>
+        <label className={s.field}>
+          <span className={s.label}>{PHONE_LOGIN ? "אימייל או טלפון" : "אימייל"}</span>
+          <input type={PHONE_LOGIN ? "text" : "email"} autoComplete="email" inputMode={PHONE_LOGIN ? "text" : "email"} dir={PHONE_LOGIN ? "ltr" : undefined} required value={email} onChange={(e) => setEmail(e.target.value)} className={s.input} />
         </label>
 
         {error && (
-          <div role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C", background: "rgba(255,46,147,0.08)", border: "1px solid rgba(255,46,147,0.25)", borderRadius: 12, padding: "0.7rem 0.9rem", fontSize: "0.92rem" }}>
+          <div role="alert" className={s.alert}>
             {error}
           </div>
         )}
 
-        <button type="submit" disabled={busy} style={primaryBtn(busy)}>
+        <button type="submit" disabled={busy} className={s.primary}>
           {busy ? "שולח…" : "שליחת קישור לאיפוס"}
         </button>
       </form>
-      <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "1.3rem", textAlign: "center" }}>
+      <p className={s.center}>
         נזכרתם?{" "}
-        <button type="button" onClick={() => onSwitch("login")} style={linkBtn}>להתחברות</button>
+        <button type="button" onClick={() => onSwitch("login")} className={s.linkBtn}>להתחברות</button>
       </p>
     </>
   );
 }
 
-const lbl: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 600, fontSize: "0.85rem", color: tokens.text };
-const inp: React.CSSProperties = {
-  fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.75rem 0.9rem", borderRadius: 12,
-  border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text, outlineColor: tokens.accent,
-};

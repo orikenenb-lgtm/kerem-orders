@@ -1,0 +1,323 @@
+/* "ההזמנות שלי" — premium order-history cards. Presentation only: every class
+ * replaces an inline style that sat on the same element. Theme variables with
+ * the premium literal as fallback (app/tokens.css, html.kt-premium). */
+
+.main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 3rem) clamp(1rem, 4vw, 2.5rem) clamp(2.5rem, 6vw, 4.5rem);
+}
+
+.head {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: var(--kp-radius-lg, 28px);
+  background: var(--kp-hero, linear-gradient(125deg, #4C1D95 0%, #6D28D9 42%, #3B3FB8 100%));
+  color: #FFFFFF;
+  padding: clamp(1.4rem, 4vw, 2.2rem) clamp(1.2rem, 4vw, 2.2rem);
+  margin-bottom: clamp(1.4rem, 4vw, 2rem);
+  box-shadow: var(--kp-shadow-soft, 0 8px 24px rgba(76, 29, 149, 0.08));
+}
+/* Static decorative light — no motion. */
+.head::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 280px;
+  height: 280px;
+  inset-inline-end: -80px;
+  top: -140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 216, 77, 0.3) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.title {
+  font-family: var(--font-rubik), system-ui, sans-serif;
+  font-weight: 800;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: #FFFFFF;
+  margin: 0;
+}
+
+.sub {
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-size: 1.02rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.92);
+  margin: 0.45rem 0 0;
+}
+
+/* ---------- states ---------- */
+
+.loading {
+  display: grid;
+  gap: 1rem;
+}
+.loadingText {
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  color: var(--kt-dim, #6B6185);
+  margin: 0;
+}
+.skeleton {
+  height: 132px;
+  border-radius: 22px;
+  background: var(--kt-surface, #F4F0FF);
+  border: 1px solid var(--kt-border, rgba(39, 22, 63, 0.1));
+}
+
+.empty {
+  text-align: center;
+  padding: clamp(2.2rem, 6vw, 3.5rem) 1.25rem;
+  border-radius: var(--kp-radius-lg, 28px);
+  background: var(--kp-white, #FFFFFF);
+  border: 1px solid var(--kt-border, rgba(39, 22, 63, 0.1));
+  box-shadow: var(--kp-shadow-soft, 0 8px 24px rgba(76, 29, 149, 0.08));
+  display: grid;
+  justify-items: center;
+  gap: 0.9rem;
+}
+
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--kp-lav, #EEE5FF);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.emptyText {
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-size: 1.05rem;
+  color: var(--kt-body, #4A3D63);
+  margin: 0;
+}
+
+.errorText {
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #B4123A;
+  margin: 0;
+}
+
+/* ---------- list + cards ---------- */
+
+.list {
+  display: grid;
+  gap: 1rem;
+}
+
+.notice {
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--kt-text, #27163F);
+  background: var(--kp-lav, #EEE5FF);
+  border-radius: var(--kp-radius-md, 18px);
+  padding: 0.9rem 1.1rem;
+}
+.noticeCta {
+  margin-top: 0.75rem;
+}
+
+.card {
+  background: var(--kp-white, #FFFFFF);
+  border: 1px solid var(--kt-border, rgba(39, 22, 63, 0.1));
+  border-radius: 22px;
+  box-shadow: var(--kp-shadow-soft, 0 8px 24px rgba(76, 29, 149, 0.08));
+  padding: clamp(1rem, 3vw, 1.4rem);
+  transition:
+    box-shadow var(--kp-mid, 320ms) var(--kp-ease, ease),
+    border-color var(--kp-mid, 320ms) var(--kp-ease, ease);
+}
+@media (hover: hover) {
+  .card:hover {
+    border-color: rgba(109, 40, 217, 0.22);
+    box-shadow: var(--kp-shadow-pop, 0 2px 6px rgba(39, 22, 63, 0.06), 0 18px 48px rgba(76, 29, 149, 0.18));
+  }
+}
+
+.cardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-size: 0.88rem;
+  color: var(--kt-dim, #6B6185);
+}
+
+.orderNo {
+  font-family: var(--font-rubik), system-ui, sans-serif;
+  font-weight: 700;
+  color: var(--kt-text, #27163F);
+  background: var(--kt-surface, #F4F0FF);
+  border-radius: 8px;
+  padding: 0.15rem 0.5rem;
+  unicode-bidi: isolate;
+}
+
+.items {
+  display: grid;
+  gap: 0;
+  margin-bottom: 0.8rem;
+  border-radius: 14px;
+  background: var(--kt-bg, #FBFAFF);
+  padding: 0.25rem 0.85rem;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-size: 0.93rem;
+  line-height: 1.45;
+  color: var(--kt-body, #4A3D63);
+  padding: 0.5rem 0;
+}
+.item + .item {
+  border-top: 1px solid var(--kt-border, rgba(39, 22, 63, 0.1));
+}
+.itemName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.price {
+  flex: none;
+  unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums;
+  color: var(--kt-text, #27163F);
+}
+
+.note {
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--kt-body, #4A3D63);
+  background: var(--kp-peach, #FFE8D6);
+  border-radius: 12px;
+  padding: 0.5rem 0.8rem;
+  margin: 0 0 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-top: 1px solid var(--kt-border, rgba(39, 22, 63, 0.1));
+  padding-top: 0.75rem;
+  font-family: var(--font-rubik), system-ui, sans-serif;
+  font-weight: 800;
+  color: var(--kt-text, #27163F);
+}
+.totalAmount {
+  font-size: 1.2rem;
+  unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- buttons ---------- */
+
+.primary,
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  box-sizing: border-box;
+  min-height: 48px;
+  font-family: var(--font-rubik), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  padding: 0.75rem 1.6rem;
+  border-radius: var(--kp-radius-pill, 999px);
+  cursor: pointer;
+  transition:
+    background-color var(--kp-fast, 160ms) ease,
+    border-color var(--kp-fast, 160ms) ease,
+    box-shadow var(--kp-fast, 160ms) ease,
+    transform var(--kp-fast, 160ms) var(--kp-ease, ease);
+}
+
+.primary {
+  color: #FFFFFF;
+  background: var(--kp-purple, #6D28D9);
+  border: 1.5px solid transparent;
+  box-shadow: 0 6px 18px rgba(109, 40, 217, 0.26);
+}
+.primary:hover:not(:disabled) {
+  background: var(--kp-purple-deep, #4C1D95);
+  transform: translateY(-1px);
+}
+
+/* "הזמן שוב" — one per card, so outlined rather than a wall of solid purple. */
+.secondary {
+  width: 100%;
+  margin-top: 0.9rem;
+  color: var(--kp-purple, #6D28D9);
+  background: var(--kp-white, #FFFFFF);
+  border: 1.5px solid rgba(109, 40, 217, 0.45);
+}
+.secondary:hover:not(:disabled) {
+  background: var(--kp-lav, #EEE5FF);
+  border-color: var(--kp-purple, #6D28D9);
+}
+
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: 3px solid var(--kp-purple, #6D28D9);
+  outline-offset: 3px;
+}
+
+.primary:disabled,
+.secondary:disabled {
+  color: var(--kt-dim, #6B6185);
+  background: var(--kt-surface, #F4F0FF);
+  border-color: var(--kt-border, rgba(39, 22, 63, 0.1));
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (min-width: 640px) {
+  .secondary {
+    width: auto;
+    min-width: 200px;
+  }
+  .reorderRow {
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .primary,
+  .secondary {
+    transition: none;
+  }
+  .primary:hover:not(:disabled) {
+    transform: none;
+  }
+}

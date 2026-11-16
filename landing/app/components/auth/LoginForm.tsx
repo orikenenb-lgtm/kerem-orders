@@ -10,7 +10,7 @@ import PasswordInput from "../PasswordInput";
 import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
 import { authErrorHe } from "../../../lib/authErrors";
-import { tokens, primaryBtn, linkBtn } from "../../../lib/ui";
+import s from "./auth.module.css";
 import { featureFlags } from "../../../lib/featureFlags";
 import { loginIdentifier } from "../../../lib/phoneLogin";
 import type { AuthTab } from "./AuthShell";
@@ -66,13 +66,13 @@ export default function LoginForm({ onSwitch }: { onSwitch: (t: AuthTab) => void
 
   return (
     <>
-      <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginBottom: "1.5rem" }}>
+      <p className={s.intro}>
         ברוכים השבים לכרם טויס.
       </p>
 
-      <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
-        <label style={{ display: "grid", gap: "0.35rem" }}>
-          <span style={lbl}>{PHONE_LOGIN ? "אימייל או טלפון" : "אימייל"}</span>
+      <form onSubmit={onSubmit} className={s.form}>
+        <label className={s.field}>
+          <span className={s.label}>{PHONE_LOGIN ? "אימייל או טלפון" : "אימייל"}</span>
           <input
             type={PHONE_LOGIN ? "text" : "email"}
             autoComplete={PHONE_LOGIN ? "username" : "email"}
@@ -81,63 +81,52 @@ export default function LoginForm({ onSwitch }: { onSwitch: (t: AuthTab) => void
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={inp}
+            className={s.input}
           />
         </label>
         {/* Explicit htmlFor label: PasswordInput also renders the show/hide
             button, and an implicit label must not wrap that second control. */}
-        <div style={{ display: "grid", gap: "0.35rem" }}>
-          <label htmlFor="login-password" style={lbl}>סיסמה</label>
+        <div className={s.field}>
+          <label htmlFor="login-password" className={s.label}>סיסמה</label>
           <PasswordInput
             id="login-password"
             autoComplete="current-password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={inp}
+            className={s.input}
           />
         </div>
 
         {error && (
-          <div
-            role="alert"
-            style={{
-              fontFamily: tokens.assistant,
-              color: "#C0143C",
-              background: "rgba(255,46,147,0.08)",
-              border: "1px solid rgba(255,46,147,0.25)",
-              borderRadius: 12,
-              padding: "0.7rem 0.9rem",
-              fontSize: "0.92rem",
-            }}
-          >
+          <div role="alert" className={s.alert}>
             {error}
           </div>
         )}
 
-        <button type="submit" disabled={busy} style={primaryBtn(busy)}>
+        <button type="submit" disabled={busy} className={s.primary}>
           {busy ? "רגע…" : "התחברות"}
         </button>
       </form>
 
-      <p style={{ fontFamily: tokens.assistant, marginTop: "1rem", textAlign: "center" }}>
-        <button type="button" onClick={() => onSwitch("forgot")} style={{ ...linkBtn, fontSize: "0.92rem" }}>
+      <p className={s.center}>
+        <button type="button" onClick={() => onSwitch("forgot")} className={s.linkBtn}>
           שכחתם סיסמה?
         </button>
       </p>
 
       {PHONE_LOGIN && (
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.6rem", textAlign: "center" }}>
+        <p className={`${s.center} ${s.centerTight}`}>
           כבר קונים אצלנו ועוד אין לכם חשבון באתר?{" "}
-          <button type="button" onClick={() => onSwitch("express")} style={linkBtn}>
+          <button type="button" onClick={() => onSwitch("express")} className={s.linkBtn}>
             כניסה מהירה עם ח״פ או טלפון
           </button>
         </p>
       )}
 
-      <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.6rem", textAlign: "center" }}>
+      <p className={`${s.center} ${s.centerTight}`}>
         עוד אין לכם חשבון?{" "}
-        <button type="button" onClick={() => onSwitch("register")} style={linkBtn}>
+        <button type="button" onClick={() => onSwitch("register")} className={s.linkBtn}>
           פתיחת חשבון לקוח
         </button>
       </p>
@@ -145,19 +134,3 @@ export default function LoginForm({ onSwitch }: { onSwitch: (t: AuthTab) => void
   );
 }
 
-const lbl: React.CSSProperties = {
-  fontFamily: tokens.rubik,
-  fontWeight: 600,
-  fontSize: "0.85rem",
-  color: tokens.text,
-};
-const inp: React.CSSProperties = {
-  fontFamily: tokens.assistant,
-  fontSize: "1rem",
-  padding: "0.75rem 0.9rem",
-  borderRadius: 12,
-  border: `1px solid ${tokens.border}`,
-  background: tokens.surface,
-  color: tokens.text,
-  outlineColor: tokens.accent,
-};
