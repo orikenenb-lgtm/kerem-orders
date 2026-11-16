@@ -420,7 +420,7 @@
 }
 .frame img {
   mix-blend-mode: multiply;
-  transition: transform var(--kp-mid, 320ms) var(--kp-ease, ease);
+  transition: transform 200ms var(--kp-ease, ease);
 }
 @media (hover: hover) {
   .card:hover .frame img {

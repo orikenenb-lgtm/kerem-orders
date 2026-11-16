@@ -169,8 +169,10 @@
   font-weight: 600;
   font-size: 0.85rem;
   color: #fff;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  /* a darker veil (not a lighter one) keeps small white text ≥ 4.5:1 over
+     every part of the gradient */
+  background: rgba(30, 10, 70, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: var(--kp-radius-pill, 999px);
   padding: 0.22rem 0.7rem;
   white-space: nowrap;
@@ -511,7 +513,7 @@
   align-items: center;
   justify-content: center;
   font-size: 2.6rem;
-  transition: transform var(--kp-mid, 320ms) var(--kp-ease, ease);
+  transition: transform 200ms var(--kp-ease, ease);
 }
 @media (hover: hover) {
   .card:hover .frameImg {
@@ -666,8 +668,8 @@
   padding: 3px;
 }
 .stepBtn {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -699,7 +701,7 @@
   min-width: 0;
   width: 52px;
   max-width: 72px;
-  height: 40px;
+  height: 44px;
   text-align: center;
   font-family: var(--font-rubik), system-ui, sans-serif;
   font-weight: 700;
@@ -1274,7 +1276,7 @@
   font-family: var(--font-assistant), system-ui, sans-serif;
   font-size: 0.78rem;
   color: var(--kt-dim, #6B6185);
-  text-align: left;
+  text-align: end;
   margin-top: 0.3rem;
 }
 .fieldsTitle {

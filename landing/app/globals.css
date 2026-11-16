@@ -158,3 +158,10 @@ html.kp-js .kp-reveal.kp-in {
     transition: none;
   }
 }
+
+/* Premium shell: keyboard focus (and in-page anchors) never land under the
+   sticky header — the browser keeps this much room above a scrolled-to
+   element. --kt-header-h is published by SiteHeader. */
+html.kt-premium {
+  scroll-padding-top: calc(var(--kt-header-h, 96px) + 12px);
+}
