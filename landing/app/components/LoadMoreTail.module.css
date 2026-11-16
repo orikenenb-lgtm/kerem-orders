@@ -1,0 +1,87 @@
+/* Infinite-scroll tail, premium look: placeholder cards in the same grid with
+ * ONE light lavender sweep per card (a pseudo-element moved with transform —
+ * no layout work), and a soft status pill. Reduced motion: no sweep at all,
+ * the cards simply sit there as calm placeholders. */
+
+.tail {
+  margin-top: 1rem;
+}
+.grid {
+  display: grid;
+  gap: clamp(0.75rem, 1.6vw, 1.25rem);
+}
+.skel {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  min-width: 0;
+  background: var(--kp-white, #fff);
+  border: 1px solid var(--kt-border, rgba(26, 23, 48, 0.08));
+  border-radius: var(--kt-radius-card, 16px);
+  box-shadow: var(--kt-shadow-card, 0 8px 24px rgba(26, 23, 48, 0.05));
+}
+.skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.75) 50%, rgba(255, 255, 255, 0) 100%);
+  transform: translateX(100%);
+  animation: kpSweep 1.5s var(--kp-ease, ease-in-out) infinite;
+}
+.img {
+  aspect-ratio: 1 / 1;
+  border-radius: calc(var(--kt-radius-card, 16px) - 6px);
+  background: var(--kp-lav, var(--kt-surface, #F7F7FB));
+}
+.line {
+  height: 0.85em;
+  border-radius: 999px;
+  background: var(--kt-surface, #F7F7FB);
+}
+.short {
+  width: 60%;
+}
+.status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin: 1.4rem 0 0;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--kp-purple, var(--kt-accent, #8A3FFC));
+  background: var(--kp-lav, #EEE5FF);
+  border-radius: var(--kp-radius-pill, 999px);
+  padding: 0.5rem 1.2rem;
+}
+.sub {
+  display: block;
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 0.9rem;
+  color: var(--kt-body, #4B4860);
+  margin-top: 0.45rem;
+}
+
+/* RTL: the sweep travels from the inline start (right) to the left. */
+@keyframes kpSweep {
+  from { transform: translateX(100%); }
+  to { transform: translateX(-100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel::after {
+    animation: none;
+    display: none;
+  }
+}
