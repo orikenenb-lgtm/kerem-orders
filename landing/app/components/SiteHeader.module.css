@@ -1,0 +1,408 @@
+/* Site header — premium skin (2026-11).
+ * Colours that must follow the scope (/admin re-declares --kt-* in
+ * .kt-scope-classic) use --kt-*; every var() carries the pre-redesign
+ * fallback so the header renders correctly with ff_premium_theme off.
+ * Height is FIXED per breakpoint (nothing here changes on scroll), so the
+ * --kt-header-h value published by SiteHeader.tsx never jumps. */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+/* ---------- top trust strip ---------- */
+.strip {
+  background: var(--kt-text, #1A1730);
+  color: #fff;
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+.stripInner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0.2rem clamp(1rem, 4vw, 2.5rem);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  min-height: 34px;
+  box-sizing: border-box;
+}
+.stripMsg {
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.94);
+}
+.stripPart {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.stripSep {
+  color: var(--kp-yellow, rgba(255, 255, 255, 0.7));
+  font-weight: 700;
+}
+.num {
+  unicode-bidi: isolate;
+  font-weight: 700;
+  color: #fff;
+}
+.stripContact {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+.stripLink {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 26px;
+  padding: 0 0.25rem;
+  border-radius: 6px;
+  transition: opacity var(--kp-fast, 160ms) ease;
+}
+.stripLink:hover {
+  opacity: 0.85;
+}
+.stripLink:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.icon {
+  width: 1.05em;
+  height: 1.05em;
+  flex-shrink: 0;
+}
+
+/* ---------- main bar ---------- */
+.bar {
+  position: relative;
+  background: rgba(255, 255, 255, 0.9);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--kt-border, rgba(26, 23, 48, 0.08));
+  box-shadow: 0 10px 24px -18px rgba(39, 22, 63, 0.35);
+}
+.barInner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0.6rem clamp(1rem, 4vw, 2.5rem);
+  min-height: 64px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.logoLink {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.logo {
+  display: flex;
+  align-items: center;
+  height: 44px;
+}
+.wordmarkWrap {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.1;
+}
+.wordmark {
+  font-weight: 900;
+  font-size: 1.4rem;
+  letter-spacing: -0.01em;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  white-space: nowrap;
+}
+.tagline {
+  display: none;
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--kt-dim, #8B8898);
+  white-space: nowrap;
+  margin-top: 0.1rem;
+}
+@media (min-width: 1024px) {
+  .tagline {
+    display: block;
+  }
+}
+
+/* ---------- nav ---------- */
+.nav {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+}
+.navList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: clamp(0.15rem, 1vw, 0.5rem);
+}
+.navItem {
+  display: flex;
+}
+
+.navLink {
+  position: relative;
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.97rem;
+  color: var(--kt-text, #1A1730);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0.35rem 0.8rem;
+  border-radius: var(--kp-radius-pill, 999px);
+  white-space: nowrap;
+}
+/* The indicator is a transform (scaleX), not a colour wash — it keeps every
+ * text/background pair at its measured contrast in both scopes. */
+.navLink::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0.8rem;
+  bottom: 4px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--kt-accent, #8A3FFC);
+  transform: scaleX(0);
+  opacity: 0.45;
+  transition: transform var(--kp-mid, 320ms) var(--kp-ease, ease), opacity var(--kp-fast, 160ms) ease;
+}
+.navLink:hover::after {
+  transform: scaleX(1);
+}
+.navLinkActive {
+  font-weight: 700;
+}
+.navLinkActive::after {
+  transform: scaleX(1);
+  opacity: 1;
+}
+.navLinkAccent {
+  color: var(--kt-accent, #8A3FFC);
+}
+
+.signOut {
+  font-family: var(--font-rubik), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.87rem;
+  color: var(--kt-body, #4B4860);
+  background: transparent;
+  border: 1.5px solid var(--kt-border, rgba(26, 23, 48, 0.08));
+  padding: 0.45rem 1.1rem;
+  min-height: 40px;
+  border-radius: var(--kp-radius-pill, 999px);
+  cursor: pointer;
+  margin-inline-start: 0.35rem;
+  transition: border-color var(--kp-fast, 160ms) ease, color var(--kp-fast, 160ms) ease;
+}
+.signOut:hover {
+  border-color: var(--kt-accent, #8A3FFC);
+  color: var(--kt-text, #1A1730);
+}
+
+/* Guest primary action: accent fill + white text (≥4.5:1 in every scope). */
+.cta {
+  font-family: var(--font-rubik), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #fff;
+  background: var(--kt-accent, #8A3FFC);
+  text-decoration: none;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 1.35rem;
+  border-radius: var(--kp-radius-pill, 999px);
+  flex-shrink: 0;
+  box-shadow: 0 8px 18px -10px rgba(39, 22, 63, 0.55);
+  transition: transform var(--kp-fast, 160ms) var(--kp-ease, ease), box-shadow var(--kp-fast, 160ms) ease;
+}
+.cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px -10px rgba(39, 22, 63, 0.6);
+}
+.cta:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* The disclosure toggle exists only at phone width. */
+.menuToggle {
+  display: none;
+}
+.menuIcon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* ---------- phone / small tablet ---------- */
+@media (max-width: 759.98px) {
+  .barInner {
+    padding-block: 0.5rem;
+    min-height: 60px;
+  }
+  .nav {
+    position: static;
+  }
+  .menuToggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 0.75rem;
+    font-family: var(--font-rubik), system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--kt-text, #1A1730);
+    background: var(--kt-surface, #F7F7FB);
+    border: 1px solid var(--kt-border, rgba(26, 23, 48, 0.08));
+    border-radius: var(--kp-radius-pill, 999px);
+    cursor: pointer;
+  }
+  .navList {
+    display: none;
+  }
+  /* Drops over the page below the bar (absolute → header height unchanged). */
+  .navList[data-open="true"] {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.15rem;
+    position: absolute;
+    top: 100%;
+    inset-inline: 0;
+    padding: 0.5rem clamp(1rem, 4vw, 2.5rem) 0.9rem;
+    background: #fff;
+    border-bottom: 1px solid var(--kt-border, rgba(26, 23, 48, 0.08));
+    box-shadow: 0 18px 32px -16px rgba(39, 22, 63, 0.35);
+    animation: ktMenuIn var(--kp-fast, 160ms) var(--kp-ease, ease) both;
+  }
+  .navList[data-open="true"] .navItem {
+    display: block;
+  }
+  .navList[data-open="true"] .navLink {
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 48px;
+    padding: 0.5rem 1rem;
+    border-radius: var(--kp-radius-md, 14px);
+    font-size: 1.02rem;
+  }
+  .navList[data-open="true"] .navLink:hover {
+    background: var(--kt-bg, #FFFFFF);
+  }
+  /* In the panel the indicator becomes a short bar on the inline-start edge. */
+  .navList[data-open="true"] .navLink::after {
+    inset-inline: 0 auto;
+    top: 25%;
+    bottom: 25%;
+    width: 3px;
+    height: auto;
+    transform: scaleY(0);
+  }
+  .navList[data-open="true"] .navLink:hover::after {
+    transform: scaleY(1);
+  }
+  .navList[data-open="true"] .navLinkActive::after {
+    transform: scaleY(1);
+  }
+  .navItemAction {
+    margin-top: 0.4rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--kt-border, rgba(26, 23, 48, 0.08));
+  }
+  .signOut {
+    width: 100%;
+    min-height: 48px;
+    margin-inline-start: 0;
+    font-size: 0.95rem;
+  }
+  .cta {
+    padding: 0 1rem;
+    font-size: 0.88rem;
+  }
+}
+
+/* Top strip at phone width: one compact line — only the minimum + phone. The
+ * shipping/VAT lines stay in the footer and on the catalogue pages. */
+@media (max-width: 639.98px) {
+  .stripOptional {
+    display: none;
+  }
+  .stripInner {
+    min-height: 32px;
+    font-size: 0.78rem;
+  }
+}
+
+@keyframes ktMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navLink::after,
+  .cta,
+  .stripLink,
+  .signOut {
+    transition: none;
+  }
+  .cta:hover,
+  .cta:active {
+    transform: none;
+  }
+  .navList[data-open="true"] {
+    animation: none;
+  }
+}
+
+/* The global :focus-visible ring (globals.css) squares corners to 4px; keep
+ * the pill shapes round while focused. */
+.navLink:focus-visible,
+.cta:focus-visible,
+.signOut:focus-visible,
+.menuToggle:focus-visible {
+  border-radius: var(--kp-radius-pill, 999px);
+}
+.logoLink:focus-visible {
+  border-radius: 10px;
+}
