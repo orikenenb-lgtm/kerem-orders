@@ -69,7 +69,10 @@ export default function RootLayout({
       // Wave 7 (ff_new_theme): the kt-theme-new class switches the CSS
       // variables in tokens.css to the warm skin. Flag off → class absent →
       // :root values (identical to the old literals) apply everywhere.
-      className={`${rubik.variable} ${assistant.variable}${featureFlags.ff_new_theme ? " kt-theme-new" : ""}`}
+      // 2026-11 (ff_premium_theme): kt-premium switches the same variables
+      // to the purple/pastel skin; it is declared after kt-theme-new in
+      // tokens.css, so with both classes present the premium values win.
+      className={`${rubik.variable} ${assistant.variable}${featureFlags.ff_new_theme ? " kt-theme-new" : ""}${featureFlags.ff_premium_theme ? " kt-premium" : ""}`}
     >
       <head>
         {/* Every page talks to Supabase (data + product images) — open the

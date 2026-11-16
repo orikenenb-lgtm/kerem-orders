@@ -20,6 +20,7 @@ import {
   type TurnstileEvent,
 } from "../../lib/turnstile";
 import { tokens } from "../../lib/ui";
+import css from "./Turnstile.module.css";
 
 const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 
@@ -180,18 +181,16 @@ export default function Turnstile({
   }, [configured, siteKey, action]);
 
   return (
-    <div style={{ display: "grid", gap: "0.4rem" }}>
+    <div className={css.wrap}>
       {/* Reserve the widget's height so the async iframe injection doesn't
           shift the submit button (minimal CLS). */}
-      <div ref={containerRef} aria-hidden={!configured} style={{ minHeight: configured ? 65 : 0 }} />
+      <div ref={containerRef} aria-hidden={!configured} className={css.widget} style={{ minHeight: configured ? 65 : 0 }} />
       <p
         role="status"
         aria-live="polite"
+        className={css.status}
         style={{
-          fontFamily: tokens.assistant,
-          fontSize: "0.85rem",
-          color: state.status === "error" || state.status === "unconfigured" ? "#C0143C" : tokens.body,
-          margin: 0,
+          color: state.status === "error" || state.status === "unconfigured" ? "#B4123A" : tokens.body,
         }}
       >
         {turnstileStatusMessage(state.status)}

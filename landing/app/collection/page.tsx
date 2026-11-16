@@ -25,6 +25,9 @@ import ProductImage from "../components/ProductImage";
 import { supabase } from "../../lib/supabaseClient";
 import { tokens, ils } from "../../lib/ui";
 import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
+import { BUSINESS_NAME } from "../../lib/config";
+// Same premium look as the public catalogue (/view, /prices) — one stylesheet.
+import ui from "../components/PublicCatalog.module.css";
 
 type CollectionProduct = {
   /** Null on the single header-only row a live-but-empty collection returns. */
@@ -165,90 +168,111 @@ function CollectionCatalog() {
 
   if (known === false) {
     return (
-      <main id="main-content" tabIndex={-1} style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
-        <div style={{ fontSize: "3rem", marginBottom: "1rem" }} aria-hidden="true">🧸</div>
-        <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.6rem", color: tokens.text, marginBottom: "0.6rem" }}>
-          הקטלוג המבוקש לא נמצא
-        </h1>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body }}>
-          יכול להיות שהקישור השתנה או שהקטלוג הוסר. אפשר ליצור קשר ונשלח קישור מעודכן.
-        </p>
+      <main id="main-content" tabIndex={-1} className={ui.main}>
+        <div className={ui.state} style={{ marginTop: "clamp(1.5rem, 6vw, 4rem)" }}>
+          <div className={ui.stateIcon} aria-hidden="true">🧸</div>
+          <h1 className={ui.stateTitle}>
+            הקטלוג המבוקש לא נמצא
+          </h1>
+          <p className={ui.stateText}>
+            יכול להיות שהקישור השתנה או שהקטלוג הוסר. אפשר ליצור קשר ונשלח קישור מעודכן.
+          </p>
+        </div>
       </main>
     );
   }
 
   return (
-    <main id="main-content" tabIndex={-1} style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
-      <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.6rem,4vw,2.6rem)", color: tokens.text }}>
-        {collectionName || "קטלוג מותאם"}
-      </h1>
-      <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.3rem" }}>
-        קטלוג מותאם אישית · {total.toLocaleString("he-IL")} מוצרים · לצפייה בלבד
-        {showPrices ? " · המחירים כוללים מע״מ" : ""}
-      </p>
-      {showPrices && discount > 0 && (
-        <p style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", color: "#1A7A4D", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 999, padding: "0.4rem 1rem", display: "inline-block", marginTop: "0.6rem" }}>
-          🎁 הנחה של {discount}% על כל המוצרים בקטלוג — כבר מחושבת במחירים
-        </p>
-      )}
+    <main id="main-content" tabIndex={-1} className={ui.main}>
+      <section className={ui.banner} aria-labelledby="kt-collection-title">
+        <div className={ui.bannerText}>
+          <p className={ui.eyebrow}>{BUSINESS_NAME}</p>
+          <h1 id="kt-collection-title" className={ui.title}>
+            {collectionName || "קטלוג מותאם"}
+          </h1>
+          <p className={ui.meta}>
+            קטלוג מותאם אישית · {total.toLocaleString("he-IL")} מוצרים · לצפייה בלבד
+            {showPrices ? " · המחירים כוללים מע״מ" : ""}
+          </p>
+          {showPrices && discount > 0 && (
+            <p className={ui.offer}>
+              🎁 הנחה של {discount}% על כל המוצרים בקטלוג — כבר מחושבת במחירים
+            </p>
+          )}
+        </div>
+      </section>
 
-      <div style={{ position: "sticky", top: "var(--kt-header-h, 96px)", zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
-        <input
-          type="search"
-          aria-label="חיפוש מוצר בקטלוג המותאם"
-          placeholder="🔍 חיפוש מוצר…"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
-        />
+      <div className={ui.toolbar}>
+        <div className={ui.searchWrap}>
+          <svg className={ui.searchIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" focusable="false">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.6-3.6" />
+          </svg>
+          <input
+            type="search"
+            aria-label="חיפוש מוצר בקטלוג המותאם"
+            placeholder="חיפוש מוצר…"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            className={ui.search}
+          />
+        </div>
         {!ffLeanSticky && (
-          <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "0.7rem" }}>
+          <div className={ui.densityRow}>
             <GridDensityPicker value={density} onChange={setDensity} />
           </div>
         )}
       </div>
       {ffLeanSticky && (
-        <div style={{ display: "flex", justifyContent: "flex-start", padding: "0.2rem 0 0.6rem" }}>
+        <div className={ui.densityRowLean}>
           <GridDensityPicker value={density} onChange={setDensity} />
         </div>
       )}
 
       {loading && products.length === 0 ? (
-        <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>
+        <div className={ui.state} role="status">
+          <p className={ui.loadingText}><span className="kt-spinner" aria-hidden="true" /> טוען מוצרים…</p>
+        </div>
       ) : loadErr && products.length === 0 ? (
-        <div style={{ textAlign: "center", marginTop: "2rem" }}>
-          <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>הטעינה נכשלה. בדקו את החיבור ונסו שוב.</p>
-          <button onClick={load} style={ghostBtn}>נסו שוב</button>
+        <div className={ui.state}>
+          <div className={ui.stateIcon} aria-hidden="true">🧸</div>
+          <p className={ui.errorText}>הטעינה נכשלה. בדקו את החיבור ונסו שוב.</p>
+          <button type="button" onClick={load} className={ui.ghostBtn}>נסו שוב</button>
         </div>
       ) : products.length === 0 ? (
-        <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>
-          {query
-            ? `לא נמצאו מוצרים עבור “${query}”.`
-            : "הקטלוג הזה עדיין ריק. נוסיף אליו מוצרים בקרוב — הקישור עצמו תקין וימשיך לעבוד."}
-        </p>
+        <div className={ui.state}>
+          <div className={ui.stateIcon} aria-hidden="true">{query ? "🔎" : "📦"}</div>
+          <p className={ui.stateText}>
+            {query
+              ? `לא נמצאו מוצרים עבור “${query}”.`
+              : "הקטלוג הזה עדיין ריק. נוסיף אליו מוצרים בקרוב — הקישור עצמו תקין וימשיך לעבוד."}
+          </p>
+        </div>
       ) : (
         <>
-          <div data-density={density} style={{ display: "grid", gridTemplateColumns: gridColumns(density), gap: "1rem", marginTop: "1rem" }}>
+          <div data-density={density} className={ui.grid} style={{ gridTemplateColumns: gridColumns(density) }}>
             {products.map((p, i) => (
               <button
                 key={p.id}
                 type="button"
-                className="kt-card"
+                className={`kt-card ${ui.card}`}
                 onClick={(e) => { openerRef.current = e.currentTarget; setPreview(p); }}
                 aria-haspopup="dialog"
                 aria-label={`תצוגה מקדימה: ${p.name}`}
-                style={{ textAlign: "start", cursor: "pointer", font: "inherit", border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}
+                // Inline on purpose: tokens.css lifts the card on hover by
+                // re-declaring --kt-shadow-card, which this re-resolves.
+                style={{ boxShadow: tokens.shadowCard }}
               >
-                <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
+                <div className={ui.frame}>
                   <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} priority={i < PRIORITY_IMAGES} imgStyle={{ width: "100%", height: "100%", objectFit: "contain" }} />
                 </div>
                 {/* Clamped to three lines. Rivhit names run to 120 characters, and one
                     long name stretched its card to 453px against 300px for its
                     neighbours — which stretches the whole grid row. title keeps the
                     full name one hover away; the product page always shows it. */}
-                <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, overflow: "hidden", margin: 0 }} title={p.name}>{p.name}</h3>
+                <h3 className={ui.name} title={p.name}>{p.name}</h3>
                 {p.category && (
-                  <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>{p.category}</div>
+                  <div className={ui.cat}>{p.category}</div>
                 )}
                 {showPrices && p.price != null && (() => {
                   // Green + strikethrough are decided per ROW, not by the
@@ -258,8 +282,8 @@ function CollectionCatalog() {
                   // when one is. price < list_price is the one honest test.
                   const cheaper = p.list_price != null && Number(p.price) < Number(p.list_price);
                   return (
-                    <div style={{ display: "flex", alignItems: "baseline", gap: "0.4rem", flexWrap: "wrap" }}>
-                      <span style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: cheaper ? "#1A7A4D" : tokens.text }}>
+                    <div className={ui.priceRow}>
+                      <span className={ui.price} style={{ marginTop: 0, color: cheaper ? "#1A7A4D" : tokens.text }}>
                         {ils(Number(p.price) || 0)}
                       </span>
                       {cheaper && (
@@ -274,16 +298,18 @@ function CollectionCatalog() {
 
           <div ref={sentinelRef} aria-hidden="true" />
           {loadErr ? (
-            <div style={{ textAlign: "center", marginTop: "1.5rem" }}>
-              <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת המוצרים נכשלה.</p>
-              <button onClick={load} style={ghostBtn}>נסו שוב</button>
+            <div className={ui.state}>
+              <p className={ui.errorText}>טעינת המוצרים נכשלה.</p>
+              <button type="button" onClick={load} className={ui.ghostBtn}>נסו שוב</button>
             </div>
           ) : hasMore || loading ? (
             <LoadMoreTail shown={products.length} total={total} columns={gridColumns(density)} />
           ) : products.length > PAGE_SIZE ? (
-            <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
-              זהו — רואים את כל {total.toLocaleString("he-IL")} המוצרים ✔
-            </p>
+            <div className={ui.endNote}>
+              <p>
+                זהו — רואים את כל {total.toLocaleString("he-IL")} המוצרים ✔
+              </p>
+            </div>
           ) : null}
         </>
       )}
@@ -331,25 +357,22 @@ function CollectionPreview({ product, showPrice, onClose }: {
   }, [onClose]);
 
   return (
-    <div
-      onClick={onClose}
-      style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(20,16,32,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
-    >
+    <div onClick={onClose} className={ui.backdrop}>
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={product.name}
         onClick={(e) => e.stopPropagation()}
-        style={{ background: "#fff", width: "100%", maxWidth: 560, maxHeight: "92dvh", overflowY: "auto", borderRadius: 20, padding: "1rem 1rem 1.4rem", display: "flex", flexDirection: "column", gap: "0.8rem" }}
+        className={ui.panel}
       >
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div className={ui.panelTop}>
           <button
             ref={closeBtnRef}
             type="button"
             onClick={onClose}
             aria-label="סגירת התצוגה המקדימה"
-            style={{ width: 44, height: 44, borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, fontSize: "1.25rem", lineHeight: 1, cursor: "pointer" }}
+            className={ui.closeBtn}
           >
             ✕
           </button>
@@ -359,7 +382,8 @@ function CollectionPreview({ product, showPrice, onClose }: {
           onClick={() => setZoomed((z) => !z)}
           aria-pressed={zoomed}
           aria-label={zoomed ? "הקטנת התמונה" : "הגדלת התמונה"}
-          style={{ border: `1px solid ${tokens.border}`, borderRadius: 14, background: "#fff", padding: 8, cursor: "zoom-in", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 220, maxHeight: zoomed ? "70dvh" : 340, overflow: "hidden" }}
+          className={ui.zoomBtn}
+          style={{ maxHeight: zoomed ? "70dvh" : 340 }}
         >
           <ProductImage
             pictureLink={product.picture_link}
@@ -369,14 +393,14 @@ function CollectionPreview({ product, showPrice, onClose }: {
             imgStyle={{ maxWidth: "100%", maxHeight: zoomed ? "68dvh" : 320, objectFit: "contain" }}
           />
         </button>
-        <p style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim, textAlign: "center", margin: 0 }}>
+        <p className={ui.hint}>
           {zoomed ? "לחיצה נוספת מקטינה חזרה" : "אפשר ללחוץ על התמונה להגדלה"}
         </p>
-        <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", color: tokens.text, margin: 0, lineHeight: 1.3 }}>
+        <h2 className={ui.dialogTitle}>
           {product.name}
         </h2>
         {product.category && (
-          <p style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.body, margin: 0 }}>
+          <p className={ui.dialogCat}>
             קטגוריה: {product.category}
           </p>
         )}
@@ -385,7 +409,7 @@ function CollectionPreview({ product, showPrice, onClose }: {
           // green and the strikethrough, whatever produced the price.
           const cheaper = product.list_price != null && Number(product.price) < Number(product.list_price);
           return (
-            <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.35rem", color: cheaper ? "#1A7A4D" : tokens.text, margin: 0 }}>
+            <p className={ui.dialogPrice} style={{ color: cheaper ? "#1A7A4D" : tokens.text }}>
               {ils(Number(product.price) || 0)}
               {cheaper && (
                 <s style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.9rem", color: tokens.dim }}> {ils(Number(product.list_price) || 0)}</s>
@@ -398,18 +422,6 @@ function CollectionPreview({ product, showPrice, onClose }: {
     </div>
   );
 }
-
-const ghostBtn = {
-  fontFamily: tokens.rubik,
-  fontWeight: 700,
-  fontSize: "0.9rem",
-  color: tokens.text,
-  background: "#fff",
-  border: `1px solid ${tokens.border}`,
-  padding: "0.7rem 1.4rem",
-  borderRadius: 999,
-  cursor: "pointer",
-} as const;
 
 // useSearchParams requires a Suspense boundary in the App Router.
 export default function CollectionPage() {

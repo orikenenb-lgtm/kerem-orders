@@ -5,7 +5,8 @@ import { featureFlags } from "../../lib/featureFlags";
 // The "בשורה" picker scrolls away with the page instead of pinning (see ff_lean_sticky).
 const ffLeanSticky = featureFlags.ff_lean_sticky;
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import Link from "next/link";
 import SiteHeader from "./SiteHeader";
 import SiteFooter from "./SiteFooter";
 import LoadMoreTail from "./LoadMoreTail";
@@ -13,6 +14,9 @@ import { supabase } from "../../lib/supabaseClient";
 import ProductImage from "./ProductImage";
 import { tokens, ils } from "../../lib/ui";
 import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
+import { BUSINESS_NAME, BUSINESS_TAGLINE } from "../../lib/config";
+import { useAuth } from "../../lib/auth";
+import ui from "./PublicCatalog.module.css";
 
 // Shared public, read-only catalog (no login, no ordering) behind both
 // public links:
@@ -42,8 +46,20 @@ const PAGE_SIZE = 48;
 // categories on a phone. All later photos load lazily as they come near.
 const PRIORITY_IMAGES = 6;
 
+// Inactive category chips cycle through the premium pastels (ink text on
+// every one ≥13.5:1); the active chip is solid purple with white text.
+const CHIP_PASTELS = [
+  "var(--kp-lav, #EEE5FF)",
+  "var(--kp-mint, #D8F5EB)",
+  "var(--kp-sky, #DBEEFF)",
+  "var(--kp-peach, #FFE8D6)",
+  "var(--kp-pink, #FFE3F1)",
+];
+
 export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   const rpcName = showPrices ? "catalog_public_prices" : "catalog_public";
+  // Only to pick which call to action the banner shows — no data depends on it.
+  const { session } = useAuth();
 
   const [input, setInput] = useState("");
   // Products per row — the visitor's own choice, remembered per browser.
@@ -78,6 +94,28 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
       setCategories((data as { category: string; n: number }[]) ?? []);
     });
   }, []);
+
+  // Optional deep link from the home page's category tiles: ?cat=<name>.
+  // Applied once, only after the real category list has loaded and only if
+  // the name is in it — an unknown or stale name leaves the page on "הכל",
+  // exactly as without the link. The existing [activeCat] effect then resets
+  // paging just like a chip click. The state update runs in a task (not in
+  // the effect body); a StrictMode re-run clears the pending timer and
+  // re-arms it, so it still applies exactly once.
+  const deepLinkDone = useRef(false);
+  useEffect(() => {
+    if (deepLinkDone.current || categories.length === 0) return;
+    const cat = new URLSearchParams(window.location.search).get("cat");
+    if (!cat || !categories.some((c) => c.category === cat)) {
+      deepLinkDone.current = true;
+      return;
+    }
+    const t = window.setTimeout(() => {
+      deepLinkDone.current = true;
+      setActiveCat(cat);
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [categories]);
 
   // VAT note on the prices page only. Anon RLS exposes just this one settings
   // key; a missing row (or a failed read) keeps the default: label shown.
@@ -195,44 +233,75 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1280, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 6rem" }}>
-        <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.6rem,4vw,2.6rem)", color: tokens.text }}>
-          {showPrices ? "קטלוג ומחירון" : "קטלוג המוצרים"}
-        </h1>
-        <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "0.3rem" }}>
-          {total.toLocaleString("he-IL")} מוצרים · לצפייה בלבד
-          {showPrices && vatLabel ? " · המחירים כוללים מע״מ" : ""}
-        </p>
+      <main id="main-content" tabIndex={-1} className={ui.main}>
+        <section className={ui.banner} aria-labelledby="kt-public-title">
+          <div className={ui.bannerText}>
+            <p className={ui.eyebrow}>{BUSINESS_NAME} · {BUSINESS_TAGLINE}</p>
+            <h1 id="kt-public-title" className={ui.title}>
+              {showPrices ? "קטלוג ומחירון" : "קטלוג המוצרים"}
+            </h1>
+            <p className={ui.meta}>
+              {total.toLocaleString("he-IL")} מוצרים · לצפייה בלבד
+              {showPrices && vatLabel ? " · המחירים כוללים מע״מ" : ""}
+            </p>
+          </div>
+          {/* Guest call to action — the same two ways in the header and the
+              /p/<id> pages already offer (open an account / log in). A
+              signed-in customer gets the way to their ordering catalogue
+              instead (the same link the header shows them). */}
+          <div className={ui.cta}>
+            {session ? (
+              <>
+                <p className={ui.ctaTitle}>אתם מחוברים — ההזמנה נעשית מקטלוג הלקוחות</p>
+                <div className={ui.ctaRow}>
+                  <Link href="/catalog" className={ui.ctaPrimary}>לקטלוג הלקוחות</Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className={ui.ctaTitle}>
+                  {showPrices ? "להזמנה אונליין — ללקוחות עסקיים רשומים" : "המחירים מוצגים ללקוחות עסקיים רשומים"}
+                </p>
+                <div className={ui.ctaRow}>
+                  <Link href="/register" className={ui.ctaPrimary}>פתיחת חשבון סיטונאי</Link>
+                  <Link href="/login" className={ui.ctaGhost}>התחברות ללקוחות</Link>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
 
-        <div style={{ position: "sticky", top: "var(--kt-header-h, 96px)", zIndex: 40, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", padding: "1rem 0", marginTop: "0.5rem" }}>
-          <input
-            type="search"
-            id="kt-public-search"
-            name="public-search"
-            // A real programmatic name — placeholder alone is not a label
-            // (it vanishes on input and many screen readers skip it).
-            aria-label="חיפוש מוצר לפי שם"
-            placeholder="🔍 חיפוש מוצר…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            style={{ width: "100%", fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.85rem 1rem", borderRadius: 14, border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text }}
-          />
+        <div className={ui.toolbar}>
+          <div className={ui.searchWrap}>
+            <svg className={ui.searchIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" focusable="false">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.6-3.6" />
+            </svg>
+            <input
+              type="search"
+              id="kt-public-search"
+              name="public-search"
+              // A real programmatic name — placeholder alone is not a label
+              // (it vanishes on input and many screen readers skip it).
+              aria-label="חיפוש מוצר לפי שם"
+              placeholder="חיפוש מוצר…"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              className={ui.search}
+            />
+          </div>
           {categories.length > 0 && (
-            <div role="group" aria-label="סינון לפי קטגוריה" style={{ display: "flex", gap: "0.5rem", overflowX: "auto", paddingBottom: "0.3rem", marginTop: "0.7rem" }}>
+            <div role="group" aria-label="סינון לפי קטגוריה" className={ui.chips}>
               {[{ category: "all", n: 0 }, ...orderedCats].map((c, i) => {
                 const active = activeCat === c.category;
-                const accent = c.category === "all" ? tokens.accent : tokens.rainbowColors[i % tokens.rainbowColors.length];
                 return (
                   <button
                     key={c.category}
+                    type="button"
                     onClick={() => setActiveCat(c.category)}
                     aria-pressed={active}
-                    style={{
-                      whiteSpace: "nowrap", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.82rem",
-                      padding: "0.45rem 1rem", borderRadius: 999, cursor: "pointer",
-                      border: `1px solid ${active ? "transparent" : tokens.border}`,
-                      background: active ? accent : "#fff", color: active ? "#fff" : tokens.body,
-                    }}
+                    className={ui.chip}
+                    style={{ "--chip-bg": CHIP_PASTELS[i % CHIP_PASTELS.length] } as CSSProperties}
                   >
                     {c.category === "all" ? "הכל" : `${c.category} (${c.n})`}
                   </button>
@@ -241,77 +310,82 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
             </div>
           )}
           {!ffLeanSticky && (
-            <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "0.7rem" }}>
+            <div className={ui.densityRow}>
               <GridDensityPicker value={density} onChange={setDensity} />
             </div>
           )}
         </div>
         {ffLeanSticky && (
-          <div style={{ display: "flex", justifyContent: "flex-start", padding: "0.2rem 0 0.6rem" }}>
+          <div className={ui.densityRowLean}>
             <GridDensityPicker value={density} onChange={setDensity} />
           </div>
         )}
 
         {loadingProducts && products.length === 0 ? (
-          <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>טוען מוצרים…</p>
+          <div className={ui.state} role="status">
+            <p className={ui.loadingText}><span className="kt-spinner" aria-hidden="true" /> טוען מוצרים…</p>
+          </div>
         ) : loadErr && products.length === 0 ? (
-          <div style={{ textAlign: "center", marginTop: "2rem" }}>
-            <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת הקטלוג נכשלה. בדקו את החיבור ונסו שוב.</p>
-            <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
+          <div className={ui.state}>
+            <div className={ui.stateIcon} aria-hidden="true">🧸</div>
+            <p className={ui.errorText}>טעינת הקטלוג נכשלה. בדקו את החיבור ונסו שוב.</p>
+            <button type="button" onClick={loadProducts} className={ui.ghostBtn}>נסו שוב</button>
           </div>
         ) : products.length === 0 ? (
-          <p style={{ fontFamily: tokens.assistant, color: tokens.dim, marginTop: "2rem" }}>
-            לא נמצאו מוצרים{query ? ` עבור “${query}”` : ""}. נסו לכתוב חלק מהשם — החיפוש יודע להשלים לבד.
-          </p>
+          <div className={ui.state}>
+            <div className={ui.stateIcon} aria-hidden="true">🔎</div>
+            <p className={ui.stateText}>
+              לא נמצאו מוצרים{query ? ` עבור “${query}”` : ""}. נסו לכתוב חלק מהשם — החיפוש יודע להשלים לבד.
+            </p>
+          </div>
         ) : (
           <>
             {fuzzyNote && (
-              <div style={{ fontFamily: tokens.assistant, fontSize: "0.95rem", color: tokens.body, background: "rgba(138,63,252,0.08)", border: "1px solid rgba(138,63,252,0.25)", borderRadius: 12, padding: "0.7rem 1rem", marginTop: "1rem" }}>
+              <div className={ui.note}>
                 🔎 לא מצאנו התאמה מדויקת ל־“{query}” — אלה המוצרים הכי דומים:
               </div>
             )}
-            <div data-density={density} style={{ display: "grid", gridTemplateColumns: gridColumns(density), gap: "1rem", marginTop: "1rem" }}>
-              {products.map((p, i) => {
-                const accent = tokens.rainbowColors[i % tokens.rainbowColors.length];
-                return (
-                  // The whole card is one real <button>: reachable with Tab,
-                  // activated with Enter/Space, announced with the product
-                  // name — not a div with an onClick.
-                  <button
-                    key={p.id}
-                    type="button"
-                    className="kt-card"
-                    onClick={(e) => openPreview(p, e.currentTarget)}
-                    aria-haspopup="dialog"
-                    aria-label={`תצוגה מקדימה: ${p.name}`}
-                    style={{ textAlign: "start", cursor: "pointer", font: "inherit", border: `1px solid ${tokens.border}`, borderTop: `3px solid ${accent}`, borderRadius: tokens.radiusCard, padding: "0.9rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.45rem" }}
-                  >
-                    {/* No stock badge: quantities in Rivhit are not maintained
-                        reliably (new items arrive as 0), so an automatic
-                        "אזל מהמלאי" label mislabels products that ARE in stock. */}
-                    {/* Uniform frame: square in every column width (aspectRatio,
-                        not a fixed height), object-fit contain so no toy is
-                        ever cropped or stretched, small inner padding, one
-                        background for photographed-on-white images. */}
-                    <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1", borderRadius: 12, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
-                      <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} priority={i < PRIORITY_IMAGES} />
+            <div data-density={density} className={ui.grid} style={{ gridTemplateColumns: gridColumns(density) }}>
+              {products.map((p, i) => (
+                // The whole card is one real <button>: reachable with Tab,
+                // activated with Enter/Space, announced with the product
+                // name — not a div with an onClick.
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`kt-card ${ui.card}`}
+                  onClick={(e) => openPreview(p, e.currentTarget)}
+                  aria-haspopup="dialog"
+                  aria-label={`תצוגה מקדימה: ${p.name}`}
+                  // Inline on purpose: tokens.css lifts the card on hover by
+                  // re-declaring --kt-shadow-card, which this re-resolves.
+                  style={{ boxShadow: tokens.shadowCard }}
+                >
+                  {/* No stock badge: quantities in Rivhit are not maintained
+                      reliably (new items arrive as 0), so an automatic
+                      "אזל מהמלאי" label mislabels products that ARE in stock. */}
+                  {/* Uniform frame: square in every column width (aspectRatio,
+                      not a fixed height), object-fit contain so no toy is
+                      ever cropped or stretched, small inner padding, one
+                      soft pastel backdrop. */}
+                  <div className={ui.frame}>
+                    <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} priority={i < PRIORITY_IMAGES} />
+                  </div>
+                  {/* Clamped to three lines. Rivhit names run to 120 characters, and one
+                      long name stretched its card to 453px against 300px for its
+                      neighbours — which stretches the whole grid row. title keeps the
+                      full name one hover away; the product page always shows it. */}
+                  <h3 className={ui.name} title={p.name}>{p.name}</h3>
+                  {p.category && (
+                    <div className={ui.cat}>{p.category}</div>
+                  )}
+                  {showPrices && (
+                    <div className={ui.price}>
+                      {ils(Number(p.price) || 0)}
                     </div>
-                    {/* Clamped to three lines. Rivhit names run to 120 characters, and one
-                        long name stretched its card to 453px against 300px for its
-                        neighbours — which stretches the whole grid row. title keeps the
-                        full name one hover away; the product page always shows it. */}
-                    <h3 style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.92rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.3em", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, overflow: "hidden", margin: 0 }} title={p.name}>{p.name}</h3>
-                    {p.category && (
-                      <div style={{ fontFamily: tokens.assistant, fontSize: "0.72rem", color: tokens.dim }}>{p.category}</div>
-                    )}
-                    {showPrices && (
-                      <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>
-                        {ils(Number(p.price) || 0)}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
+                  )}
+                </button>
+              ))}
             </div>
 
             {/* Infinite-scroll sentinel: when it nears the viewport the next
@@ -321,16 +395,18 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
                 grid is full and hasMore is false (e.g. a failed re-search),
                 so a failure is never silent. */}
             {loadErr ? (
-              <div style={{ textAlign: "center", marginTop: "1.5rem" }}>
-                <p style={{ fontFamily: tokens.assistant, color: "#C0143C", marginBottom: "0.8rem" }}>טעינת המוצרים נכשלה. בדקו את החיבור.</p>
-                <button onClick={loadProducts} style={ghostBtn}>נסו שוב</button>
+              <div className={ui.state}>
+                <p className={ui.errorText}>טעינת המוצרים נכשלה. בדקו את החיבור.</p>
+                <button type="button" onClick={loadProducts} className={ui.ghostBtn}>נסו שוב</button>
               </div>
             ) : hasMore || loadingProducts ? (
               <LoadMoreTail shown={products.length} total={total} columns={gridColumns(density)} />
             ) : products.length > PAGE_SIZE ? (
-              <p style={{ textAlign: "center", fontFamily: tokens.assistant, color: tokens.dim, marginTop: "1.5rem" }}>
-                זהו — רואים את כל {total.toLocaleString("he-IL")} המוצרים ✔
-              </p>
+              <div className={ui.endNote}>
+                <p>
+                  זהו — רואים את כל {total.toLocaleString("he-IL")} המוצרים ✔
+                </p>
+              </div>
             ) : null}
           </>
         )}
@@ -404,25 +480,22 @@ function ProductPreview({ product, showPrice, vatLabel, onClose }: {
   }, [onClose]);
 
   return (
-    <div
-      onClick={onClose}
-      style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(20,16,32,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
-    >
+    <div onClick={onClose} className={ui.backdrop}>
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={product.name}
         onClick={(e) => e.stopPropagation()}
-        style={{ background: "#fff", width: "100%", maxWidth: 560, maxHeight: "92dvh", overflowY: "auto", borderRadius: 20, padding: "1rem 1rem 1.4rem", display: "flex", flexDirection: "column", gap: "0.8rem" }}
+        className={ui.panel}
       >
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div className={ui.panelTop}>
           <button
             ref={closeBtnRef}
             type="button"
             onClick={onClose}
             aria-label="סגירת התצוגה המקדימה"
-            style={{ width: 44, height: 44, borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", color: tokens.text, fontSize: "1.25rem", lineHeight: 1, cursor: "pointer" }}
+            className={ui.closeBtn}
           >
             ✕
           </button>
@@ -433,25 +506,26 @@ function ProductPreview({ product, showPrice, vatLabel, onClose }: {
           onClick={() => setZoomed((z) => !z)}
           aria-pressed={zoomed}
           aria-label={zoomed ? "הקטנת התמונה" : "הגדלת התמונה"}
-          style={{ border: `1px solid ${tokens.border}`, borderRadius: 14, background: "#fff", padding: 8, cursor: "zoom-in", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 220, maxHeight: zoomed ? "70dvh" : 340, overflow: "hidden", fontSize: "3rem" }}
+          className={ui.zoomBtn}
+          style={{ maxHeight: zoomed ? "70dvh" : 340 }}
         >
           {/* zoom = request the wider 960 variant for the dialog */}
           <ProductImage pictureLink={product.picture_link} name={product.name} width={zoomed ? 960 : 480} rotation={product.rotation_override ?? 0} />
         </button>
-        <p style={{ fontFamily: tokens.assistant, fontSize: "0.78rem", color: tokens.dim, textAlign: "center", margin: 0 }}>
+        <p className={ui.hint}>
           {zoomed ? "לחיצה נוספת מקטינה חזרה" : "אפשר ללחוץ על התמונה להגדלה"}
         </p>
 
-        <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", color: tokens.text, margin: 0, lineHeight: 1.3 }}>
+        <h2 className={ui.dialogTitle}>
           {product.name}
         </h2>
         {product.category && (
-          <p style={{ fontFamily: tokens.assistant, fontSize: "0.9rem", color: tokens.body, margin: 0 }}>
+          <p className={ui.dialogCat}>
             קטגוריה: {product.category}
           </p>
         )}
         {showPrice && (
-          <p style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.35rem", color: tokens.text, margin: 0 }}>
+          <p className={ui.dialogPrice}>
             {ils(Number(product.price) || 0)}
             {vatLabel && (
               <span style={{ fontFamily: tokens.assistant, fontWeight: 400, fontSize: "0.85rem", color: tokens.dim }}>
@@ -465,14 +539,3 @@ function ProductPreview({ product, showPrice, vatLabel, onClose }: {
   );
 }
 
-const ghostBtn = {
-  fontFamily: tokens.rubik,
-  fontWeight: 700,
-  fontSize: "0.9rem",
-  color: tokens.text,
-  background: "#fff",
-  border: `1px solid ${tokens.border}`,
-  padding: "0.7rem 1.4rem",
-  borderRadius: 999,
-  cursor: "pointer",
-} as const;

@@ -13,7 +13,8 @@ import SiteFooter from "../components/SiteFooter";
 import PasswordInput from "../components/PasswordInput";
 import { supabase } from "../../lib/supabaseClient";
 import { authErrorHe } from "../../lib/authErrors";
-import { tokens, primaryBtn } from "../../lib/ui";
+import { BUSINESS_NAME } from "../../lib/config";
+import s from "../components/auth/auth.module.css";
 
 type Phase = "checking" | "ready" | "invalid" | "done";
 
@@ -94,22 +95,23 @@ export default function ResetPage() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" tabIndex={-1} style={{ minHeight: "calc(100vh - 64px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "2.5rem 1.25rem", background: tokens.surface }}>
-        <div style={{ width: "100%", maxWidth: 420, background: "#fff", borderRadius: 24, border: `1px solid ${tokens.border}`, boxShadow: "0 20px 60px rgba(26,23,48,0.08)", padding: "clamp(1.75rem, 5vw, 2.75rem)" }}>
-          <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.7rem", color: tokens.text, marginBottom: "0.6rem" }}>
+      <main id="main-content" tabIndex={-1} className={s.main} style={{ alignItems: "center" }}>
+        <div className={`${s.card} ${s.cardNarrow}`}>
+          <span className={s.brandChip}>{BUSINESS_NAME}</span>
+          <h1 className={s.title}>
             בחירת סיסמה חדשה
           </h1>
 
           {phase === "checking" && (
-            <p style={{ fontFamily: tokens.assistant, color: tokens.dim }}>בודק את הקישור…</p>
+            <p className={s.muted}>בודק את הקישור…</p>
           )}
 
           {phase === "invalid" && (
             <>
-              <p style={{ fontFamily: tokens.assistant, color: "#C0143C", lineHeight: 1.7, marginBottom: "1rem" }}>
+              <p className={s.alert} style={{ margin: "0.4rem 0 1.1rem" }}>
                 הקישור אינו תקף או שפג תוקפו. בקשו קישור חדש.
               </p>
-              <Link href="/forgot" style={{ fontFamily: tokens.rubik, fontWeight: 700, color: tokens.accent }}>
+              <Link href="/forgot" className={`${s.linkBtn} ${s.backLink}`}>
                 ← שליחת קישור חדש
               </Link>
             </>
@@ -117,28 +119,28 @@ export default function ResetPage() {
 
           {phase === "ready" && (
             <>
-              <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginBottom: "1.5rem", lineHeight: 1.6 }}>
+              <p className={s.intro}>
                 בחרו סיסמה חדשה (לפחות 6 תווים).
               </p>
-              <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
+              <form onSubmit={onSubmit} className={s.form}>
                 {/* Explicit htmlFor labels: PasswordInput also renders the
                     show/hide button, and an implicit label must not wrap it. */}
-                <div style={{ display: "grid", gap: "0.35rem" }}>
-                  <label htmlFor="reset-password" style={lbl}>סיסמה חדשה</label>
-                  <PasswordInput id="reset-password" required minLength={6} value={pw} onChange={(e) => setPw(e.target.value)} style={inp} autoComplete="new-password" />
+                <div className={s.field}>
+                  <label htmlFor="reset-password" className={s.label}>סיסמה חדשה</label>
+                  <PasswordInput id="reset-password" required minLength={6} value={pw} onChange={(e) => setPw(e.target.value)} className={s.input} autoComplete="new-password" />
                 </div>
-                <div style={{ display: "grid", gap: "0.35rem" }}>
-                  <label htmlFor="reset-password-confirm" style={lbl}>אימות סיסמה</label>
-                  <PasswordInput id="reset-password-confirm" required value={pw2} onChange={(e) => setPw2(e.target.value)} style={inp} autoComplete="new-password" />
+                <div className={s.field}>
+                  <label htmlFor="reset-password-confirm" className={s.label}>אימות סיסמה</label>
+                  <PasswordInput id="reset-password-confirm" required value={pw2} onChange={(e) => setPw2(e.target.value)} className={s.input} autoComplete="new-password" />
                 </div>
 
                 {error && (
-                  <div role="alert" style={{ fontFamily: tokens.assistant, color: "#C0143C", background: "rgba(255,46,147,0.08)", border: "1px solid rgba(255,46,147,0.25)", borderRadius: 12, padding: "0.7rem 0.9rem", fontSize: "0.92rem" }}>
+                  <div role="alert" className={s.alert}>
                     {error}
                   </div>
                 )}
 
-                <button type="submit" disabled={busy} style={primaryBtn(busy)}>
+                <button type="submit" disabled={busy} className={s.primary}>
                   {busy ? "שומר…" : "שמירת הסיסמה"}
                 </button>
               </form>
@@ -147,12 +149,14 @@ export default function ResetPage() {
 
           {phase === "done" && (
             <>
-              <p style={{ fontFamily: tokens.assistant, color: "#1A7A4D", lineHeight: 1.7, marginBottom: "1.2rem" }}>
-                ✓ הסיסמה עודכנה בהצלחה.
-              </p>
-              <button onClick={() => router.replace("/catalog")} style={primaryBtn(false)}>
-                לקטלוג ←
-              </button>
+              <div className={s.statusPanel}>
+                <p className={`${s.statusTitle} ${s.statusOk}`}>
+                  ✓ הסיסמה עודכנה בהצלחה.
+                </p>
+                <button onClick={() => router.replace("/catalog")} className={s.primary}>
+                  לקטלוג ←
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -162,8 +166,3 @@ export default function ResetPage() {
   );
 }
 
-const lbl: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 600, fontSize: "0.85rem", color: tokens.text };
-const inp: React.CSSProperties = {
-  fontFamily: tokens.assistant, fontSize: "1rem", padding: "0.75rem 0.9rem", borderRadius: 12,
-  border: `1px solid ${tokens.border}`, background: tokens.surface, color: tokens.text, outlineColor: tokens.accent,
-};

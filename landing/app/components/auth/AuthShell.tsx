@@ -18,8 +18,10 @@ import LoginForm from "./LoginForm";
 import RegisterForm from "./RegisterForm";
 import ForgotForm from "./ForgotForm";
 import ExpressForm from "./ExpressForm";
-import { tokens } from "../../../lib/ui";
 import { featureFlags } from "../../../lib/featureFlags";
+import { getMinOrderTotal } from "../../../lib/siteSettings";
+import { BUSINESS_NAME, BUSINESS_TAGLINE, MIN_ORDER_FALLBACK, PHONE_DISPLAY, PHONE_TEL } from "../../../lib/config";
+import s from "./auth.module.css";
 
 export type AuthTab = "login" | "express" | "register" | "forgot";
 
@@ -37,6 +39,12 @@ const TABS: { id: AuthTab; label: string; title: string }[] = [
 
 export default function AuthShell({ initial = "login" }: { initial?: AuthTab }) {
   const [tab, setTab] = useState<AuthTab>(initial);
+  // Brand panel fact: the real minimum from site_settings (shared, memoized
+  // read — the header already asks for it), never a hard-coded number.
+  const [minOrder, setMinOrder] = useState(MIN_ORDER_FALLBACK);
+  useEffect(() => {
+    getMinOrderTotal().then(setMinOrder);
+  }, []);
 
   // ?tab=register on the single link, so one URL can still open on any tab.
   useEffect(() => {
@@ -66,99 +74,82 @@ export default function AuthShell({ initial = "login" }: { initial?: AuthTab }) 
   return (
     <>
       <SiteHeader />
-      <main
-        id="main-content" tabIndex={-1}
-        style={{
-          minHeight: "calc(100vh - 64px)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "2.5rem 1.25rem",
-          background: tokens.surface,
-        }}
-      >
-        <div
-          style={{
-            width: "100%",
-            maxWidth: 460,
-            background: "#fff",
-            borderRadius: 24,
-            border: `1px solid ${tokens.border}`,
-            boxShadow: "0 20px 60px rgba(26,23,48,0.08)",
-            padding: "clamp(1.5rem, 5vw, 2.5rem)",
-          }}
-        >
-          <div
-            role="tablist"
-            aria-label="כניסה לחשבון"
-            style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,
-              gap: "0.3rem",
-              background: tokens.surface,
-              border: `1px solid ${tokens.border}`,
-              borderRadius: 999,
-              padding: "0.3rem",
-              marginBottom: "1.5rem",
-            }}
-          >
-            {TABS.map((t) => {
-              const on = t.id === tab;
-              return (
-                <button
-                  key={t.id}
-                  role="tab"
-                  id={`auth-tab-${t.id}`}
-                  aria-selected={on}
-                  aria-controls="auth-panel"
-                  tabIndex={on ? 0 : -1}
-                  onClick={() => onSwitch(t.id)}
-                  onKeyDown={(e) => {
-                    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-                    e.preventDefault();
-                    // RTL: ArrowLeft moves forward through the tabs.
-                    const step = e.key === "ArrowLeft" ? 1 : -1;
-                    const i = TABS.findIndex((x) => x.id === tab);
-                    const next = TABS[(i + step + TABS.length) % TABS.length];
-                    onSwitch(next.id);
-                    document.getElementById(`auth-tab-${next.id}`)?.focus();
-                  }}
-                  style={{
-                    fontFamily: tokens.rubik,
-                    fontWeight: 700,
-                    fontSize: TABS.length > 3 ? "0.8rem" : "0.85rem",
-                    lineHeight: 1.2,
-                    padding: "0.6rem 0.3rem",
-                    borderRadius: 999,
-                    border: "none",
-                    cursor: "pointer",
-                    background: on ? tokens.rainbow : "transparent",
-                    color: on ? "#fff" : tokens.body,
-                  }}
-                >
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
+      <main id="main-content" tabIndex={-1} className={s.main}>
+        <div className={s.layout}>
+          {/* Brand panel: the wordmark and three verified facts only. A compact
+              strip on phones, a full side panel from 900px. */}
+          <aside className={s.panel} aria-label={BUSINESS_NAME}>
+            <div className={s.panelInner}>
+              <p className={s.wordmark}>{BUSINESS_NAME}</p>
+              <p className={s.tagline}>{BUSINESS_TAGLINE}</p>
+              <ul className={s.facts}>
+                <li className={s.fact}>
+                  <span className={s.factDot} aria-hidden="true" />
+                  <span>
+                    מינימום הזמנה <span className={s.num}>₪{minOrder.toLocaleString("he-IL")}</span>
+                  </span>
+                </li>
+                <li className={s.fact}>
+                  <span className={s.factDot} aria-hidden="true" />
+                  <span>המחירים כוללים מע״מ</span>
+                </li>
+                <li className={s.fact}>
+                  <span className={s.factDot} aria-hidden="true" />
+                  <span>
+                    טלפון{" "}
+                    <a href={`tel:${PHONE_TEL}`} dir="ltr" className={s.panelLink}>
+                      {PHONE_DISPLAY}
+                    </a>
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </aside>
 
-          <div id="auth-panel" role="tabpanel" aria-labelledby={`auth-tab-${tab}`}>
-            <h1
-              style={{
-                fontFamily: tokens.rubik,
-                fontWeight: 800,
-                fontSize: "1.75rem",
-                color: tokens.text,
-                marginBottom: "0.5rem",
-              }}
+          <div className={s.card}>
+            <div
+              role="tablist"
+              aria-label="כניסה לחשבון"
+              className={`${s.tabs}${TABS.length > 3 ? ` ${s.tabsDense}` : ""}`}
+              style={{ gridTemplateColumns: `repeat(${TABS.length}, 1fr)` }}
             >
-              {active.title}
-            </h1>
+              {TABS.map((t) => {
+                const on = t.id === tab;
+                return (
+                  <button
+                    key={t.id}
+                    role="tab"
+                    id={`auth-tab-${t.id}`}
+                    aria-selected={on}
+                    aria-controls="auth-panel"
+                    tabIndex={on ? 0 : -1}
+                    onClick={() => onSwitch(t.id)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                      e.preventDefault();
+                      // RTL: ArrowLeft moves forward through the tabs.
+                      const step = e.key === "ArrowLeft" ? 1 : -1;
+                      const i = TABS.findIndex((x) => x.id === tab);
+                      const next = TABS[(i + step + TABS.length) % TABS.length];
+                      onSwitch(next.id);
+                      document.getElementById(`auth-tab-${next.id}`)?.focus();
+                    }}
+                    className={s.tab}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
 
-            {tab === "login" && <LoginForm onSwitch={onSwitch} />}
-            {tab === "express" && <ExpressForm onSwitch={onSwitch} />}
-            {tab === "register" && <RegisterForm onSwitch={onSwitch} />}
-            {tab === "forgot" && <ForgotForm onSwitch={onSwitch} />}
+            <div id="auth-panel" role="tabpanel" aria-labelledby={`auth-tab-${tab}`}>
+              <h1 className={s.title}>{active.title}</h1>
+
+              {tab === "login" && <LoginForm onSwitch={onSwitch} />}
+              {tab === "express" && <ExpressForm onSwitch={onSwitch} />}
+              {tab === "register" && <RegisterForm onSwitch={onSwitch} />}
+              {tab === "forgot" && <ForgotForm onSwitch={onSwitch} />}
+            </div>
           </div>
         </div>
       </main>

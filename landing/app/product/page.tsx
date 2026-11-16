@@ -15,6 +15,7 @@ import { buildPriceMap, resolvePrice, hasSpecialPrice, type PriceMap, type Price
 import { featureFlags } from "../../lib/featureFlags";
 import { resolveQuantity, stepOf } from "../../lib/quantity";
 import { readCart } from "../../lib/cart";
+import ui from "./page.module.css";
 
 const ffQty = featureFlags.ff_display_quantities;
 const CART_KEY = "kt_cart_v2";
@@ -144,18 +145,20 @@ function ProductDetail() {
 
   if (loading || busy) {
     return (
-      <main id="main-content" tabIndex={-1} style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: tokens.assistant, color: tokens.dim }}>
-        טוען…
+      <main id="main-content" tabIndex={-1} className={ui.loading}>
+        <span className="kt-spinner" aria-hidden="true" /> טוען…
       </main>
     );
   }
 
   if (notFound || !product) {
     return (
-      <main id="main-content" tabIndex={-1} style={{ maxWidth: 640, margin: "0 auto", padding: "5rem 1.25rem", textAlign: "center" }}>
-        <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🧸</div>
-        <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.6rem", color: tokens.text, marginBottom: "1rem" }}>המוצר לא נמצא</h1>
-        <Link href="/catalog" style={{ fontFamily: tokens.rubik, fontWeight: 700, color: "#fff", background: tokens.rainbow, padding: "0.7rem 1.6rem", borderRadius: 999, textDecoration: "none" }}>← חזרה לקטלוג</Link>
+      <main id="main-content" tabIndex={-1} className={ui.main}>
+        <div className={ui.notFound}>
+          <div className={ui.notFoundIcon} aria-hidden="true">🧸</div>
+          <h1 className={ui.notFoundTitle}>המוצר לא נמצא</h1>
+          <Link href="/catalog" className={ui.primaryLink}>← חזרה לקטלוג</Link>
+        </div>
       </main>
     );
   }
@@ -173,74 +176,76 @@ function ProductDetail() {
   const lineTotal = unitPrice * effectiveQty;
 
   return (
-    <main id="main-content" tabIndex={-1} style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1.25rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 4rem" }}>
-      <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "1.2rem" }}>
-        <Link href="/catalog" style={{ color: tokens.accent, textDecoration: "none" }}>הקטלוג</Link>
-        {p.category ? <> · {p.category}</> : null}
-      </div>
+    <main id="main-content" tabIndex={-1} className={ui.main}>
+      <nav aria-label="נתיב" className={ui.crumbs}>
+        <Link href="/catalog" className={ui.crumbLink}>הקטלוג</Link>
+        {p.category ? <><span aria-hidden="true">›</span> <span>{p.category}</span></> : null}
+      </nav>
 
-      <div style={{ display: "grid", gap: "clamp(1.5rem,4vw,3rem)", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", alignItems: "start" }}>
+      <div className={ui.layout}>
         {/* image */}
         {/* Fixed 1:1 box reserves the space before the async image loads, so
             the details below don't jump when it arrives (matches the grid
             cards' aspect-ratio approach — no CLS). */}
-        <div style={{ background: "#fff", border: `1px solid ${tokens.border}`, borderRadius: 20, padding: "1.5rem", display: "flex", alignItems: "center", justifyContent: "center", aspectRatio: "1 / 1", maxHeight: 480, boxShadow: tokens.shadowCard }}>
+        <div className={ui.imageFrame}>
           <ProductImage pictureLink={p.picture_link} name={p.name} width={900} rotation={p.rotation_override ?? 0}
             imgStyle={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto" }}
             placeholderStyle={{ fontSize: "4rem" }} />
         </div>
 
         {/* details */}
-        <div>
-          <h1 style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "clamp(1.4rem,3vw,2rem)", color: tokens.text, lineHeight: 1.2 }}>{p.name}</h1>
-          <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginTop: "0.6rem", display: "flex", gap: "1.2rem", flexWrap: "wrap" }}>
-            <span>קוד: <span dir="ltr">{p.sku || "—"}</span></span>
-            {p.barcode ? <span>ברקוד: <span dir="ltr">{p.barcode}</span></span> : null}
+        <div className={ui.details}>
+          {p.category ? <span className={ui.catPill}>{p.category}</span> : null}
+          <h1 className={ui.title}>{p.name}</h1>
+          <div className={ui.codes}>
+            <span className={ui.code}>קוד: <span dir="ltr">{p.sku || "—"}</span></span>
+            {p.barcode ? <span className={ui.code}>ברקוד: <span dir="ltr">{p.barcode}</span></span> : null}
           </div>
 
           {/* price */}
-          <div style={{ marginTop: "1.4rem", display: "flex", alignItems: "baseline", gap: "0.6rem", flexWrap: "wrap" }}>
-            {/* A price set for this customer is already their price — no
-                discount badge on top of it (the discount is not applied). */}
-            {special ? (
-              <>
-                <span style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "2rem", color: "#1A7A4D" }}>{ils(unitPrice)}</span>
-                <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", color: "#fff", background: "#1A7A4D", padding: "0.2rem 0.7rem", borderRadius: 999 }}>מחיר מיוחד</span>
-              </>
-            ) : discount > 0 ? (
-              <>
-                <span style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "2rem", color: "#1A7A4D" }}>{ils(unitPrice)}</span>
-                <s style={{ fontFamily: tokens.assistant, fontSize: "1rem", color: tokens.dim }}>{ils(listPrice)}</s>
-                <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.8rem", color: "#fff", background: "#25C77E", padding: "0.2rem 0.7rem", borderRadius: 999 }}>‎-{discount}%</span>
-              </>
-            ) : (
-              <span style={{ fontFamily: tokens.rubik, fontWeight: 900, fontSize: "2rem", color: tokens.text }}>{ils(unitPrice)}</span>
-            )}
-            <span style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim }}>ליחידה{vatLabel ? " · כולל מע״מ" : ""}</span>
+          <div className={ui.pricePanel}>
+            <div className={ui.priceRow}>
+              {/* A price set for this customer is already their price — no
+                  discount badge on top of it (the discount is not applied). */}
+              {special ? (
+                <>
+                  <span className={ui.price} style={{ color: "#1A7A4D" }}>{ils(unitPrice)}</span>
+                  <span className={ui.badge} style={{ color: "#fff", background: "#1A7A4D" }}>מחיר מיוחד</span>
+                </>
+              ) : discount > 0 ? (
+                <>
+                  <span className={ui.price} style={{ color: "#1A7A4D" }}>{ils(unitPrice)}</span>
+                  <s style={{ fontFamily: tokens.assistant, fontSize: "1rem", color: tokens.dim }}>{ils(listPrice)}</s>
+                  <span className={ui.badge} style={{ color: "#1A7A4D", background: "var(--kp-mint, #D8F5EB)" }}>‎-{discount}%</span>
+                </>
+              ) : (
+                <span className={ui.price} style={{ color: tokens.text }}>{ils(unitPrice)}</span>
+              )}
+              <span className={ui.perUnit}>ליחידה{vatLabel ? " · כולל מע״מ" : ""}</span>
+            </div>
           </div>
 
           {/* quantity + add */}
-          <div style={{ marginTop: "1.6rem", display: "flex", alignItems: "center", gap: "0.8rem", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-              <button aria-label="פחות" onClick={() => setQty((n) => Math.max(step, n - step))}
-                style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${tokens.accent}`, background: "#fff", color: tokens.accent, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", cursor: "pointer" }}>−</button>
+          <div className={ui.buyRow}>
+            <div className={ui.stepper}>
+              <button type="button" aria-label="פחות" onClick={() => setQty((n) => Math.max(step, n - step))} className={ui.stepBtn}>−</button>
               <input value={qty} aria-label="כמות" onChange={(e) => { const n = parseInt(e.target.value.replace(/\D/g, ""), 10); setQty(Number.isFinite(n) && n > 0 ? n : step); }} inputMode="numeric"
-                style={{ width: 72, textAlign: "center", fontFamily: tokens.rubik, fontWeight: 700, fontSize: "1rem", border: `1px solid ${tokens.border}`, borderRadius: 10, padding: "0.5rem 0" }} />
-              <button aria-label="עוד" onClick={() => setQty((n) => n + step)}
-                style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${tokens.accent}`, background: "#fff", color: tokens.accent, fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.2rem", cursor: "pointer" }}>+</button>
+                className={ui.qty} />
+              <button type="button" aria-label="עוד" onClick={() => setQty((n) => n + step)} className={ui.stepBtn}>+</button>
             </div>
             <button
+              type="button"
               onClick={() => { const total = addToCart(p, qty, discount, priceMap); setAdded(total); }}
-              style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: "#fff", background: tokens.rainbow, border: "none", padding: "0.85rem 2rem", borderRadius: 999, cursor: "pointer" }}
+              className={ui.addBtn}
             >
-              🛒 הוספה לעגלה · {ils(lineTotal)}
+              🛒 הוספה לעגלה · <span className={ui.lineTotal}>{ils(lineTotal)}</span>
             </button>
           </div>
 
           {added > 0 && (
-            <div role="status" style={{ marginTop: "1rem", fontFamily: tokens.assistant, fontSize: "0.92rem", color: "#1A7A4D", background: "rgba(37,199,126,0.12)", border: "1px solid rgba(37,199,126,0.4)", borderRadius: 12, padding: "0.7rem 1rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+            <div role="status" className={ui.added}>
               <span>✓ נוסף לעגלה ({added.toLocaleString("he-IL")} בעגלה)</span>
-              <Link href="/catalog" style={{ fontFamily: tokens.rubik, fontWeight: 700, color: "#fff", background: "#1A7A4D", padding: "0.45rem 1.1rem", borderRadius: 999, textDecoration: "none", whiteSpace: "nowrap" }}>למעבר לעגלה ולסיום הזמנה ←</Link>
+              <Link href="/catalog" className={ui.addedLink}>למעבר לעגלה ולסיום הזמנה ←</Link>
             </div>
           )}
         </div>
@@ -248,20 +253,20 @@ function ProductDetail() {
 
       {/* related */}
       {related.length > 0 && (
-        <section style={{ marginTop: "3.5rem" }}>
-          <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.3rem", color: tokens.text, marginBottom: "1.2rem" }}>מוצרים דומים</h2>
-          <div data-density={density} style={{ display: "grid", gridTemplateColumns: gridColumns(density), gap: "1rem" }}>
+        <section className={ui.related} aria-labelledby="kt-related-title">
+          <h2 id="kt-related-title" className={ui.relatedTitle}>מוצרים דומים</h2>
+          <div data-density={density} className={ui.relGrid} style={{ gridTemplateColumns: gridColumns(density) }}>
             {related.map((r) => {
               const rPrice = resolvePrice(r.id, r.price, priceMap, discount);
               return (
-                <Link key={r.id} href={`/product/?id=${r.id}`} className="kt-card" style={{ textDecoration: "none", border: `1px solid ${tokens.border}`, borderRadius: tokens.radiusCard, padding: "0.8rem", background: "#fff", boxShadow: tokens.shadowCard, display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                <Link key={r.id} href={`/product/?id=${r.id}`} className={`kt-card ${ui.relCard}`} style={{ boxShadow: tokens.shadowCard }}>
                   {/* Same uniform frame as the catalog cards: square, contain,
-                      inner padding, white background. */}
-                  <div style={{ aspectRatio: "1 / 1", borderRadius: 12, border: `1px solid ${tokens.border}`, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 8 }}>
+                      inner padding, soft pastel backdrop. */}
+                  <div className={ui.relFrame}>
                     <ProductImage pictureLink={r.picture_link} name={r.name} rotation={r.rotation_override ?? 0} placeholderStyle={{ fontSize: "2.6rem" }} />
                   </div>
-                  <div style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.85rem", color: tokens.text, lineHeight: 1.25, minHeight: "2.2em" }}>{r.name}</div>
-                  <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1rem", color: discount > 0 ? "#1A7A4D" : tokens.text }}>{ils(rPrice)}</div>
+                  <div className={ui.relName}>{r.name}</div>
+                  <div className={ui.relPrice} style={{ color: discount > 0 ? "#1A7A4D" : tokens.text }}>{ils(rPrice)}</div>
                 </Link>
               );
             })}

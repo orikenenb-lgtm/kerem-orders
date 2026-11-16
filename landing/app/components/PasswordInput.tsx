@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { tokens } from "../../lib/ui";
+import s from "./PasswordInput.module.css";
 
 // Password input with a show/hide toggle, shared by login / register / reset.
 //
@@ -16,7 +16,7 @@ export default function PasswordInput({
 }: React.InputHTMLAttributes<HTMLInputElement>) {
   const [show, setShow] = useState(false);
   return (
-    <span style={{ position: "relative", display: "block" }}>
+    <span className={s.wrap}>
       <input
         {...props}
         type={show ? "text" : "password"}
@@ -33,22 +33,7 @@ export default function PasswordInput({
         aria-pressed={show}
         aria-label={show ? "הסתרת הסיסמה" : "הצגת הסיסמה"}
         title={show ? "הסתרת הסיסמה" : "הצגת הסיסמה"}
-        style={{
-          position: "absolute",
-          insetInlineEnd: 6,
-          top: "50%",
-          transform: "translateY(-50%)",
-          minWidth: 40,
-          height: "calc(100% - 12px)",
-          border: "none",
-          background: "transparent",
-          color: tokens.body,
-          fontFamily: tokens.assistant,
-          fontWeight: 600,
-          fontSize: "0.8rem",
-          cursor: "pointer",
-          padding: "0 0.4rem",
-        }}
+        className={s.toggle}
       >
         {show ? "הסתרה" : "הצגה"}
       </button>

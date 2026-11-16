@@ -1,0 +1,31 @@
+/* Container styling for the Cloudflare Turnstile widget. Presentation only —
+ * the widget logic lives in Turnstile.tsx / lib/turnstile.ts. The widget's
+ * iframe is 300px wide; the auth card keeps at least that much inner width
+ * at 360px, and the box centres it (no horizontal padding, never clipped —
+ * a clipped checkbox would block registration). */
+
+.wrap {
+  display: grid;
+  gap: 0.45rem;
+  justify-items: center;
+  justify-items: safe center;
+  padding: 0.6rem 0 0.55rem;
+  border-radius: var(--kp-radius-md, 18px);
+  background: var(--kt-surface, #F4F0FF);
+  border: 1px dashed rgba(109, 40, 217, 0.22);
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.widget {
+  max-width: 100%;
+}
+
+.status {
+  font-family: var(--font-assistant), system-ui, sans-serif;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  text-align: center;
+  margin: 0;
+  padding-inline: 0.75rem;
+}

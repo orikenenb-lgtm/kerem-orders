@@ -12,7 +12,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import { useAuth } from "../../../lib/auth";
 import { featureFlags } from "../../../lib/featureFlags";
 import { isPhoneLoginEmail } from "../../../lib/phoneLogin";
-import { tokens, primaryBtn, linkBtn } from "../../../lib/ui";
+import s from "./auth.module.css";
 import type { AuthTab } from "./AuthShell";
 import { isTurnstileConfigured, canSubmitSignup } from "../../../lib/turnstile";
 
@@ -406,9 +406,9 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
   };
 
   const phoneHint = (
-    // tokens.body, not dim: axe measured dim at 3.45:1 on white for this
-    // 12.8px text — below the 4.5:1 minimum.
-    <p style={{ fontFamily: tokens.assistant, fontSize: "0.8rem", color: tokens.body, marginTop: "-0.4rem" }}>
+    // Body colour, not dim: axe measured dim at 3.45:1 on white for this
+    // small text — below the 4.5:1 minimum (see .hint).
+    <p className={s.hint}>
       💡 כבר לקוחות של כרם טויס? הזינו את הטלפון המעודכן אצלנו — והמערכת תזהה אתכם אוטומטית.
     </p>
   );
@@ -416,28 +416,22 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
   return (
     <>
           {submittedEmail ? (
-            <div ref={successRef} tabIndex={-1} role="status" aria-live="polite" style={{ display: "grid", gap: "1rem", fontFamily: tokens.assistant, color: tokens.body, outline: "none" }}>
-              <p style={{ fontSize: "1.05rem", lineHeight: 1.6 }}>
+            <div ref={successRef} tabIndex={-1} role="status" aria-live="polite" className={s.statusPanel}>
+              <p className={s.body} style={{ fontSize: "1.05rem" }}>
                 החשבון נפתח עבור{" "}
-                <span dir="ltr" style={{ fontWeight: 700, color: tokens.text }}>{submittedEmail}</span>
+                <span dir="ltr" className={s.strong}>{submittedEmail}</span>
                 {" "}— אפשר להתחבר עכשיו.
               </p>
-              <p style={{ fontSize: "0.95rem", color: tokens.body }}>
+              <p className={s.body} style={{ fontSize: "0.95rem" }}>
                 שמרו את כתובת המייל והסיסמה — איתן מתחברים בכל פעם.
               </p>
-              <button type="button" onClick={() => onSwitch("login")} style={primaryBtn(false)}>
+              <button type="button" onClick={() => onSwitch("login")} className={s.primary}>
                 מעבר להתחברות
               </button>
             </div>
           ) : (
           <>
-          <p
-            style={{
-              fontFamily: tokens.assistant,
-              color: tokens.body,
-              marginBottom: "1.6rem",
-            }}
-          >
+          <p className={s.intro}>
             {/* This used to promise a verification link. None is ever sent:
                 the signup function creates the account with email_confirm true
                 precisely so a new customer can log in on the spot, and SMTP has
@@ -451,16 +445,16 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
           </p>
           {featureFlags.ff_rivhit_express && (
             // Existing Rivhit customers have a shorter way in (ExpressForm).
-            <p style={{ fontFamily: tokens.assistant, color: tokens.text, background: "rgba(37,199,126,0.08)", border: "1px solid rgba(37,199,126,0.3)", borderRadius: 12, padding: "0.7rem 0.9rem", marginTop: "-0.6rem", marginBottom: "1.2rem", fontSize: "0.92rem", lineHeight: 1.5 }}>
+            <p className={s.notice}>
               כבר קונים אצלנו?{" "}
-              <button type="button" onClick={() => onSwitch("express")} style={linkBtn}>
+              <button type="button" onClick={() => onSwitch("express")} className={s.linkBtn}>
                 כניסה מהירה עם ח״פ או טלפון
               </button>
               {" "}— בלי למלא את כל הטופס.
             </p>
           )}
 
-          <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.9rem" }}>
+          <form onSubmit={onSubmit} className={s.form}>
             {ADDR ? (
               <>
                 <Field label="שם העסק / החנות" mark="req" value={form.business_name} onChange={set("business_name")} autoComplete="organization" required />
@@ -540,18 +534,7 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
             )}
 
             {error && (
-              <div
-                role="alert"
-                style={{
-                  fontFamily: tokens.assistant,
-                  color: "#C0143C",
-                  background: "rgba(255,46,147,0.08)",
-                  border: "1px solid rgba(255,46,147,0.25)",
-                  borderRadius: 12,
-                  padding: "0.7rem 0.9rem",
-                  fontSize: "0.92rem",
-                }}
-              >
+              <div role="alert" className={s.alert}>
                 {error}
               </div>
             )}
@@ -561,18 +544,22 @@ export default function RegisterForm({ onSwitch }: { onSwitch: (t: AuthTab) => v
                 site key is not configured. */}
             <Turnstile key={turnstileResetKey} onToken={setTurnstileToken} action="signup" />
 
+            {/* Looks disabled exactly when it is (:disabled) — the old inline
+                style keyed off busy || !token, which is the same condition
+                whenever the captcha is configured (and the button is disabled
+                either way when it is not). */}
             <button
               type="submit"
               disabled={!submitAllowed}
-              style={primaryBtn(busy || !turnstileToken)}
+              className={s.primary}
             >
               {busy ? (ADDR ? "שולח..." : "רגע…") : "פתחו חשבון"}
             </button>
           </form>
 
-          <p style={{ fontFamily: tokens.assistant, color: tokens.body, marginTop: "1.3rem", textAlign: "center" }}>
+          <p className={s.center}>
             כבר יש לכם חשבון?{" "}
-            <button type="button" onClick={() => onSwitch("login")} style={linkBtn}>
+            <button type="button" onClick={() => onSwitch("login")} className={s.linkBtn}>
               להתחברות
             </button>
           </p>
@@ -589,15 +576,15 @@ function LabelMark({ mark }: { mark?: "req" | "opt" }) {
     return (
       <>
         {" "}
-        <span aria-hidden="true" style={{ color: "#C0143C" }}>
+        <span aria-hidden="true" className={s.markReq}>
           *
         </span>{" "}
-        <span style={{ fontWeight: 400, fontSize: "0.75rem", color: tokens.dim }}>חובה</span>
+        <span className={s.markText}>חובה</span>
       </>
     );
   }
   if (mark === "opt") {
-    return <span style={{ fontWeight: 400, fontSize: "0.75rem", color: tokens.dim }}> (לא חובה)</span>;
+    return <span className={s.markText}> (לא חובה)</span>;
   }
   return null;
 }
@@ -619,27 +606,18 @@ function Field({
   error?: string;
 } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
-    <label style={{ display: "grid", gap: "0.35rem" }}>
-      <span style={{ fontFamily: tokens.rubik, fontWeight: 600, fontSize: "0.85rem", color: tokens.text }}>
+    <label className={s.field}>
+      <span className={s.label}>
         {label}
         <LabelMark mark={mark} />
       </span>
       <input
         {...props}
         aria-invalid={error ? true : undefined}
-        style={{
-          fontFamily: tokens.assistant,
-          fontSize: "1rem",
-          padding: "0.75rem 0.9rem",
-          borderRadius: 12,
-          border: `1px solid ${tokens.border}`,
-          background: tokens.surface,
-          color: tokens.text,
-          outlineColor: tokens.accent,
-        }}
+        className={s.input}
       />
       {error && (
-        <span style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C" }}>
+        <span className={s.fieldError}>
           {error}
         </span>
       )}
@@ -662,8 +640,8 @@ function PasswordField({
   // and an implicit label must not wrap that second control.
   const id = useId();
   return (
-    <div style={{ display: "grid", gap: "0.35rem" }}>
-      <label htmlFor={id} style={{ fontFamily: tokens.rubik, fontWeight: 600, fontSize: "0.85rem", color: tokens.text }}>
+    <div className={s.field}>
+      <label htmlFor={id} className={s.label}>
         {label}
         <LabelMark mark={mark} />
       </label>
@@ -671,19 +649,10 @@ function PasswordField({
         {...props}
         id={id}
         aria-invalid={error ? true : undefined}
-        style={{
-          fontFamily: tokens.assistant,
-          fontSize: "1rem",
-          padding: "0.75rem 0.9rem",
-          borderRadius: 12,
-          border: `1px solid ${tokens.border}`,
-          background: tokens.surface,
-          color: tokens.text,
-          outlineColor: tokens.accent,
-        }}
+        className={s.input}
       />
       {error && (
-        <span role="alert" style={{ fontFamily: tokens.assistant, fontSize: "0.82rem", color: "#C0143C" }}>
+        <span role="alert" className={s.fieldError}>
           {error}
         </span>
       )}
@@ -701,25 +670,15 @@ function AreaField({
   mark?: "req" | "opt";
 } & React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
-    <label style={{ display: "grid", gap: "0.35rem" }}>
-      <span style={{ fontFamily: tokens.rubik, fontWeight: 600, fontSize: "0.85rem", color: tokens.text }}>
+    <label className={s.field}>
+      <span className={s.label}>
         {label}
         <LabelMark mark={mark} />
       </span>
       <textarea
         {...props}
         rows={3}
-        style={{
-          fontFamily: tokens.assistant,
-          fontSize: "1rem",
-          padding: "0.75rem 0.9rem",
-          borderRadius: 12,
-          border: `1px solid ${tokens.border}`,
-          background: tokens.surface,
-          color: tokens.text,
-          outlineColor: tokens.accent,
-          resize: "vertical",
-        }}
+        className={s.input}
       />
     </label>
   );

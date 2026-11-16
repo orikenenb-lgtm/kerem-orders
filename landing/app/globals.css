@@ -133,3 +133,35 @@ body {
 [data-density="4"] .kt-card h3 {
   font-size: 0.82rem !important;
 }
+
+/* ---------------------------------------------------------------------------
+ * 2026-11 premium redesign — shared motion utilities (components/premium/
+ * Reveal.tsx adds .kp-in when an element scrolls into view). Content is
+ * VISIBLE by default: the hidden start state applies only once the page has
+ * proven JS + IntersectionObserver work (html.kp-js, set by Reveal), so a
+ * script failure can never leave anything transparent. Only opacity and
+ * transform animate. Reduced motion: no movement at all.
+ * ------------------------------------------------------------------------- */
+html.kp-js .kp-reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 420ms var(--kp-ease, ease), transform 420ms var(--kp-ease, ease);
+}
+html.kp-js .kp-reveal.kp-in {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.kp-js .kp-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* Premium shell: keyboard focus (and in-page anchors) never land under the
+   sticky header — the browser keeps this much room above a scrolled-to
+   element. --kt-header-h is published by SiteHeader. */
+html.kt-premium {
+  scroll-padding-top: calc(var(--kt-header-h, 96px) + 12px);
+}

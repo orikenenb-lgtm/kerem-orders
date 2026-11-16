@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import SiteHeader from "../../components/SiteHeader";
 import SiteFooter from "../../components/SiteFooter";
 import ProductImage from "../../components/ProductImage";
-import { tokens } from "../../../lib/ui";
+import ui from "../p.module.css";
 import { rivhitImg } from "../../../lib/images";
 import { categoryAnchor, getPublicCatalog, PLACEHOLDER_ID } from "../../../lib/publicProducts";
 
@@ -70,62 +70,60 @@ export default async function PublicProductPage({ params }: { params: Promise<{ 
     ],
   };
 
-  const btn: React.CSSProperties = { fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.95rem", minHeight: 48, padding: "0.75rem 1.4rem", borderRadius: 999, textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center" };
-
   return (
     <>
       <SiteHeader />
-      <main id="main-content" tabIndex={-1} style={{ maxWidth: 1100, margin: "0 auto", padding: "clamp(1rem,4vw,2.5rem) clamp(1rem,4vw,2.5rem) 4rem" }}>
-        <nav aria-label="נתיב" style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.dim, marginBottom: "1rem", lineHeight: 1.6 }}>
-          <Link href="/" style={{ color: tokens.accent, textDecoration: "none" }}>כרם טויס</Link>
+      <main id="main-content" tabIndex={-1} className={ui.main}>
+        <nav aria-label="נתיב" className={ui.crumbs}>
+          <Link href="/" className={ui.crumbLink}>כרם טויס</Link>
           {" › "}
-          <Link href={anchor ? `/p/#${anchor}` : "/p/"} style={{ color: tokens.accent, textDecoration: "none" }}>{product.category}</Link>
+          <Link href={anchor ? `/p/#${anchor}` : "/p/"} className={ui.crumbLink}>{product.category}</Link>
           {" › "}
           <span aria-current="page">{product.name}</span>
         </nav>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: "clamp(1rem,3vw,2.5rem)", alignItems: "start" }}>
-          <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 16, background: "#fff", border: `1px solid ${tokens.border}`, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 12 }}>
+        <div className={ui.layout}>
+          <div className={ui.imageFrame}>
             <ProductImage pictureLink={product.picture_link} name={product.name} width={900} rotation={product.rotation_override ?? 0} />
           </div>
 
           <div>
-            <h1 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "clamp(1.4rem,3.5vw,2.1rem)", color: tokens.text, lineHeight: 1.25, margin: 0, overflowWrap: "anywhere" }}>{product.name}</h1>
-            <p style={{ fontFamily: tokens.assistant, fontSize: "0.95rem", color: tokens.body, margin: "0.6rem 0 0" }}>
-              קטגוריה: <Link href={anchor ? `/p/#${anchor}` : "/p/"} style={{ color: tokens.accent }}>{product.category}</Link>
+            <h1 className={ui.title}>{product.name}</h1>
+            <p className={ui.catLine}>
+              קטגוריה: <Link href={anchor ? `/p/#${anchor}` : "/p/"} className={ui.catLink}>{product.category}</Link>
             </p>
-            <p style={{ fontFamily: tokens.assistant, fontSize: "1rem", color: tokens.body, lineHeight: 1.6, margin: "1rem 0 0" }}>
+            <p className={ui.lead}>
               מוצר מקטלוג הסיטונאות של כרם טויס — יבוא ושיווק צעצועים לחנויות, לרשתות ולעסקים, עם משלוח לכל הארץ.
             </p>
 
-            <section aria-label="מחירים והזמנה" style={{ marginTop: "1.3rem", border: `1px solid ${tokens.border}`, borderRadius: 16, background: tokens.surface, padding: "1rem 1.1rem" }}>
-              <p style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "1.05rem", color: tokens.text, margin: 0 }}>המחירים מוצגים ללקוחות עסקיים רשומים</p>
-              <p style={{ fontFamily: tokens.assistant, fontSize: "0.92rem", color: tokens.body, margin: "0.35rem 0 0", lineHeight: 1.55 }}>
+            <section aria-label="מחירים והזמנה" className={ui.ctaBox}>
+              <p className={ui.ctaTitle}>המחירים מוצגים ללקוחות עסקיים רשומים</p>
+              <p className={ui.ctaText}>
                 פותחים חשבון סיטונאי בחינם, ורואים את המחירים ומזמינים אונליין מכל הקטלוג.
               </p>
-              <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", marginTop: "0.9rem" }}>
-                <Link href="/register" style={{ ...btn, background: tokens.accent, color: "#fff" }}>פתיחת חשבון סיטונאי</Link>
-                <Link href="/login" style={{ ...btn, background: "#fff", color: tokens.accent, border: `1.5px solid ${tokens.accent}` }}>התחברות ללקוחות</Link>
+              <div className={ui.ctaRow}>
+                <Link href="/register" className={ui.btnPrimary}>פתיחת חשבון סיטונאי</Link>
+                <Link href="/login" className={ui.btnGhost}>התחברות ללקוחות</Link>
               </div>
             </section>
 
-            <p style={{ fontFamily: tokens.assistant, fontSize: "0.92rem", margin: "1rem 0 0" }}>
-              <Link href="/view" style={{ color: tokens.accent }}>לקטלוג המלא ←</Link>
+            <p className={ui.moreLink}>
+              <Link href="/view">לקטלוג המלא ←</Link>
             </p>
           </div>
         </div>
 
         {related.length > 0 && (
-          <section aria-label={`עוד מ${product.category}`} style={{ marginTop: "2.5rem" }}>
-            <h2 style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.25rem", color: tokens.text, margin: "0 0 0.8rem" }}>עוד מ{product.category}</h2>
-            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "0.8rem" }}>
+          <section aria-label={`עוד מ${product.category}`} className={ui.related}>
+            <h2 className={ui.relatedTitle}>עוד מ{product.category}</h2>
+            <ul className={ui.relGrid}>
               {related.map((r) => (
                 <li key={r.id}>
-                  <Link href={`/p/${r.id}/`} style={{ display: "flex", flexDirection: "column", gap: "0.45rem", textDecoration: "none", border: `1px solid ${tokens.border}`, borderRadius: 14, background: "#fff", padding: "0.7rem", height: "100%" }}>
-                    <span style={{ display: "flex", width: "100%", aspectRatio: "1 / 1", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                  <Link href={`/p/${r.id}/`} className={ui.relCard}>
+                    <span className={ui.relFrame}>
                       <ProductImage pictureLink={r.picture_link} name={r.name} rotation={r.rotation_override ?? 0} />
                     </span>
-                    <span style={{ fontFamily: tokens.rubik, fontWeight: 700, fontSize: "0.88rem", color: tokens.text, lineHeight: 1.3 }}>{r.name}</span>
+                    <span className={ui.relName}>{r.name}</span>
                   </Link>
                 </li>
               ))}

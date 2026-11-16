@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useId, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "../../lib/auth";
 import { featureFlags } from "../../lib/featureFlags";
 import { tokens } from "../../lib/ui";
 import { getMinOrderTotal } from "../../lib/siteSettings";
-import { MIN_ORDER_FALLBACK, PHONE_DISPLAY } from "../../lib/config";
+import { BUSINESS_TAGLINE, MIN_ORDER_FALLBACK, PHONE_DISPLAY } from "../../lib/config";
+import styles from "./SiteHeader.module.css";
 
 // פרטי קשר של כרם טויס. הטלפון מגיע מ-lib/config (מקור אמת אחד).
 // וואטסאפ/אימייל — מלאו כאן וברגע שמזינים הכפתורים מופיעים לבד.
@@ -28,7 +29,7 @@ const HAS_LOGO_FILE = false;
 
 function Logo() {
   return (
-    <span style={{ display: "flex", alignItems: "center", height: 40 }}>
+    <span className={styles.logo}>
       {HAS_LOGO_FILE ? (
         <img
           src={`${base}/logo.png`}
@@ -36,28 +37,58 @@ function Logo() {
           style={{ height: 40, width: "auto", objectFit: "contain", display: "block" }}
         />
       ) : (
-        <span
-          style={{
-            fontFamily: tokens.rubik,
-            fontWeight: 900,
-            fontSize: "1.35rem",
-            backgroundImage: tokens.rainbow,
-            WebkitBackgroundClip: "text",
-            backgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            whiteSpace: "nowrap",
-          }}
-        >
-          כרם טויס
+        <span className={styles.wordmarkWrap}>
+          <span
+            className={styles.wordmark}
+            style={{ fontFamily: tokens.rubik, backgroundImage: tokens.rainbow }}
+          >
+            כרם טויס
+          </span>
+          {/* Decorative sub-line on wide screens only: the business tagline
+              from lib/config — it never changes the bar's height. */}
+          <span className={styles.tagline} aria-hidden="true">{BUSINESS_TAGLINE}</span>
         </span>
       )}
     </span>
   );
 }
 
+// Small line icons (decorative — the text next to each one carries the meaning).
+function TruckIcon() {
+  return (
+    <svg className={styles.icon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M3 6.5h11v9H3zM14 9.5h3.6l3.4 3.4v2.6h-7z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <circle cx="7" cy="17" r="1.9" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="17" cy="17" r="1.9" fill="none" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  );
+}
+function PhoneIcon() {
+  return (
+    <svg className={styles.icon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M6.6 3.5h3l1.5 4-2 1.3a11 11 0 0 0 6.1 6.1l1.3-2 4 1.5v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function MenuIcon({ open }: { open: boolean }) {
+  return (
+    <svg className={styles.menuIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {open ? (
+        <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      ) : (
+        <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      )}
+    </svg>
+  );
+}
+
+// trailingSlash: true → usePathname() may return "/catalog/"; compare without it.
+const norm = (p: string | null) => (p && p.length > 1 ? p.replace(/\/+$/, "") : p || "/");
+
 export default function SiteHeader() {
   const { session, isManager, signOut, loading, isAgent } = useAuth();
   const router = useRouter();
+  const pathname = norm(usePathname());
 
   // The minimum shown in the top strip must be the SAME number the cart
   // enforces. It lived here as a hardcoded ₪500 and went stale the moment the
@@ -95,61 +126,93 @@ export default function SiteHeader() {
     getMinOrderTotal().then(setMinOrder);
   }, []);
 
-  // The padding and minHeight are the tap target, not decoration. Measured at
-  // 390x844 these links were 34x20, 75x20 and 29x20 CSS pixels — under the
-  // WCAG 2.2 AA minimum of 24x24, on the primary navigation of a site whose
-  // buyers order from a phone. The text is unchanged; only the hit area grew.
-  const navLink = {
-    fontFamily: tokens.assistant,
-    fontWeight: 600,
-    fontSize: "0.95rem",
-    color: tokens.text,
-    textDecoration: "none",
-    display: "inline-flex",
-    alignItems: "center",
-    minHeight: 24,
-    padding: "0.3rem 0.4rem",
-    margin: "-0.3rem -0.4rem",
-  } as const;
+  // Phone-width menu (a disclosure, not a modal). Below 760px the nav links
+  // live in a panel that drops down OVER the page (position: absolute), so
+  // opening it never changes the header's own height — --kt-header-h stays put.
+  // On wider screens the same list is shown inline and the toggle is hidden.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuId = useId();
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
+  const navRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        toggleRef.current?.focus();
+      }
+    };
+    const onPointer = (e: PointerEvent) => {
+      if (navRef.current && !navRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    // Growing past the breakpoint shows the list inline — drop the open state
+    // so it does not reappear as a dropdown on the way back down.
+    const mq = window.matchMedia("(min-width: 760px)");
+    const onMq = () => { if (mq.matches) setMenuOpen(false); };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    mq.addEventListener?.("change", onMq);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+      mq.removeEventListener?.("change", onMq);
+    };
+  }, [menuOpen]);
+
+  // Following a link inside the panel closes it (the route changes underneath).
+  const closeOnLink = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("a")) setMenuOpen(false);
+  };
+
+  // Active-page indication. Exact match → aria-current="page"; a page inside
+  // the same section (a product under the catalogue, a screen under /admin)
+  // only gets the visual state.
+  const navItem = (href: string, label: string, opts: { accent?: boolean; also?: string[] } = {}) => {
+    const roots = [href, ...(opts.also || [])];
+    const exact = pathname === href;
+    const inSection = exact || roots.some((r) => pathname === r || pathname.startsWith(r + "/"));
+    const cls = [styles.navLink, opts.accent ? styles.navLinkAccent : "", inSection ? styles.navLinkActive : ""]
+      .filter(Boolean)
+      .join(" ");
+    return (
+      <li className={styles.navItem}>
+        <Link href={href} className={cls} aria-current={exact ? "page" : undefined}>
+          {label}
+        </Link>
+      </li>
+    );
+  };
 
   return (
-    <header ref={headerRef} style={{ position: "sticky", top: 0, zIndex: 50 }}>
+    <header ref={headerRef} className={styles.header}>
       {/* רצועת אמון עליונה — מסר שירות + פרטי קשר (אם הוזנו) */}
-      <div
-        style={{
-          background: tokens.text,
-          color: "#fff",
-          fontFamily: tokens.assistant,
-          fontSize: "0.8rem",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 1200,
-            margin: "0 auto",
-            padding: "0.4rem clamp(1rem, 4vw, 2.5rem)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "0.8rem",
-            flexWrap: "wrap",
-          }}
-        >
-          <span style={{ opacity: 0.92 }}>
-            🚚 משלוח לכל הארץ · מינימום הזמנה ₪{minOrder.toLocaleString("he-IL")} · המחירים כוללים מע״מ
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+      <div className={styles.strip}>
+        <div className={styles.stripInner}>
+          <p className={styles.stripMsg}>
+            <span className={styles.stripPart}>
+              <TruckIcon />
+              משלוח לכל הארץ
+            </span>
+            <span className={styles.stripSep} aria-hidden="true">·</span>
+            <span className={styles.stripPart}>
+              מינימום הזמנה <bdi className={styles.num}>₪{minOrder.toLocaleString("he-IL")}</bdi>
+            </span>
+            <span className={styles.stripSep} aria-hidden="true">·</span>
+            <span className={styles.stripPart}>המחירים כוללים מע״מ</span>
+          </p>
+          <span className={styles.stripContact}>
             {CONTACT.whatsapp && (
-              <a href={`https://wa.me/${CONTACT.whatsapp}`} target="_blank" rel="noreferrer"
-                style={{ color: "#fff", textDecoration: "none", fontWeight: 700 }}>
+              <a href={`https://wa.me/${CONTACT.whatsapp}`} target="_blank" rel="noreferrer" className={styles.stripLink}>
                 💬 וואטסאפ
               </a>
             )}
             {/* 91x17 measured — under the 24x24 minimum, on the one link in the
                 trust strip that a buyer taps to place an order by phone. */}
             {CONTACT.phone && (
-              <a href={`tel:${CONTACT.phone}`} dir="ltr" style={{ color: "#fff", textDecoration: "none", fontWeight: 700, display: "inline-flex", alignItems: "center", minHeight: 24, padding: "0.15rem 0" }}>
-                📞 {CONTACT.phone}
+              <a href={`tel:${CONTACT.phone}`} dir="ltr" className={styles.stripLink}>
+                <PhoneIcon />
+                {CONTACT.phone}
               </a>
             )}
           </span>
@@ -157,85 +220,66 @@ export default function SiteHeader() {
       </div>
 
       {/* כותרת ראשית */}
-      <div
-        style={{
-          background: "rgba(255,255,255,0.92)",
-          backdropFilter: "blur(10px)",
-          borderBottom: `1px solid ${tokens.border}`,
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 1200,
-            margin: "0 auto",
-            padding: "0.7rem clamp(1rem, 4vw, 2.5rem)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "1rem",
-          }}
-        >
-          <Link href="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
+      <div className={styles.bar}>
+        <div className={styles.barInner}>
+          <Link href="/" className={styles.logoLink}>
             <Logo />
           </Link>
 
-          <nav style={{ display: "flex", alignItems: "center", gap: "clamp(0.8rem, 2.5vw, 1.6rem)", flexWrap: "wrap" }}>
-            {/* Logged-in customers go to the orderable catalog; logged-out
-                visitors still get a link to the public (browse-only) catalog
-                so it isn't a dead end from every inner page. */}
-            {session
-              ? <Link href="/catalog" style={navLink}>קטלוג</Link>
-              : <Link href="/view" style={navLink}>קטלוג</Link>}
-            {session && <Link href="/account" style={navLink}>ההזמנות שלי</Link>}
-            {session && isManager && <Link href="/admin" style={{ ...navLink, color: tokens.accent }}>ניהול</Link>}
-            {/* An agent gets ONE link, straight to the only screen they may use.
-                They are not shown /admin at all — it is manager-only and would
-                just bounce them back to the catalogue. */}
-            {session && !isManager && isAgent && featureFlags.ff_agent_discounts && (
-              <Link href="/admin/customers" style={{ ...navLink, color: tokens.accent }}>לקוחות</Link>
-            )}
+          <nav ref={navRef} className={styles.nav} aria-label="ניווט ראשי">
+            <button
+              ref={toggleRef}
+              type="button"
+              className={styles.menuToggle}
+              aria-expanded={menuOpen}
+              aria-controls={menuId}
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              <MenuIcon open={menuOpen} />
+              <span>תפריט</span>
+            </button>
 
-            {loading ? null : session ? (
-              <button
-                onClick={async () => {
-                  await signOut();
-                  router.push("/");
-                }}
-                style={{
-                  fontFamily: tokens.rubik,
-                  fontWeight: 600,
-                  fontSize: "0.85rem",
-                  color: tokens.body,
-                  background: "none",
-                  border: `1px solid ${tokens.border}`,
-                  padding: "0.5rem 1.1rem",
-                  borderRadius: 999,
-                  cursor: "pointer",
-                }}
-              >
-                התנתקות
-              </button>
-            ) : (
-              <>
-                <Link href="/login" style={navLink}>התחברות</Link>
-                <Link
-                  href="/register"
-                  style={{
-                    fontFamily: tokens.rubik,
-                    fontWeight: 600,
-                    fontSize: "0.85rem",
-                    color: "#fff",
-                    background: tokens.rainbow,
-                    padding: "0.55rem 1.4rem",
-                    borderRadius: 999,
-                    textDecoration: "none",
-                  }}
-                >
-                  פתיחת חשבון
-                </Link>
-              </>
-            )}
+            <ul id={menuId} className={styles.navList} data-open={menuOpen ? "true" : "false"} onClick={closeOnLink}>
+              {/* Logged-in customers go to the orderable catalog; logged-out
+                  visitors still get a link to the public (browse-only) catalog
+                  so it isn't a dead end from every inner page. */}
+              {session
+                ? navItem("/catalog", "קטלוג", { also: ["/product", "/collection"] })
+                : navItem("/view", "קטלוג", { also: ["/p", "/product", "/collection"] })}
+              {session && navItem("/account", "ההזמנות שלי")}
+              {session && isManager && navItem("/admin", "ניהול", { accent: true })}
+              {/* An agent gets ONE link, straight to the only screen they may use.
+                  They are not shown /admin at all — it is manager-only and would
+                  just bounce them back to the catalogue. */}
+              {session && !isManager && isAgent && featureFlags.ff_agent_discounts && (
+                navItem("/admin/customers", "לקוחות", { accent: true })
+              )}
+
+              {loading ? null : session ? (
+                <li className={`${styles.navItem} ${styles.navItemAction}`}>
+                  <button
+                    type="button"
+                    className={styles.signOut}
+                    onClick={async () => {
+                      await signOut();
+                      router.push("/");
+                    }}
+                  >
+                    התנתקות
+                  </button>
+                </li>
+              ) : (
+                navItem("/login", "התחברות")
+              )}
+            </ul>
           </nav>
+
+          {/* The guest's primary action stays in the bar at every width. */}
+          {!loading && !session && (
+            <Link href="/register" className={styles.cta}>
+              פתיחת חשבון
+            </Link>
+          )}
         </div>
       </div>
     </header>
