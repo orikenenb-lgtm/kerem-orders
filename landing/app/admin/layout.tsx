@@ -17,6 +17,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// 2026-11 premium redesign: the management screens keep their previous look.
+// kt-scope-classic (tokens.css) re-declares the design variables with the
+// pre-redesign values for everything inside it, so the new skin cannot leak
+// into admin tables, forms and buttons. With ff_premium_theme off the class
+// matches nothing new and this wrapper is visually inert.
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  return children;
+  return <div className="kt-scope-classic">{children}</div>;
 }

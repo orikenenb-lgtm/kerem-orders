@@ -166,6 +166,12 @@ export const featureFlags = {
    *  independent security review (its findings fixed) and staging tests;
    *  rivhit-express is live in production. DEFAULT ON at the owner's request. */
   ff_rivhit_express: true,
+  /** 2026-11 premium redesign: purple-led pastel skin (tokens.css
+   *  html.kt-premium), new home page, header, catalogue cards and shell.
+   *  Customer / public screens only — /admin keeps the previous look
+   *  (app/admin/layout.tsx scopes it). Rollback = set back to false: every
+   *  screen renders exactly as before the redesign (warm ff_new_theme skin). */
+  ff_premium_theme: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;

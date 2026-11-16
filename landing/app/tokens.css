@@ -64,3 +64,89 @@ html.kt-theme-new .kt-card:hover {
     transform: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * 2026-11 premium redesign (ff_premium_theme → html.kt-premium).
+ * A luxurious, joyful toy-shop skin: clean white space, a leading purple,
+ * pastel accents, soft depth, round corners. Same variables as above, so
+ * every screen built on lib/ui.ts tokens follows; the --kp-* variables are
+ * the extra palette the redesigned components use. Contrast (WCAG AA ≥4.5:1,
+ * measured): text #27163F on bg 15.9:1 · body #4A3D63 on bg 9.5:1 · dim
+ * #6B6185 on bg 5.5:1, on lavender surface 5.1:1 · white on accent #6D28D9
+ * 7.1:1 · accent as text on bg 6.8:1 · ink on yellow #FFD84D 11.9:1 · ink on
+ * every pastel ≥13.5:1. Light fills always carry ink text, never white.
+ * ------------------------------------------------------------------------- */
+html.kt-premium {
+  --kt-bg: #FBFAFF;
+  --kt-surface: #F4F0FF;
+  --kt-text: #27163F;
+  --kt-body: #4A3D63;
+  --kt-dim: #6B6185;
+  --kt-border: rgba(39, 22, 63, 0.1);
+  --kt-accent: #6D28D9;
+  --kt-radius-card: 22px;
+  --kt-shadow-card: 0 1px 2px rgba(39, 22, 63, 0.04),
+    0 10px 30px rgba(76, 29, 149, 0.08);
+
+  --kp-purple: #6D28D9;
+  --kp-purple-deep: #4C1D95;
+  --kp-indigo: #3B3FB8;
+  --kp-ink: #27163F;
+  --kp-yellow: #FFD84D;
+  --kp-lav: #EEE5FF;
+  --kp-mint: #D8F5EB;
+  --kp-sky: #DBEEFF;
+  --kp-peach: #FFE8D6;
+  --kp-pink: #FFE3F1;
+  --kp-white: #FFFFFF;
+  --kp-radius-lg: 28px;
+  --kp-radius-md: 18px;
+  --kp-radius-pill: 999px;
+  --kp-shadow-soft: 0 1px 2px rgba(39, 22, 63, 0.04), 0 8px 24px rgba(76, 29, 149, 0.08);
+  --kp-shadow-pop: 0 2px 6px rgba(39, 22, 63, 0.06), 0 18px 48px rgba(76, 29, 149, 0.18);
+  --kp-hero: linear-gradient(125deg, #4C1D95 0%, #6D28D9 42%, #3B3FB8 100%);
+  --kp-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --kp-fast: 160ms;
+  --kp-mid: 320ms;
+}
+html.kt-premium body {
+  background: var(--kt-bg);
+  color: var(--kt-text);
+}
+/* Product-card hover in the premium skin: the same variable trick as the
+ * warm theme above (the card's shadow is inline and reads the variable). */
+html.kt-premium .kt-card {
+  transition: transform var(--kp-mid) var(--kp-ease), box-shadow var(--kp-mid) var(--kp-ease), border-color var(--kp-mid) var(--kp-ease);
+}
+@media (hover: hover) {
+  html.kt-premium .kt-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(109, 40, 217, 0.28);
+    --kt-shadow-card: 0 4px 10px rgba(39, 22, 63, 0.06), 0 22px 48px rgba(76, 29, 149, 0.16);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.kt-premium .kt-card,
+  html.kt-premium .kt-card:hover {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* /admin keeps the pre-redesign look (app/admin/layout.tsx wraps it). These
+ * are exactly the html.kt-theme-new values above. */
+html.kt-premium .kt-scope-classic {
+  --kt-bg: #FFFDF6;
+  --kt-surface: #FFF4E8;
+  --kt-text: #2B2118;
+  --kt-body: #5A4A3A;
+  --kt-dim: #7E6B58;
+  --kt-border: rgba(43, 33, 24, 0.1);
+  --kt-accent: #C64B00;
+  --kt-radius-card: 18px;
+  --kt-shadow-card: 0 2px 6px rgba(122, 74, 26, 0.06),
+    0 10px 28px rgba(122, 74, 26, 0.1);
+  background: #FFFFFF;
+  color: #1a1730;
+  min-height: 100vh;
+}
