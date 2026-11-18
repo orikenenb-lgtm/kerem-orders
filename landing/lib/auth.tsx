@@ -1,5 +1,6 @@
 "use client";
 
+import { clearCatalogReturn } from "./catalogReturn";
 import {
   createContext,
   useContext,
@@ -34,6 +35,18 @@ const AuthContext = createContext<AuthValue>({
   signOut: async () => {},
 });
 
+/** Keep the SAME session object when nothing that matters changed. Supabase
+ *  re-emits SIGNED_IN with a brand-new (but identical) session every time the
+ *  tab becomes visible again; handing React a new object re-ran every effect
+ *  keyed on the session — the catalogue re-fetched its data and the product
+ *  page flashed a loader and reset the chosen quantity after a customer simply
+ *  switched apps and came back. A real change (token refresh, another user,
+ *  sign-out) still propagates, because the token or the user id differs. */
+function sameSessionOr(prev: Session | null, next: Session | null): Session | null {
+  if (prev && next && prev.access_token === next.access_token && prev.user?.id === next.user?.id) return prev;
+  return next;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -47,11 +60,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let active = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!active) return;
-      setSession(data.session);
+      setSession((prev) => sameSessionOr(prev, data.session));
       setSessionResolved(true);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
+      setSession((prev) => sameSessionOr(prev, s));
       setSessionResolved(true);
     });
     return () => {
@@ -126,6 +139,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshProfile: () => loadProfile(session?.user?.id),
     signOut: async () => {
       await supabase.auth.signOut();
+      // The catalogue's saved view (filters / search text) never outlives the account.
+      clearCatalogReturn();
       setProfile(null);
     },
   };

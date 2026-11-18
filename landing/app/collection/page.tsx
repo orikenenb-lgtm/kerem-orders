@@ -151,7 +151,12 @@ function CollectionCatalog() {
     const el = sentinelRef.current;
     if (!el || !hasMore || loading || loadErr) return;
     const obs = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) setPage((p) => p + 1); },
+      // Advance only while the grid shows the CURRENT filter: applying a
+      // search hides the chips/filters above the grid, which can pull the
+      // sentinel into range while the old filter's rows are still on screen —
+      // that used to fire a page-2 request for the new filter, which was then
+      // thrown away and re-fetched (one wasted round trip per search).
+      (entries) => { if (entries[0].isIntersecting && gridGen.current === filterGen.current) setPage((p) => p + 1); },
       // Start the next request ~3 phone screens early, so a customer who
       // scrolls fast meets products, not the loading line.
       { rootMargin: "2000px" }

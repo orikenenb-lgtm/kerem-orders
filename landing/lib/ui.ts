@@ -25,8 +25,13 @@ export const tokens = {
   assistant: "var(--font-assistant)",
 };
 
-export const ils = (n: number) =>
-  "₪" + Number(n || 0).toLocaleString("he-IL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// One formatter, built once. `toLocaleString(locale, options)` builds a new
+// Intl formatter on EVERY call — with hundreds of prices on screen it was the
+// single most expensive function while typing in the catalogue search
+// (~110 ms per keystroke at 4x CPU throttling). Same output, character for
+// character.
+const ILS_FORMAT = new Intl.NumberFormat("he-IL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export const ils = (n: number) => "₪" + ILS_FORMAT.format(Number(n || 0));
 
 // ---- הנחה קבועה ללקוח (per-customer fixed discount) ----
 // Single source of truth for discount math: the SAME functions are used when a

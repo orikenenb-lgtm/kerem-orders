@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { noteRoute } from "../../lib/catalogReturn";
 import { useAuth } from "../../lib/auth";
 import { featureFlags } from "../../lib/featureFlags";
 import { tokens } from "../../lib/ui";
@@ -89,6 +90,8 @@ export default function SiteHeader() {
   const { session, isManager, signOut, loading, isAgent } = useAuth();
   const router = useRouter();
   const pathname = norm(usePathname());
+  // Remember the route for the catalogue's "return to where I was" (lib/catalogReturn.ts).
+  useEffect(() => { noteRoute(pathname); }, [pathname]);
 
   // The minimum shown in the top strip must be the SAME number the cart
   // enforces. It lived here as a hardcoded ₪500 and went stale the moment the
