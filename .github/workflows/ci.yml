@@ -62,3 +62,15 @@ jobs:
         run: npx tsc --noEmit
       - name: Production build (static export)
         run: npm run build
+      # Read-only smoke test of the deploy-time photo step against the real
+      # proxy: 12 public product photos are downloaded and checked, nothing is
+      # written or published. Informational — never fails CI (a slow proxy
+      # must not block a PR); the numbers are in the step log.
+      - name: Product-photo step smoke test (12 photos, read-only)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          MIRROR_SAMPLE: "12"
+          MIRROR_BUDGET_SEC: "180"
+        run: node scripts/mirror-images.mjs

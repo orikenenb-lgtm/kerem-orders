@@ -5,7 +5,11 @@ import { tokens } from "../../lib/ui";
 // THE product image. Every screen that shows a product photo renders this
 // component, so the whole site shares ONE fallback chain (lib/imageFallback.ts):
 //
-//   proxy → single delayed proxy retry → direct HTTPS original → placeholder
+//   [static copy] → proxy → single delayed proxy retry → direct HTTPS original → placeholder
+//
+// The static copy (lib/imageMirror.ts) is tried first only when the deploy
+// actually shipped one for this photo; if it fails to load, the chain above
+// starts immediately — so it can only make a photo faster, never lose it.
 //
 // Guarantees:
 //   * bounded — at most 3 network attempts per product, never a retry loop;
@@ -24,6 +28,7 @@ import {
   stageOf,
   type FallbackStage,
 } from "../../lib/imageFallback";
+import { mirrorSrc } from "../../lib/imageMirror";
 
 export type ProductImageStatus = {
   phase: "loading" | "loaded" | "failed";
@@ -65,6 +70,9 @@ export default function ProductImage({
   const rot = rotation ?? 0;
   const [attempt, setAttempt] = useState(ATTEMPT_PROXY);
   const [phase, setPhase] = useState<"loading" | "loaded" | "failed">("loading");
+  // Static copy first (when this build has one); false once it failed.
+  const staticSrc = mirrorSrc(link, width, rot);
+  const [useStatic, setUseStatic] = useState(true);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Restart the chain whenever the product/variant changes (or on manual retry),
@@ -72,6 +80,7 @@ export default function ProductImage({
   useEffect(() => {
     setAttempt(ATTEMPT_PROXY);
     setPhase("loading");
+    setUseStatic(true);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = null;
@@ -83,7 +92,8 @@ export default function ProductImage({
   // reporting effect below within the same commit).
   const onStatusRef = useRef(onStatus);
   useEffect(() => { onStatusRef.current = onStatus; });
-  const src = srcForAttempt(link, attempt, width, rot);
+  const onStatic = useStatic && !!staticSrc && attempt === ATTEMPT_PROXY;
+  const src = onStatic ? staticSrc : srcForAttempt(link, attempt, width, rot);
   const failed = !src || phase === "failed";
   useEffect(() => {
     onStatusRef.current?.({
@@ -93,6 +103,12 @@ export default function ProductImage({
   }, [failed, phase, attempt, link]);
 
   const onError = () => {
+    // The static copy failed: go straight to the existing chain (no delay —
+    // the proxy has not been tried yet). One extra attempt at most.
+    if (onStatic) {
+      setUseStatic(false);
+      return;
+    }
     // The whole decision is pure (and unit-tested in lib/imageFallback.ts);
     // this handler only arms the single timer or flips to the terminal state.
     const decision = reduceError(attempt, link, width, rot);
@@ -153,7 +169,7 @@ export default function ProductImage({
 
   return (
     <img
-      key={attempt}
+      key={onStatic ? "static" : attempt}
       src={src}
       alt={name}
       loading={priority ? "eager" : "lazy"}
