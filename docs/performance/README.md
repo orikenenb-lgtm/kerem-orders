@@ -43,15 +43,19 @@ dependencies to drop. Not done; noted for later.
   * A new product, a changed rotation, a customer-only product and the 900/960
     product-page sizes all keep using the proxy until the next deploy.
   * The script's cache: `actions/cache` keeps the copies between deploys, so a
-    normal deploy only asks for **new** photos plus at most 40 of the oldest,
-    refreshed after 30 days.
+    normal deploy only asks for **new** photos plus at most 40 of the oldest
+    (older than 14 days), so every copy is re-made about every 3 weeks.
   * The script runs two at a time, with bounded retries and a time budget.
   * It never fails a deploy: on any error the site uses the proxy as before.
 * **Return to the same place** (`lib/catalogReturn.ts`, `/catalog`).
   * Opening a product saves the catalogue's *view state only* (filters, number
     of pages, where the card was) in `sessionStorage`. This tab only, one user,
-    30 minutes, read once.
+    30 minutes, read once, cleared on sign-out.
   * Back, the breadcrumb, and "חזרה לקטלוג" all bring it back.
+  * It is applied only when arriving **from a product page**. A home tile, the
+    login redirect or a fresh load always starts clean.
+  * If the customer scrolls, taps, or changes a filter while the pages reload,
+    the restore stops: their action wins.
   * No products, prices or profile data are stored. Rows and prices are always
     fetched fresh.
 * **Stable session object** (`lib/auth.tsx`): the same object is kept when the
@@ -114,9 +118,11 @@ Static files get 80 ms.
   `main` and the daily 03:41 UTC rebuild).
 * **Rotation changed in the admin screens**: the key includes the rotation, so the
   new rotation is used at once (proxy), and the static copy follows on the next deploy.
-* **Photo replaced in Rivhit under the same id**: the static copy is refreshed
-  within 30 days. Today's browser cache of the proxy (30 days, immutable) behaves
-  the same.
+* **Photo replaced in Rivhit under the same id**: every copy is re-made about
+  every 3 weeks (copies older than 14 days, up to 40 per deploy, daily rebuild).
+  Today's browser cache of the proxy (30 days, immutable) is stale for longer.
+* **The manager's photo screens** (review / fix) never use the static copy:
+  they always show the live photo from Rivhit.
 
 ## 5. Cache and privacy
 

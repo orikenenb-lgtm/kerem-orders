@@ -73,7 +73,9 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   const [loadErr, setLoadErr] = useState(false);
   const [fuzzyNote, setFuzzyNote] = useState(false);
   const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
-  const [deepLinkCat] = useState<string | null>(() => readUrlCategory());
+  // The category list request has answered (successfully or not).
+  const [catsDone, setCatsDone] = useState(false);
+  const [deepLinkCat, setDeepLinkCat] = useState<string | null>(() => readUrlCategory());
   const [activeCat, setActiveCat] = useState(() => deepLinkCat ?? "all");
   const [vatLabel, setVatLabel] = useState(true);
 
@@ -94,18 +96,33 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   useEffect(() => {
     supabase.rpc("catalog_public_categories").then(({ data }) => {
       setCategories((data as { category: string; n: number }[]) ?? []);
+      setCatsDone(true);
     });
   }, []);
 
   // ?cat= deep link: the category was applied from the very first request
   // (lib/urlCategory.ts). Once the real list has loaded, an unknown or stale
   // name falls back to "הכל" — unless the customer already picked another.
+  // In-site navigation (e.g. a home tile → this page) updates the address
+  // bar only AFTER this page first renders, so the read above can miss the
+  // link. Read it once more right after mounting and apply it then (one
+  // extra request in that case, as before this change).
   useEffect(() => {
-    if (!deepLinkCat || categories.length === 0) return;
+    if (deepLinkCat !== null) return;
+    const c = readUrlCategory();
+    if (!c) return;
+    const t = window.setTimeout(() => { setDeepLinkCat(c); setActiveCat(c); }, 0);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // If the list could not be loaded at all, also go back to "הכל": without
+  // the list there are no chips, so the customer could not leave the category.
+  useEffect(() => {
+    if (!deepLinkCat || !catsDone) return;
     if (categories.some((c) => c.category === deepLinkCat)) return;
     const t = window.setTimeout(() => setActiveCat((a) => (a === deepLinkCat ? "all" : a)), 0);
     return () => window.clearTimeout(t);
-  }, [categories, deepLinkCat]);
+  }, [categories, catsDone, deepLinkCat]);
 
   // VAT note on the prices page only. Anon RLS exposes just this one settings
   // key; a missing row (or a failed read) keeps the default: label shown.

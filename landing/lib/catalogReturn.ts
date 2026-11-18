@@ -131,3 +131,17 @@ export function clearCatalogReturn(store: StorageLike | null = storage()): void 
     /* blocked storage — nothing was saved either */
   }
 }
+
+// Which page the customer is coming from. SiteHeader (on every page) notes
+// each route after it renders; the catalogue reads it while rendering, before
+// its own header has noted "/catalog" — so it still holds the PREVIOUS page.
+// A saved view is applied only when that page was a product page (browser
+// Back, the breadcrumb, "חזרה לקטלוג"); a category tile on the home page, the
+// login redirect or a fresh page load always starts clean.
+let lastRoute = "";
+export function noteRoute(path: string): void {
+  lastRoute = path || "";
+}
+export function cameFromProductPage(): boolean {
+  return /\/product\/?$/.test(lastRoute);
+}

@@ -82,4 +82,17 @@ test("blocked storage: the feature is simply off, nothing throws", () => {
   assert.equal(M.readCatalogReturn(NOW, null), null);
 });
 
+test("restored only when arriving from a product page", () => {
+  M.noteRoute("");
+  assert.equal(M.cameFromProductPage(), false, "fresh page load");
+  M.noteRoute("/product");
+  assert.equal(M.cameFromProductPage(), true);
+  M.noteRoute("/product/");
+  assert.equal(M.cameFromProductPage(), true);
+  for (const r of ["/", "/view", "/login", "/catalog", "/account", "/products-x", "/p/123"]) {
+    M.noteRoute(r);
+    assert.equal(M.cameFromProductPage(), false, r);
+  }
+});
+
 console.log(`\n${n} catalogReturn tests passed`);

@@ -23,13 +23,16 @@
 // Env (all optional):
 //   MIRROR_BUDGET_SEC   total download time budget          (default 600)
 //   MIRROR_CONCURRENCY  parallel downloads                   (default 2)
-//   MIRROR_REFRESH_DAYS refresh copies older than this       (default 30)
+//   MIRROR_REFRESH_DAYS refresh copies older than this       (default 14)
 //   MIRROR_REFRESH_MAX  at most this many refreshes per run  (default 40)
+//     → with the daily rebuild every copy is re-fetched about every 3 weeks
+//       (≈ 830 photos / 40 per day), so a photo Rivhit replaced under the
+//       same id is current again within ~3 weeks at most.
 //   MIRROR_SAMPLE=N     only the first N products, write nothing (CI smoke test)
 //   KEREM_PUBLIC_PRODUCTS_FIXTURE  read products from a JSON file (local tests)
 //   MIRROR_PROXY_BASE   override the proxy origin (local tests only)
 
-import { mkdirSync, readFileSync, writeFileSync, existsSync, copyFileSync, readdirSync, unlinkSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, copyFileSync, readdirSync, unlinkSync, statSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -149,9 +152,12 @@ function pct(arr, p) {
 export async function main() {
   const budgetSec = Number(process.env.MIRROR_BUDGET_SEC || 600);
   const conc = Math.max(1, Number(process.env.MIRROR_CONCURRENCY || 2));
-  const refreshDays = Number(process.env.MIRROR_REFRESH_DAYS || 30);
+  const refreshDays = Number(process.env.MIRROR_REFRESH_DAYS || 14);
   const refreshMax = Number(process.env.MIRROR_REFRESH_MAX || 40);
-  const sample = Number(process.env.MIRROR_SAMPLE || 0);
+  // Any non-empty MIRROR_SAMPLE means "smoke test, write nothing" — even a
+  // malformed value can never fall through to a full run that writes files.
+  const sampleRaw = (process.env.MIRROR_SAMPLE || "").trim();
+  const sample = sampleRaw ? Math.max(1, Math.floor(Number(sampleRaw)) || 12) : 0;
   const proxyBase = process.env.MIRROR_PROXY_BASE || SUPABASE_URL;
   const cacheDir = join(ROOT, ".pimg-cache", String(WIDTH));
   const outDir = join(ROOT, "public", "pimg", String(WIDTH));
@@ -170,10 +176,10 @@ export async function main() {
     wanted.set(key, { link: p.picture_link.trim(), rot: p.rotation_override });
   }
 
-  mkdirSync(cacheDir, { recursive: true });
+  if (!sample) mkdirSync(cacheDir, { recursive: true });
   const indexFile = join(cacheDir, "index.json");
   let index = {};
-  try { index = JSON.parse(readFileSync(indexFile, "utf8")); } catch { index = {}; }
+  if (!sample) { try { index = JSON.parse(readFileSync(indexFile, "utf8")); } catch { index = {}; } }
   const now = Date.now();
   const cached = (k) => !sample && index[k] && existsSync(join(cacheDir, `${k}.jpg`));
 
@@ -193,7 +199,10 @@ export async function main() {
     times.push(res.ms);
     bytes += res.buf.length;
     if (sample) { got++; return; }
-    writeFileSync(join(cacheDir, `${key}.jpg`), res.buf);
+    // Write-then-rename: a run killed mid-write never leaves a half photo.
+    const dest = join(cacheDir, `${key}.jpg`);
+    writeFileSync(`${dest}.tmp`, res.buf);
+    renameSync(`${dest}.tmp`, dest);
     if (index[key]) refreshed++; else got++;
     index[key] = { at: new Date().toISOString(), bytes: res.buf.length };
   });
@@ -222,7 +231,10 @@ export async function main() {
       try { unlinkSync(join(cacheDir, `${k}.jpg`)); } catch { /* already gone */ }
     }
   }
-  writeFileSync(indexFile, JSON.stringify(index));
+  writeFileSync(`${indexFile}.tmp`, JSON.stringify(index));
+  renameSync(`${indexFile}.tmp`, indexFile);
+  // Leftovers of an interrupted earlier run.
+  for (const f of readdirSync(cacheDir)) if (f.endsWith(".tmp")) { try { unlinkSync(join(cacheDir, f)); } catch { /* gone */ } }
 
   // Publish exactly the photos we hold for current products.
   mkdirSync(outDir, { recursive: true });

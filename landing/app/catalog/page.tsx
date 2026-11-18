@@ -21,7 +21,7 @@ import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
 import { readCart, CART_KEY } from "../../lib/cart";
 import css from "./catalog.module.css";
 import { readUrlCategory } from "../../lib/urlCategory";
-import { readCatalogReturn, clearCatalogReturn, saveCatalogReturn, type CatalogReturn } from "../../lib/catalogReturn";
+import { readCatalogReturn, clearCatalogReturn, saveCatalogReturn, cameFromProductPage, type CatalogReturn } from "../../lib/catalogReturn";
 
 // 2026-11 premium redesign: pastel tints rotated across category chips and
 // product image frames. Presentation only — the index is the same `i` the map
@@ -151,7 +151,7 @@ export default function CatalogPage() {
   // filter values, never products or prices. The page renders nothing
   // data-dependent until the session is known, so this cannot affect the
   // prerendered HTML.
-  const [restored] = useState<CatalogReturn | null>(() => readCatalogReturn());
+  const [restored] = useState<CatalogReturn | null>(() => (cameFromProductPage() ? readCatalogReturn() : null));
   const restoreRef = useRef<CatalogReturn | null>(restored);
 
   const [input, setInput] = useState(restored?.input ?? "");
@@ -162,8 +162,10 @@ export default function CatalogPage() {
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [loadErr, setLoadErr] = useState(false);
   const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
+  // The category list request has answered (successfully or not).
+  const [catsDone, setCatsDone] = useState(false);
   // A restored view wins over the ?cat= link it may still carry in the URL.
-  const [deepLinkCat] = useState<string | null>(() => (restored ? null : readUrlCategory()));
+  const [deepLinkCat, setDeepLinkCat] = useState<string | null>(() => (restored ? null : readUrlCategory()));
   const [activeCat, setActiveCat] = useState(restored?.activeCat ?? deepLinkCat ?? "all");
   const [sort, setSort] = useState<"name" | "price_asc" | "price_desc">(restored?.sort ?? "name");
   // Products per row — the customer's own choice, remembered per browser.
@@ -268,18 +270,33 @@ export default function CatalogPage() {
     if (!session) return;
     supabase.rpc("catalog_categories").then(({ data }) => {
       setCategories((data as { category: string; n: number }[]) ?? []);
+      setCatsDone(true);
     });
   }, [session]);
 
   // ?cat= deep link: the category was applied from the very first request
   // (lib/urlCategory.ts). Once the real list has loaded, an unknown or stale
   // name falls back to "הכל" — unless the customer already picked another.
+  // In-site navigation (e.g. a home tile → this page) updates the address
+  // bar only AFTER this page first renders, so the read above can miss the
+  // link. Read it once more right after mounting and apply it then (one
+  // extra request in that case, as before this change).
   useEffect(() => {
-    if (!deepLinkCat || categories.length === 0) return;
+    if (deepLinkCat !== null || restored) return;
+    const c = readUrlCategory();
+    if (!c) return;
+    const t = window.setTimeout(() => { setDeepLinkCat(c); setActiveCat(c); }, 0);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // If the list could not be loaded at all, also go back to "הכל": without
+  // the list there are no chips, so the customer could not leave the category.
+  useEffect(() => {
+    if (!deepLinkCat || !catsDone) return;
     if (categories.some((c) => c.category === deepLinkCat)) return;
     const t = window.setTimeout(() => setActiveCat((a) => (a === deepLinkCat ? "all" : a)), 0);
     return () => window.clearTimeout(t);
-  }, [categories, deepLinkCat]);
+  }, [categories, catsDone, deepLinkCat]);
 
   // Filter generation: bumped whenever the query or category changes. The grid
   // remembers which generation its rows belong to, so a page>0 response can
@@ -424,21 +441,38 @@ export default function CatalogPage() {
   // cancel them. They stop on unmount, after 2 s, or when the customer scrolls.
   const holdRef = useRef<(() => void) | null>(null);
   useEffect(() => () => holdRef.current?.(), []);
+  const restoreGen = useRef<number | null>(null);
+  // Any scroll / tap / key by the customer while the pages are still
+  // reloading cancels the restore: they have taken over.
+  useEffect(() => {
+    if (!restored) return;
+    const evs = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    const cancel = () => { restoreRef.current = null; off(); };
+    const off = () => evs.forEach((ev) => window.removeEventListener(ev, cancel));
+    evs.forEach((ev) => window.addEventListener(ev, cancel, { passive: true }));
+    const t = window.setTimeout(off, 15000);
+    return () => { window.clearTimeout(t); off(); };
+  }, [restored]);
   useEffect(() => {
     const t = restoreRef.current;
     if (!t || !session) return;
     if (session.user.id !== t.uid) {
-      restoreRef.current = null;
-      const id = window.setTimeout(() => {
+      // Not cancelled by a re-render: the reset must always happen.
+      window.setTimeout(() => {
         appliedInput.current = "";
         setInput(""); setQuery(""); setActiveCat("all"); setSort("name"); setPriceBucket("all");
       }, 0);
-      return () => window.clearTimeout(id);
+      restoreRef.current = null;
+      return;
     }
     // Wait until the grid is really on screen (the sign-in check may still be
     // showing) and the current page has arrived.
     if (loading || loadingProducts || loadErr) return;
     if (landedPage.current !== page) return;
+    // The customer changed category / search / sort while the pages were
+    // reloading: their choice wins, the restore stops.
+    if (restoreGen.current === null) restoreGen.current = filterGen.current;
+    else if (restoreGen.current !== filterGen.current) { restoreRef.current = null; return; }
     const morePages = !endReached && products.length < total && page + 1 < t.pages;
     if (morePages) {
       const expected = page;

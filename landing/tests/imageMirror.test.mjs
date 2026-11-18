@@ -127,4 +127,25 @@ await test("end to end: downloads, refuses bad bodies, survives 546, publishes o
   assert.deepEqual(readdirSync(join(root, "public", "pimg", "480")).sort(), files, "a failing proxy never removes a photo we already hold");
 });
 
+await test("smoke-test mode writes nothing at all — not even the cache folder", async () => {
+  const srv = createServer((req, res) => { res.writeHead(200, { "content-type": "image/jpeg" }); res.end(Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(6000, 7)])); });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  const root = mkdtempSync(join(tmpdir(), "imgmirror-sample-"));
+  mkdirSync(join(root, "lib"));
+  const dataFile = join(root, "lib", "imageMirror.data.ts");
+  writeFileSync(dataFile, "// header\nexport const MIRRORED_480: string = \"\";\n");
+  const fixture = join(root, "fixture.json");
+  writeFileSync(fixture, JSON.stringify({ products: [{ id: "a", picture_link: "https://api.rivhit.co.il/online/FileService.svc/getItemPic/512481045/abc", rotation_override: null }] }));
+  for (const sampleValue of ["5", "not-a-number"]) {
+    Object.assign(process.env, { MIRROR_ROOT: root, KEREM_PUBLIC_PRODUCTS_FIXTURE: fixture, MIRROR_PROXY_BASE: `http://127.0.0.1:${srv.address().port}`, MIRROR_SAMPLE: sampleValue });
+    const m = await import(pathToFileURL(join(here, "..", "scripts", "mirror-images.mjs")).href + "?sample" + sampleValue);
+    const stats = await m.main();
+    assert.equal(stats.downloaded, 1);
+  }
+  delete process.env.MIRROR_SAMPLE;
+  srv.close();
+  assert.deepEqual(readdirSync(root).sort(), ["fixture.json", "lib"], "no .pimg-cache, no public/");
+  assert.match(readFileSync(dataFile, "utf8"), /MIRRORED_480: string = "";/);
+});
+
 console.log(`\n${n} imageMirror tests passed`);

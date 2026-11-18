@@ -12,7 +12,8 @@ import { tokens } from "../../lib/ui";
 // starts immediately — so it can only make a photo faster, never lose it.
 //
 // Guarantees:
-//   * bounded — at most 3 network attempts per product, never a retry loop;
+//   * bounded — at most 4 network attempts per product (static copy, proxy,
+//     proxy retry, original), never a retry loop;
 //   * the retry timer is cleared on unmount;
 //   * error state resets when the product (or variant) changes;
 //   * the placeholder is accessible (role="img" + Hebrew label);
@@ -71,7 +72,9 @@ export default function ProductImage({
   const [attempt, setAttempt] = useState(ATTEMPT_PROXY);
   const [phase, setPhase] = useState<"loading" | "loaded" | "failed">("loading");
   // Static copy first (when this build has one); false once it failed.
-  const staticSrc = mirrorSrc(link, width, rot);
+  // Not on the manager's photo screens (they pass onStatus): they must always
+  // judge the LIVE photo from Rivhit, never a copy made at the last deploy.
+  const staticSrc = onStatus ? "" : mirrorSrc(link, width, rot);
   const [useStatic, setUseStatic] = useState(true);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

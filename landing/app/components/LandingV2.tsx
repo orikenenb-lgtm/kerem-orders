@@ -168,8 +168,8 @@ export default function LandingV2() {
         {categories === null && (
           <section className={styles.section} aria-hidden="true">
             <div className={styles.highlights}>
-              <span className={`${styles.highlight} ${styles.skeleton}`} />
-              <span className={`${styles.highlight} ${styles.skeleton}`} />
+              <span className={`${styles.highlight} ${styles.skeleton} ${styles.highlightSkel}`} />
+              <span className={`${styles.highlight} ${styles.skeleton} ${styles.highlightSkel}`} />
             </div>
           </section>
         )}

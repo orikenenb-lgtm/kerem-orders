@@ -595,6 +595,9 @@
 }
 
 /* skeletons (loading) — opacity pulse only */
+.highlightSkel {
+  pointer-events: none; /* a placeholder: no hover lift, nothing to click */
+}
 .skeleton {
   background: var(--kt-surface, #F4F0FF);
   animation: pulse 1.4s ease-in-out infinite;

@@ -1,5 +1,6 @@
 "use client";
 
+import { clearCatalogReturn } from "./catalogReturn";
 import {
   createContext,
   useContext,
@@ -138,6 +139,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshProfile: () => loadProfile(session?.user?.id),
     signOut: async () => {
       await supabase.auth.signOut();
+      // The catalogue's saved view (filters / search text) never outlives the account.
+      clearCatalogReturn();
       setProfile(null);
     },
   };
