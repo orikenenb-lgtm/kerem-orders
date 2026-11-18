@@ -162,6 +162,17 @@ export default function LandingV2() {
         </section>
 
         {/* ---------------- HIGHLIGHTS (only real categories) ---------------- */}
+        {/* While the category list is still loading, hold the row's space so
+            the sections below do not jump down when it arrives (it is the
+            first thing under the hero; measured CLS 0.09–0.10 on phones). */}
+        {categories === null && (
+          <section className={styles.section} aria-hidden="true">
+            <div className={styles.highlights}>
+              <span className={`${styles.highlight} ${styles.skeleton}`} />
+              <span className={`${styles.highlight} ${styles.skeleton}`} />
+            </div>
+          </section>
+        )}
         {(newStock || sale) && (
           <section className={styles.section} aria-label="חדש במלאי ומבצעים">
             <Reveal>

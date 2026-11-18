@@ -16,6 +16,7 @@ import { tokens, ils } from "../../lib/ui";
 import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
 import { BUSINESS_NAME, BUSINESS_TAGLINE } from "../../lib/config";
 import { useAuth } from "../../lib/auth";
+import { readUrlCategory } from "../../lib/urlCategory";
 import ui from "./PublicCatalog.module.css";
 
 // Shared public, read-only catalog (no login, no ordering) behind both
@@ -72,7 +73,8 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
   const [loadErr, setLoadErr] = useState(false);
   const [fuzzyNote, setFuzzyNote] = useState(false);
   const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
-  const [activeCat, setActiveCat] = useState("all");
+  const [deepLinkCat] = useState<string | null>(() => readUrlCategory());
+  const [activeCat, setActiveCat] = useState(() => deepLinkCat ?? "all");
   const [vatLabel, setVatLabel] = useState(true);
 
   // Product preview dialog. Holds the product being previewed plus the card
@@ -95,27 +97,15 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
     });
   }, []);
 
-  // Optional deep link from the home page's category tiles: ?cat=<name>.
-  // Applied once, only after the real category list has loaded and only if
-  // the name is in it — an unknown or stale name leaves the page on "הכל",
-  // exactly as without the link. The existing [activeCat] effect then resets
-  // paging just like a chip click. The state update runs in a task (not in
-  // the effect body); a StrictMode re-run clears the pending timer and
-  // re-arms it, so it still applies exactly once.
-  const deepLinkDone = useRef(false);
+  // ?cat= deep link: the category was applied from the very first request
+  // (lib/urlCategory.ts). Once the real list has loaded, an unknown or stale
+  // name falls back to "הכל" — unless the customer already picked another.
   useEffect(() => {
-    if (deepLinkDone.current || categories.length === 0) return;
-    const cat = new URLSearchParams(window.location.search).get("cat");
-    if (!cat || !categories.some((c) => c.category === cat)) {
-      deepLinkDone.current = true;
-      return;
-    }
-    const t = window.setTimeout(() => {
-      deepLinkDone.current = true;
-      setActiveCat(cat);
-    }, 0);
+    if (!deepLinkCat || categories.length === 0) return;
+    if (categories.some((c) => c.category === deepLinkCat)) return;
+    const t = window.setTimeout(() => setActiveCat((a) => (a === deepLinkCat ? "all" : a)), 0);
     return () => window.clearTimeout(t);
-  }, [categories]);
+  }, [categories, deepLinkCat]);
 
   // VAT note on the prices page only. Anon RLS exposes just this one settings
   // key; a missing row (or a failed read) keeps the default: label shown.
@@ -215,7 +205,12 @@ export default function PublicCatalog({ showPrices }: { showPrices: boolean }) {
     const el = sentinelRef.current;
     if (!el || !hasMore || loadingProducts || loadErr) return;
     const obs = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) setPage((p) => p + 1); },
+      // Advance only while the grid shows the CURRENT filter: applying a
+      // search hides the chips/filters above the grid, which can pull the
+      // sentinel into range while the old filter's rows are still on screen —
+      // that used to fire a page-2 request for the new filter, which was then
+      // thrown away and re-fetched (one wasted round trip per search).
+      (entries) => { if (entries[0].isIntersecting && gridGen.current === filterGen.current) setPage((p) => p + 1); },
       // Start the next request ~3 phone screens early, so a customer who
       // scrolls fast meets products, not the loading line.
       { rootMargin: "2000px" }

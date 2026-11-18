@@ -7,14 +7,16 @@ import A11yWidget from "./components/A11yWidget";
 import { featureFlags } from "../lib/featureFlags";
 
 const rubik = Rubik({
-  subsets: ["hebrew", "latin"],
+  // latin-ext carries "₪" (U+20AA): every page with a price downloaded that
+  // file anyway, late and without a preload — now it is preloaded with the rest.
+  subsets: ["hebrew", "latin", "latin-ext"],
   weight: ["400", "500", "600", "700", "800", "900"],
   variable: "--font-rubik",
   display: "swap",
 });
 
 const assistant = Assistant({
-  subsets: ["hebrew", "latin"],
+  subsets: ["hebrew", "latin", "latin-ext"],
   weight: ["300", "400", "500", "600"],
   variable: "--font-assistant",
   display: "swap",
@@ -78,6 +80,9 @@ export default function RootLayout({
         {/* Every page talks to Supabase (data + product images) — open the
             connection during HTML parse instead of on first fetch. */}
         <link rel="preconnect" href="https://mcdchalyzeqjkkgfeznd.supabase.co" />
+        {/* Data requests (REST/RPC/auth) are CORS fetches, which Chrome sends
+            over a SEPARATE connection from <img> requests — warm that one too. */}
+        <link rel="preconnect" href="https://mcdchalyzeqjkkgfeznd.supabase.co" crossOrigin="anonymous" />
       </head>
       <body>
         {/* Keyboard users can jump past the header straight to the content.
