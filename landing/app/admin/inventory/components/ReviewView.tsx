@@ -5,10 +5,10 @@
 // guard here, the disabled button, and the server (inv_approve only moves a
 // draft at the expected version; anything else raises INV_CONFLICT).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { tokens } from "../../../../lib/ui";
 import {
-  canSkipLine, countStatusLabel, diffOf, SKIP_WARNING, validateSkipNote, diffTone, formatSigned, isHighlighted, lineAttention, lineStatusLabel,
+  canSkipLine, countStatusLabel, rivhitDiff, SKIP_WARNING, UNVERIFIED_REVIEW_TEXT, validateSkipNote, diffTone, formatSigned, isHighlighted, lineAttention, lineStatusLabel,
   rpcErrorText, summarizeDiffs,
 } from "../../../../lib/inventory";
 import { approveCount, cancelCount, invokeSync, resolveLine, type Count, type Line, type Settings, type SyncResult } from "./api";
@@ -35,10 +35,16 @@ export default function ReviewView({ count, lines, settings, simulation, onReloa
 
   const draft = count.status === "draft";
   const threshold = settings.highlight_abs_diff;
-  const sorted = useMemo(
-    () => lines.slice().sort((a, b) => Math.abs(diffOf(b.counted_qty, b.baseline_qty)) - Math.abs(diffOf(a.counted_qty, a.baseline_qty)) || a.product_name.localeCompare(b.product_name, "he")),
-    [lines],
-  );
+  // The difference shown is the one the approval SENDS: counted − Rivhit's
+  // quantity captured right after the count. Lines never verified against
+  // Rivhit have no difference; they are listed apart and left out of totals.
+  const [verified, unverified] = useMemo(() => {
+    const byName = (a: Line, b: Line) => a.product_name.localeCompare(b.product_name, "he");
+    const v = lines.filter((l) => rivhitDiff(l) !== null)
+      .sort((a, b) => Math.abs(rivhitDiff(b)!) - Math.abs(rivhitDiff(a)!) || byName(a, b));
+    const u = lines.filter((l) => rivhitDiff(l) === null).sort(byName);
+    return [v, u];
+  }, [lines]);
   const sum = summarizeDiffs(lines, threshold);
   const open = lines.some((l) => ["pending", "in_progress", "sent"].includes(l.sync_status));
   const hasUnknown = lines.some((l) => l.sync_status === "unknown");
@@ -166,12 +172,16 @@ export default function ReviewView({ count, lines, settings, simulation, onReloa
       <section aria-label="סיכום" style={{ ...card, display: "grid", gap: "0.5rem" }}>
         <h2 style={h2}>סיכום ההפרשים</h2>
         <div style={{ fontFamily: tokens.assistant, fontSize: "0.95rem", color: tokens.text }}>
-          {sum.lines.toLocaleString("he-IL")} פריטים נספרו · <span style={{ color: OK }}>{sum.up} עודף</span> · <span style={{ color: ERR }}>{sum.down} חוסר</span> · {sum.same} בלי הפרש
-          {sum.highlighted > 0 && <> · <strong style={{ color: WARN }}>{sum.highlighted} מודגשים</strong> (הפרש של {threshold}+)</>}
+          <span data-testid="inv-review-summary">
+            {sum.lines.toLocaleString("he-IL")} פריטים נספרו · <span style={{ color: OK }}>{sum.up} עודף</span> · <span style={{ color: ERR }}>{sum.down} חוסר</span> · {sum.same} בלי הפרש
+            {sum.highlighted > 0 && <> · <strong style={{ color: WARN }}>{sum.highlighted} מודגשים</strong> (הפרש של {threshold}+)</>}
+            {sum.unverified > 0 && <> · <strong style={{ color: WARN }}>{sum.unverified} לא אומתו מול רווחית</strong></>}
+          </span>
         </div>
         <p role="note" style={{ ...note, color: tokens.body, fontSize: "0.9rem" }}>
           <strong>פריטים שלא נספרו לא משתנים.</strong> רק הפריטים שבטבלה מתעדכנים ברווחית — כל אחד לכמות שנספרה.
-          ״כמות רשומה״ = מה שהיה רשום ברווחית ברגע השמירה. אם המלאי ברווחית ישתנה עד העדכון, הפריט יסומן ״ספור מחדש״ ולא יעודכן.
+          ״כמות ברווחית״ = הכמות שנקראה מרווחית מיד אחרי שהפריט נספר, וההפרש הוא בדיוק מה שיישלח. אם המלאי ברווחית השתנה מאז —
+          הפריט ייעצר, יסומן ״ספור מחדש״ ולא יעודכן. פריט שלא אומת מול רווחית לא מקבל הפרש ולא יעודכן עד שייספר מחדש.
         </p>
         {!draft && (
           <div style={{ fontFamily: tokens.assistant, fontSize: "0.95rem" }}>
@@ -196,21 +206,31 @@ export default function ReviewView({ count, lines, settings, simulation, onReloa
             <thead>
               <tr>
                 <th scope="col" style={th}>פריט</th>
-                <th scope="col" style={{ ...th, textAlign: "center" }}>כמות רשומה</th>
+                <th scope="col" style={{ ...th, textAlign: "center" }}>כמות ברווחית בזמן הספירה</th>
                 <th scope="col" style={{ ...th, textAlign: "center" }}>נספר</th>
                 <th scope="col" style={{ ...th, textAlign: "center" }}>הפרש</th>
                 {!draft && <th scope="col" style={th}>מצב</th>}
               </tr>
             </thead>
             <tbody>
-              {sorted.map((l) => {
-                const d = diffOf(l.counted_qty, l.baseline_qty);
-                const hi = isHighlighted(d, threshold);
-                const tone = diffTone(d);
+              {[...verified, ...unverified].map((l, i) => {
+                const d = rivhitDiff(l);
+                const hi = d !== null && isHighlighted(d, threshold);
+                const groupHead = i === verified.length && unverified.length > 0;
+                const tone = d === null ? "zero" : diffTone(d);
                 const att = !draft ? lineAttention(l.sync_status, l.last_error) : null;
                 const label = lineStatusLabel(l.sync_status, count.status);
                 return (
-                  <tr key={l.id} data-highlight={hi ? "1" : undefined} style={{ background: hi ? "rgba(255,196,0,0.16)" : undefined }}>
+                  <Fragment key={l.id}>
+                  {groupHead && (
+                    <tr>
+                      <th scope="rowgroup" colSpan={draft ? 4 : 5} data-testid="inv-unverified-head"
+                        style={{ ...th, color: WARN, background: "rgba(180,83,9,0.06)", fontSize: "0.85rem", whiteSpace: "normal" }}>
+                        {UNVERIFIED_REVIEW_TEXT}
+                      </th>
+                    </tr>
+                  )}
+                  <tr data-highlight={hi ? "1" : undefined} data-unverified={d === null ? "1" : undefined} style={{ background: hi ? "rgba(255,196,0,0.16)" : undefined }}>
                     <td style={{ ...td, overflowWrap: "anywhere" }}>
                       {l.product_name}
                       {att && (
@@ -250,13 +270,19 @@ export default function ReviewView({ count, lines, settings, simulation, onReloa
                         </div>
                       )}
                     </td>
-                    <td style={num}>{l.baseline_qty.toLocaleString("he-IL")}</td>
+                    <td style={num}>
+                      {l.rivhit_baseline_qty !== null && l.rivhit_baseline_qty !== undefined ? l.rivhit_baseline_qty.toLocaleString("he-IL") : "—"}
+                      {l.baseline_qty !== l.rivhit_baseline_qty && (
+                        <div style={{ fontSize: "0.72rem", color: tokens.dim }}>באתר: {l.baseline_qty.toLocaleString("he-IL")}</div>
+                      )}
+                    </td>
                     <td style={num}>{l.counted_qty.toLocaleString("he-IL")}</td>
                     <td style={{ ...num, fontWeight: hi ? 800 : 600, color: tone === "pos" ? OK : tone === "neg" ? ERR : tokens.dim }}>
-                      <span dir="ltr">{formatSigned(d)}</span>
+                      {d === null ? <span title={UNVERIFIED_REVIEW_TEXT}>—</span> : <span dir="ltr">{formatSigned(d)}</span>}
                     </td>
                     {!draft && <td style={td}><span style={pill(label)}>{label}</span></td>}
                   </tr>
+                  </Fragment>
                 );
               })}
             </tbody>

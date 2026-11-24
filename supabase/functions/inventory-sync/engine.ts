@@ -32,7 +32,8 @@ export type Mode = 'live' | 'simulation'
 export type CountStatus = 'draft' | 'approved' | 'syncing' | 'done' | 'needs_attention' | 'cancelled'
 export type SyncStatus =
   | 'pending' | 'in_progress' | 'sent' | 'done' | 'no_change' | 'unknown' | 'failed' | 'changed' | 'skipped'
-export type EditStatus = 'pending' | 'in_progress' | 'done' | 'failed' | 'unknown'
+/** 'cancelled' = closed by a manager (inv_close_item_edit); terminal like done/failed. */
+export type EditStatus = 'pending' | 'in_progress' | 'done' | 'failed' | 'unknown' | 'cancelled'
 
 export interface CountRow {
   id: string
@@ -745,8 +746,9 @@ export interface CheckResult {
 }
 
 /** Reads the current quantity and asks Rivhit to VALIDATE (check_only:true)
- *  the document each pending line would make. No line status, no sync_ref,
- *  no product is written; only an event is logged. */
+ *  the document each pending line would make. Allowed on draft, approved,
+ *  syncing and needs_attention counts. No line, sync_ref, product, count
+ *  status or count mode is written; only an event is logged. */
 export async function checkCount(
   deps: EngineDeps,
   countId: string,
@@ -756,7 +758,9 @@ export async function checkCount(
   const newId = deps.newId ?? defaultUuid
   const count = await db.getCount(countId)
   if (!count) return { ok: false, error: 'INV_NOT_FOUND', results: [] }
-  if (!['approved', 'syncing', 'needs_attention'].includes(count.status)) {
+  // Read-only, so it also runs on a DRAFT count: the first live test checks
+  // the payload BEFORE approving (approving in the UI starts the sync).
+  if (!['draft', 'approved', 'syncing', 'needs_attention'].includes(count.status)) {
     return { ok: false, error: `INV_BAD_STATUS:${count.status}`, results: [] }
   }
   if (count.mode && count.mode !== opts.mode) return { ok: false, error: `INV_MODE_MISMATCH:${count.mode}`, results: [] }

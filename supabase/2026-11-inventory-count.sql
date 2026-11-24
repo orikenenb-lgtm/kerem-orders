@@ -26,6 +26,11 @@
 --   R5 inv_request_item_edit also refuses a code that another OPEN request is
 --      about to set on another product.
 --   R6 product_edit_requests.rivhit_before jsonb (the engine's snapshot).
+-- SECOND REVIEW: an edit request stuck in unknown/failed could never be closed,
+--   blocking further edits of the product and reserving its code forever.
+--   Status 'cancelled' + inv_close_item_edit(). Only pending / in_progress /
+--   unknown requests are "open" (the partial unique index and the duplicate
+--   check); done / failed / cancelled never reserve a product or a code.
 -- * RLS on every table, SELECT for managers only, NO insert/update/delete
 --   policies or grants for anon/authenticated. Writes go through the SECURITY
 --   DEFINER RPCs (each starts with is_manager()) or the service role (the
@@ -61,9 +66,11 @@
 --   INV_NOT_RESOLVABLE:<count status>:<line status>
 --                                       inv_resolve_line outside needs_attention or
 --                                       on a line not failed/unknown/changed
+--   INV_NOT_RESOLVABLE:<request status> inv_close_item_edit on in_progress/done/cancelled
 --
 -- ROLLBACK (DATA LOSS: deletes every count, line, event and edit request;
 -- products are untouched):
+--   drop function if exists public.inv_close_item_edit(uuid, text);
 --   drop function if exists public.inv_resolve_line(uuid, text);
 --   drop function if exists public.inv_request_item_edit(uuid, text, text, text);
 --   drop function if exists public.inv_cancel(uuid, integer);
@@ -194,8 +201,13 @@ create table if not exists public.product_edit_requests (
   attempts     integer not null default 0,
   last_error   text,
   constraint product_edit_requests_status_check
-    check (status in ('pending', 'in_progress', 'done', 'failed', 'unknown'))
+    check (status in ('pending', 'in_progress', 'done', 'failed', 'unknown', 'cancelled'))
 );
+-- Second review: 'cancelled' (set only by inv_close_item_edit), for databases
+-- that ran an earlier version of this file.
+alter table public.product_edit_requests drop constraint if exists product_edit_requests_status_check;
+alter table public.product_edit_requests add constraint product_edit_requests_status_check
+  check (status in ('pending', 'in_progress', 'done', 'failed', 'unknown', 'cancelled'));
 -- R6: the complete Rivhit item record read before the first Item.Update.
 alter table public.product_edit_requests add column if not exists rivhit_before jsonb null;
 -- One open request per product.
@@ -792,3 +804,41 @@ end;
 $$;
 revoke all on function public.inv_resolve_line(uuid, text) from public, anon;
 grant execute on function public.inv_resolve_line(uuid, text) to authenticated;
+
+
+-- inv_close_item_edit: close an edit request that is waiting (pending) or stuck
+-- (unknown / failed) so the product can be edited again and its new code is
+-- released. in_progress belongs to the engine and cannot be closed here.
+-- WARNING for the UI: for an 'unknown' request Rivhit may already hold the new
+-- values; the manager must check Rivhit by hand.
+create or replace function public.inv_close_item_edit(p_request_id uuid, p_note text)
+returns void
+language plpgsql security definer set search_path to 'public'
+as $$
+declare
+  v_note text := btrim(coalesce(p_note, ''));
+  v_req  public.product_edit_requests%rowtype;
+begin
+  if not public.is_manager() then raise exception 'להנהלה בלבד'; end if;
+
+  if length(v_note) < 3 or length(v_note) > 500 then raise exception 'INV_BAD_INPUT:note'; end if;
+
+  select * into v_req from public.product_edit_requests r where r.id = p_request_id for update;
+  if not found then raise exception 'INV_NOT_FOUND'; end if;
+  if v_req.status not in ('pending', 'unknown', 'failed') then
+    raise exception 'INV_NOT_RESOLVABLE:%', v_req.status;
+  end if;
+
+  update public.product_edit_requests r set status = 'cancelled', finished_at = now()
+  where r.id = p_request_id;
+
+  perform public.inv_log(null, v_req.product_id, 'item_edit_cancelled', jsonb_build_object(
+    'request_id', p_request_id,
+    'before_status', v_req.status,
+    'note', v_note,
+    'last_error', v_req.last_error,
+    'new', jsonb_build_object('name', v_req.new_name, 'barcode', v_req.new_barcode, 'sku', v_req.new_sku)));
+end;
+$$;
+revoke all on function public.inv_close_item_edit(uuid, text) from public, anon;
+grant execute on function public.inv_close_item_edit(uuid, text) to authenticated;

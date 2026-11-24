@@ -118,14 +118,28 @@ export function formatSigned(diff: number): string {
   return diff > 0 ? `+${abs}` : `-${abs}`;
 }
 
-export type DiffSummary = { lines: number; up: number; down: number; same: number; highlighted: number; netUnits: number };
+/**
+ * The difference the approval will actually send: counted − Rivhit's own
+ * quantity captured right after the count (rivhit_baseline_qty, CONTRACT
+ * Addendum 1 R3). NOT the site copy (baseline_qty). null = never verified
+ * against Rivhit: the sync will stop that line for a recount, so it has no
+ * difference to show.
+ */
+export function rivhitDiff(l: { counted_qty: number; rivhit_baseline_qty?: number | null }): number | null {
+  if (l.rivhit_baseline_qty === null || l.rivhit_baseline_qty === undefined) return null;
+  return diffOf(l.counted_qty, l.rivhit_baseline_qty);
+}
+
+/** Totals over VERIFIED lines only; `unverified` counts the rest (no diff, not in totals). */
+export type DiffSummary = { lines: number; up: number; down: number; same: number; highlighted: number; netUnits: number; unverified: number };
 export function summarizeDiffs(
-  lines: readonly { counted_qty: number; baseline_qty: number }[],
+  lines: readonly { counted_qty: number; rivhit_baseline_qty?: number | null }[],
   threshold: number | null | undefined,
 ): DiffSummary {
-  const s: DiffSummary = { lines: lines.length, up: 0, down: 0, same: 0, highlighted: 0, netUnits: 0 };
+  const s: DiffSummary = { lines: lines.length, up: 0, down: 0, same: 0, highlighted: 0, netUnits: 0, unverified: 0 };
   for (const l of lines) {
-    const d = diffOf(l.counted_qty, l.baseline_qty);
+    const d = rivhitDiff(l);
+    if (d === null) { s.unverified++; continue; }
     if (d > 0) s.up++;
     else if (d < 0) s.down++;
     else s.same++;
@@ -205,6 +219,15 @@ export function canSkipLine(syncStatus: string | null | undefined, countStatus: 
   return countStatus === "needs_attention" && ["failed", "unknown", "changed"].includes(String(syncStatus));
 }
 
+/** Edit requests a manager may close (inv_close_item_edit). */
+export function canCloseEdit(status: string | null | undefined): boolean {
+  return ["pending", "unknown", "failed"].includes(String(status));
+}
+export const CLOSE_EDIT_WARNING = "סגירת הבקשה לא משנה דבר באתר או ברווחית. אם הסטטוס היה 'דורש בדיקה' — ייתכן שהשינוי כבר קיים ברווחית; בדקו שם ידנית.";
+
+/** Shown instead of a difference for a line never verified against Rivhit. */
+export const UNVERIFIED_REVIEW_TEXT = "לא אומת מול רווחית — יסומן 'ספור מחדש' ולא יעודכן";
+
 /** The binding warning shown before skipping a line (CONTRACT Addendum 1, R2). */
 export const SKIP_WARNING = "הפריט לא יעודכן בספירה הזו. אם הסטטוס היה 'דורש בדיקה' — ייתכן שתעודה כבר נוצרה ברווחית; בדקו ברווחית ידנית";
 
@@ -231,8 +254,9 @@ export const VERIFIED_TEXT = "✓ אומת מול רווחית";
 export const NOT_VERIFIED_TEXT = "לא אומת — ייבדק באישור";
 
 /** product_edit_requests.status → label. */
-export function editStatusLabel(status: string | null | undefined): UserLabel {
+export function editStatusLabel(status: string | null | undefined): UserLabel | "בוטלה" {
   switch (status) {
+    case "cancelled": return "בוטלה";
     case "pending": return LABELS.waiting;
     case "in_progress": return LABELS.syncing;
     case "done": return LABELS.done;
@@ -272,7 +296,9 @@ export type RpcError =
   | { kind: "not_found" }
   | { kind: "product_unavailable" }
   | { kind: "not_draft"; status: string }
-  | { kind: "not_resolvable"; countStatus: string; lineStatus: string }
+  /** inv_resolve_line: INV_NOT_RESOLVABLE:<count status>:<line status>;
+   *  inv_close_item_edit: INV_NOT_RESOLVABLE:<request status> (lineStatus null). */
+  | { kind: "not_resolvable"; countStatus: string; lineStatus: string | null }
   | { kind: "empty" }
   | { kind: "no_change" }
   | { kind: "edit_pending"; requestId: string }
@@ -327,8 +353,8 @@ export function parseRpcError(err: ErrLike): RpcError {
   if (dup) return { kind: "duplicate_code", productName: dup[1].trim() };
   const pend = msg.match(/INV_EDIT_PENDING:([0-9a-fA-F-]{8,})/);
   if (pend) return { kind: "edit_pending", requestId: pend[1] };
-  const notRes = msg.match(/INV_NOT_RESOLVABLE:([a-z_]+):([a-z_]+)/);
-  if (notRes) return { kind: "not_resolvable", countStatus: notRes[1], lineStatus: notRes[2] };
+  const notRes = msg.match(/INV_NOT_RESOLVABLE:([a-z_]+)(?::([a-z_]+))?/);
+  if (notRes) return { kind: "not_resolvable", countStatus: notRes[1], lineStatus: notRes[2] ?? null };
   const notDraft = msg.match(/INV_NOT_DRAFT:([a-z_]+)/);
   if (notDraft) return { kind: "not_draft", status: notDraft[1] };
   const badInput = msg.match(/INV_BAD_INPUT:([a-z_]+)/);
@@ -367,7 +393,10 @@ export function rpcErrorText(e: RpcError): string {
     case "not_found": return "לא נמצא (אולי נמחק בינתיים). רעננו את המסך.";
     case "product_unavailable": return "הפריט לא פעיל או לא מקושר לרווחית — אי אפשר לספור או לערוך אותו כאן.";
     case "not_draft": return `הספירה כבר במצב "${countStatusLabel(e.status)}" — אי אפשר לשנות בה כמויות.`;
-    case "not_resolvable": return `אי אפשר לדלג על הפריט: הוא כבר במצב "${lineStatusLabel(e.lineStatus, e.countStatus)}" והספירה במצב "${countStatusLabel(e.countStatus)}". המסך רוענן.`;
+    case "not_resolvable":
+      return e.lineStatus === null
+        ? `אי אפשר לסגור את הבקשה: היא כבר במצב "${editStatusLabel(e.countStatus)}".`
+        : `אי אפשר לדלג על הפריט: הוא כבר במצב "${lineStatusLabel(e.lineStatus, e.countStatus)}" והספירה במצב "${countStatusLabel(e.countStatus)}". המסך רוענן.`;
     case "empty": return "אין בספירה אף פריט — אין מה לאשר.";
     case "no_change": return "לא שיניתם כלום.";
     case "edit_pending": return "כבר יש בקשת עריכה פתוחה לפריט הזה.";
@@ -498,6 +527,7 @@ export function eventLabel(kind: string): string {
     line_lost: "שורה נתפסה ע״י תהליך אחר",
     sync_stopped: "העדכון לרווחית נעצר",
     line_skipped: "פריט דולג (החלטת מנהל)",
+    item_edit_cancelled: "בקשת עריכה נסגרה (החלטת מנהל)",
     baseline_captured: "כמות רווחית נקלטה בזמן הספירה",
   };
   return map[kind] ?? kind;

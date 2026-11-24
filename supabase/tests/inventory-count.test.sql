@@ -102,8 +102,8 @@ select t.ok((select bool_and(c.relrowsecurity) from pg_class c
 select t.ok((select bool_and(p.prosecdef and array_to_string(p.proconfig, ',') = 'search_path=public')
              from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'inv\_%'),
   'every inv_* function is SECURITY DEFINER with search_path=public');
-select t.ok((select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'inv\_%') = 10,
-  'idempotent: no duplicate inv_* overloads (10 functions)');
+select t.ok((select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'inv\_%') = 11,
+  'idempotent: no duplicate inv_* overloads (11 functions)');
 select t.ok(not exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'inv\_%'
                         and (has_function_privilege('anon', p.oid, 'execute'))),
   'no inv_* function is executable by anon (despite Supabase default privileges)');
@@ -114,6 +114,12 @@ select t.ok((select count(*) from information_schema.columns where table_schema 
 select t.ok((select pg_get_constraintdef(oid) like '%skipped%' from pg_constraint
              where conname = 'inventory_count_lines_sync_status_check'),
   'addendum R2: sync_status CHECK accepts skipped');
+select t.ok((select pg_get_constraintdef(oid) like '%cancelled%' from pg_constraint
+             where conname = 'product_edit_requests_status_check')
+            and (select pg_get_indexdef(indexrelid) like '%pending%in_progress%unknown%'
+                        and pg_get_indexdef(indexrelid) not like '%cancelled%' and pg_get_indexdef(indexrelid) not like '%failed%'
+                 from pg_index where indexrelid = 'public.product_edit_requests_one_open_idx'::regclass),
+  'edit request status CHECK accepts cancelled; one-open index covers only pending/in_progress/unknown');
 select t.ok(not has_function_privilege('authenticated', 'public.inv_log(uuid,uuid,text,jsonb)', 'execute'),
   'internal inv_log() is not executable by authenticated');
 select t.ok((select bool_and(not has_table_privilege('authenticated', c.oid, 'insert')
@@ -175,6 +181,7 @@ select t.throws($$select public.inv_cancel(gen_random_uuid(), 1)$$,  '%permissio
 select t.throws($$select public.inv_request_item_edit('11111111-0000-0000-0000-000000000009', 'x', null, null)$$,
   '%permission denied%', 'anon cannot execute inv_request_item_edit');
 select t.throws($$select public.inv_resolve_line(gen_random_uuid(), 'note')$$, '%permission denied%', 'anon cannot execute inv_resolve_line');
+select t.throws($$select public.inv_close_item_edit(gen_random_uuid(), 'note')$$, '%permission denied%', 'anon cannot execute inv_close_item_edit');
 select t.throws($$select public.inv_log(null, null, 'x', '{}')$$, '%permission denied%', 'anon cannot execute inv_log');
 commit;
 
@@ -695,9 +702,72 @@ set local role authenticated;
 set local request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000001';
 select t.ok((select rivhit_before->>'item_name' = 'Epsilon' from public.product_edit_requests where id = current_setting('t.r8')::uuid),
   'R6: service role stores the Rivhit snapshot in rivhit_before (jsonb); manager can read it');
-select t.ok(public.inv_request_item_edit('11111111-0000-0000-0000-000000000002', null, 'DUPX1', null) is not null,
-  'R5: a failed (closed) request no longer reserves its code');
+select set_config('t.r2', public.inv_request_item_edit('11111111-0000-0000-0000-000000000002', null, 'DUPX1', null)::text, false);
+select t.ok(current_setting('t.r2') <> '', 'R5: a failed (closed) request no longer reserves its code');
 commit;
+
+-- ---------------------------------------------------------------------------
+-- 13b. Closing a stuck/waiting edit request (inv_close_item_edit).
+-- ---------------------------------------------------------------------------
+-- Beta's DUPX1 request gets stuck in unknown; Delta A's is being processed.
+begin;
+set local role service_role;
+update public.product_edit_requests set status = 'unknown', attempts = 1, last_error = 'read-back mismatch: barcode'
+ where id = current_setting('t.r2')::uuid;
+update public.product_edit_requests set status = 'in_progress', attempts = 1
+ where product_id = '11111111-0000-0000-0000-000000000004' and status = 'pending';
+commit;
+select set_config('t.products_hash', (select md5(string_agg(p::text, '|' order by p.id)) from public.products p), false);
+
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = 'aaaaaaaa-0000-0000-0000-000000000002';
+select t.throws($$select public.inv_request_item_edit('11111111-0000-0000-0000-000000000008', null, 'DUPX1', null)$$,
+  'INV_DUPLICATE_CODE:Beta', 'an unknown request still reserves its code');
+select t.throws($$select public.inv_request_item_edit('11111111-0000-0000-0000-000000000002', 'Beta 2', null, null)$$,
+  'INV_EDIT_PENDING:' || current_setting('t.r2'), 'an unknown request still blocks a new request for its product');
+select t.throws($$select public.inv_close_item_edit(current_setting('t.r2')::uuid, 'ab')$$, 'INV_BAD_INPUT:note',
+  'close edit: note shorter than 3 chars refused');
+select t.throws($$select public.inv_close_item_edit(current_setting('t.r2')::uuid, null)$$, 'INV_BAD_INPUT:note',
+  'close edit: missing note refused');
+select t.throws($$select public.inv_close_item_edit(current_setting('t.r2')::uuid, repeat('x', 501))$$, 'INV_BAD_INPUT:note',
+  'close edit: note longer than 500 chars refused');
+select t.throws($$select public.inv_close_item_edit(gen_random_uuid(), 'note')$$, 'INV_NOT_FOUND', 'close edit: unknown request refused');
+select t.throws($$select public.inv_close_item_edit(current_setting('t.r1')::uuid, 'note')$$, 'INV_NOT_RESOLVABLE:done',
+  'close edit: done request refused');
+select t.throws(format($$select public.inv_close_item_edit(%L, 'note')$$, (select id from public.product_edit_requests
+    where product_id = '11111111-0000-0000-0000-000000000004')), 'INV_NOT_RESOLVABLE:in_progress',
+  'close edit: in_progress request refused (the engine owns it)');
+select public.inv_close_item_edit(current_setting('t.r2')::uuid, '  בדקתי ברווחית, לא עודכן  ');
+select t.ok((select status = 'cancelled' and finished_at is not null and new_barcode = 'DUPX1' and attempts = 1
+                    and last_error = 'read-back mismatch: barcode' and old_name = 'Beta'
+             from public.product_edit_requests where id = current_setting('t.r2')::uuid),
+  'close edit: unknown -> cancelled, finished_at set, every other field kept');
+select t.ok((select actor = 'aaaaaaaa-0000-0000-0000-000000000002' and detail->>'before_status' = 'unknown'
+                    and detail->>'note' = 'בדקתי ברווחית, לא עודכן' and detail->>'last_error' = 'read-back mismatch: barcode'
+                    and product_id = '11111111-0000-0000-0000-000000000002'
+             from public.inventory_events where kind = 'item_edit_cancelled' and detail->>'request_id' = current_setting('t.r2')),
+  'item_edit_cancelled event: actor, before_status, trimmed note, last_error');
+select t.throws($$select public.inv_close_item_edit(current_setting('t.r2')::uuid, 'again')$$, 'INV_NOT_RESOLVABLE:cancelled',
+  'close edit: cancelled request refused');
+select t.ok(public.inv_request_item_edit('11111111-0000-0000-0000-000000000008', null, 'DUPX1', null) is not null,
+  'after cancel the code is no longer reserved (another product may request it)');
+select t.ok(public.inv_request_item_edit('11111111-0000-0000-0000-000000000002', 'Beta 2', null, null) is not null,
+  'after cancel a new request for the same product can be created');
+select public.inv_close_item_edit(current_setting('t.r8')::uuid, 'duplicate, closed');
+select t.ok((select status = 'cancelled' and rivhit_before is not null from public.product_edit_requests
+                 where id = current_setting('t.r8')::uuid),
+  'close edit: failed request -> cancelled (rivhit_before kept)');
+select set_config('t.r9', (select id::text from public.product_edit_requests
+  where product_id = '11111111-0000-0000-0000-000000000009' and status = 'pending'), false);
+select public.inv_close_item_edit(current_setting('t.r9')::uuid, 'no longer needed');
+select t.ok((select status = 'cancelled' and new_sku = 'AB-13' from public.product_edit_requests where id = current_setting('t.r9')::uuid),
+  'close edit: pending request -> cancelled');
+select t.ok(public.inv_request_item_edit('11111111-0000-0000-0000-000000000009', 'Zeta 4', null, null) is not null,
+  'after closing a pending request the product can be edited again');
+commit;
+select t.ok((select md5(string_agg(p::text, '|' order by p.id)) from public.products p) = current_setting('t.products_hash'),
+  'closing edit requests left products unchanged');
 
 -- ---------------------------------------------------------------------------
 -- 14. Manager cannot write the tables directly; events are append-only.
@@ -717,7 +787,7 @@ select t.throws($$update public.inventory_settings set rivhit_writes_enabled = t
 select t.throws($$update public.product_edit_requests set status = 'done'$$, '%permission denied%', 'manager cannot UPDATE edit requests directly');
 select t.throws($$select public.inv_log(null, null, 'fake', '{}')$$, '%permission denied%', 'manager cannot call the internal inv_log()');
 select t.ok(t.rows('select 1 from public.inventory_settings') = 1 and t.rows('select 1 from public.inventory_counts') = 6
-            and t.rows('select 1 from public.inventory_count_lines') = 5 and t.rows('select 1 from public.product_edit_requests') = 5,
+            and t.rows('select 1 from public.inventory_count_lines') = 5 and t.rows('select 1 from public.product_edit_requests') = 8,
   'manager SELECTs all inventory tables');
 commit;
 
@@ -725,8 +795,8 @@ commit;
 -- 15. Events: kinds and actors.
 -- ---------------------------------------------------------------------------
 select t.ok((select array_agg(distinct kind order by kind) from public.inventory_events)
-            = array['count_approved', 'count_cancelled', 'count_opened', 'item_edit_requested', 'line_deleted', 'line_saved', 'line_skipped', 'sync_rollup'],
-  'inventory_events has every kind (count_opened, line_saved, line_deleted, count_approved, count_cancelled, item_edit_requested, line_skipped)');
+            = array['count_approved', 'count_cancelled', 'count_opened', 'item_edit_cancelled', 'item_edit_requested', 'line_deleted', 'line_saved', 'line_skipped', 'sync_rollup'],
+  'inventory_events has every kind (count_opened, line_saved, line_deleted, count_approved, count_cancelled, item_edit_requested, line_skipped, item_edit_cancelled)');
 select t.ok(not exists (select 1 from public.inventory_events where kind <> 'sync_rollup'
                         and (actor is null or actor not in ('aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002'))),
   'every RPC event has actor = the calling manager (none null, none spoofed)');
@@ -767,6 +837,8 @@ begin
     'להנהלה בלבד', who || ' refused by inv_request_item_edit');
   perform t.throws(format($$select public.inv_resolve_line(%L, 'note')$$, current_setting('t.l9')),
     'להנהלה בלבד', who || ' refused by inv_resolve_line');
+  perform t.throws(format($$select public.inv_close_item_edit(%L, 'note')$$, current_setting('t.r1')),
+    'להנהלה בלבד', who || ' refused by inv_close_item_edit');
   perform t.throws($$select public.inv_log(null, null, 'x', '{}')$$, '%permission denied%', who || ' cannot call inv_log');
   foreach tbl in array array['inventory_settings', 'inventory_counts', 'inventory_count_lines', 'inventory_events', 'product_edit_requests'] loop
     perform t.ok(t.rows('select 1 from public.' || tbl) = 0, who || ' sees 0 rows in ' || tbl || ' (rows exist)');

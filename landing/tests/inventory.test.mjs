@@ -110,9 +110,24 @@ t("isHighlighted uses |diff| >= threshold and never highlights 0", () => {
   assert.equal(inv.isHighlighted(0, 0), false);
   assert.equal(inv.isHighlighted(1, null), true);
 });
-t("summarizeDiffs", () => {
-  const s = inv.summarizeDiffs([{ counted_qty: 10, baseline_qty: 10 }, { counted_qty: 50, baseline_qty: 10 }, { counted_qty: 5, baseline_qty: 10 }], 20);
-  assert.deepEqual(s, { lines: 3, up: 1, down: 1, same: 1, highlighted: 1, netUnits: 35 });
+t("summarizeDiffs uses Rivhit's captured quantity; unverified lines are left out", () => {
+  const s = inv.summarizeDiffs([
+    { counted_qty: 10, baseline_qty: 99, rivhit_baseline_qty: 10 },
+    { counted_qty: 50, baseline_qty: 10, rivhit_baseline_qty: 10 },
+    { counted_qty: 5, baseline_qty: 10, rivhit_baseline_qty: 10 },
+    { counted_qty: 7, baseline_qty: 1, rivhit_baseline_qty: null },
+    { counted_qty: 7, baseline_qty: 1 },
+  ], 20);
+  assert.deepEqual(s, { lines: 5, up: 1, down: 1, same: 1, highlighted: 1, netUnits: 35, unverified: 2 });
+});
+t("the reviewer's example: site 8, Rivhit 10, counted 8 → -2, not 'no difference'", () => {
+  const line = { counted_qty: 8, baseline_qty: 8, rivhit_baseline_qty: 10 };
+  assert.equal(inv.rivhitDiff(line), -2);
+  const s = inv.summarizeDiffs([line], 20);
+  assert.equal(s.down, 1);
+  assert.equal(s.same, 0);
+  assert.equal(inv.rivhitDiff({ counted_qty: 8, rivhit_baseline_qty: null }), null);
+  assert.equal(inv.UNVERIFIED_REVIEW_TEXT, "לא אומת מול רווחית — יסומן 'ספור מחדש' ולא יעודכן");
 });
 
 // ---- status labels
@@ -235,6 +250,16 @@ t("buildItemEdit: only changed fields are sent; sku cannot be cleared", () => {
   assert.equal(inv.buildItemEdit(cur, { name: "x", barcode: "1".repeat(16), sku: cur.sku }).ok, false);
   const nm = inv.buildItemEdit(cur, { name: "רובוט חדש", barcode: "", sku: cur.sku });
   assert.deepEqual(nm.params, { p_new_name: "רובוט חדש", p_new_barcode: null, p_new_sku: null });
+});
+
+t("closing a stuck item-edit request", () => {
+  for (const st of ["pending", "unknown", "failed"]) assert.equal(inv.canCloseEdit(st), true, st);
+  for (const st of ["in_progress", "done", "cancelled"]) assert.equal(inv.canCloseEdit(st), false, st);
+  assert.equal(inv.editStatusLabel("cancelled"), "בוטלה");
+  assert.match(inv.CLOSE_EDIT_WARNING, /ייתכן שהשינוי כבר קיים ברווחית/);
+  assert.deepEqual(E("INV_NOT_RESOLVABLE:done"), { kind: "not_resolvable", countStatus: "done", lineStatus: null });
+  assert.match(inv.rpcErrorText(E("INV_NOT_RESOLVABLE:done")), /הבקשה/);
+  assert.equal(inv.eventLabel("item_edit_cancelled"), "בקשת עריכה נסגרה (החלטת מנהל)");
 });
 
 t("misc: shortId, formatWhen, eventLabel", () => {

@@ -221,6 +221,13 @@ export async function resolveLine(lineId: string, note: string): Promise<Result<
   return { ok: true, data: String(data) };
 }
 
+/** Close a stuck item-edit request (pending / unknown / failed → cancelled). Nothing is written to Rivhit. */
+export async function closeItemEdit(requestId: string, note: string): Promise<Result<null>> {
+  const { error, status } = await supabase.rpc("inv_close_item_edit", { p_request_id: requestId, p_note: note });
+  if (error) return fail(error, status);
+  return { ok: true, data: null };
+}
+
 export type Baseline = { ok?: boolean; rivhit_baseline_qty: number | null; rivhit_baseline_at: string | null };
 
 /** R3: read Rivhit's quantity for a just-saved line. Never blocks the save. */

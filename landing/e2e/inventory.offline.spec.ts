@@ -1,5 +1,5 @@
 import { test, expect, devices, type Browser, type Page } from "@playwright/test";
-import { BY_SKU, callsOf, mockInventory, newInvState, seedDraftCount, type InvState } from "./mockInventory";
+import { BY_SKU, callsOf, mockInventory, newInvState, seedDraftCount, seedEditRequest, type InvState } from "./mockInventory";
 
 // Stock count (ספירת מלאי), proved OFFLINE: every Supabase / edge-function
 // call is answered by e2e/mockInventory.ts. Nothing reaches Supabase or Rivhit.
@@ -254,7 +254,7 @@ test.describe("manager on an iPhone 13", () => {
     await page.goto(`admin/inventory/?count=${id}&view=review`, { waitUntil: "domcontentloaded" });
 
     const table = page.getByTestId("inv-review-table");
-    await expect(table.getByRole("columnheader")).toHaveText(["פריט", "כמות רשומה", "נספר", "הפרש"]);
+    await expect(table.getByRole("columnheader")).toHaveText(["פריט", "כמות ברווחית בזמן הספירה", "נספר", "הפרש"]);
     await expect(table.locator("tbody tr")).toHaveCount(3);
     await expect(table.locator("tr[data-highlight]")).toHaveCount(2);
     await expect(table.locator("tbody tr").first()).toContainText("+40");
@@ -289,6 +289,59 @@ test.describe("manager on an iPhone 13", () => {
     await expect(page.getByRole("list", { name: "היסטוריית הספירה" })).toContainText("מנהלת בדיקה");
 
     expect(errors).toEqual([]);
+    await context.close();
+  });
+
+  test("review shows the difference that will be SENT (Rivhit at count time), unverified lines apart", async ({ browser, baseURL }) => {
+    const s = newInvState();
+    // The reviewer's case: the site copy says 40, Rivhit said 42 right after the count, 40 were counted.
+    const id = seedDraftCount(s, [["6928810168960", 40, 42], ["6924050751115", 12, null]]);
+    const robot = BY_SKU("6928810168960");
+    const heli = BY_SKU("6924050751115");
+    const { context, page, errors } = await open(browser, baseURL, s);
+    await page.goto(`admin/inventory/?count=${id}&view=review`, { waitUntil: "domcontentloaded" });
+    const table = page.getByTestId("inv-review-table");
+    const robotRow = table.locator("tbody tr", { hasText: robot.name });
+    await expect(robotRow).toContainText("-2");
+    await expect(robotRow).toContainText("באתר: 40");
+    await expect(page.getByTestId("inv-review-summary")).toContainText("1 חוסר");
+    await expect(page.getByTestId("inv-review-summary")).toContainText("0 בלי הפרש");
+    await expect(page.getByTestId("inv-review-summary")).toContainText("1 לא אומתו מול רווחית");
+    await expect(page.getByTestId("inv-unverified-head")).toHaveText("לא אומת מול רווחית — יסומן 'ספור מחדש' ולא יעודכן");
+    const heliRow = table.locator("tr[data-unverified]");
+    await expect(heliRow).toContainText(heli.name);
+    await expect(heliRow).toContainText("—");
+    await expect(page.getByText(/הכמות שנקראה מרווחית מיד אחרי שהפריט נספר/)).toBeVisible();
+
+    await page.getByTestId("inv-approve").click();
+    await expect(page.getByTestId("inv-count-status")).toHaveText("דורש טיפול", { timeout: 15_000 });
+    const sent = s.lines.find((l) => l.product_id === robot.id)!;
+    expect(sent.delta).toBe(-2);          // exactly what the screen showed
+    expect(sent.rivhit_doc_type).toBe(10); // stock out
+    await expect(table).toContainText("לא נקלטה כמות רווחית בזמן הספירה — ספרו מחדש");
+    expect(errors).toEqual([]);
+    await context.close();
+  });
+
+  test("a stuck item-edit request can be closed with a note", async ({ browser, baseURL }) => {
+    const s = newInvState();
+    const reqId = seedEditRequest(s, "6928810168960", "unknown");
+    const { context, page } = await open(browser, baseURL, s);
+    await startCount(page);
+    await wedge(page, "6928810168960");
+    await page.getByRole("button", { name: "עריכת פריט" }).click();
+    const panel = page.getByRole("region", { name: "עריכת פריט" });
+    await expect(panel.getByRole("status").filter({ hasText: "מצב הבקשה" })).toContainText("דורש טיפול");
+    await panel.getByRole("button", { name: "סגירת הבקשה" }).click();
+    const box = panel.getByRole("group", { name: "סגירת בקשת העריכה" });
+    await expect(box).toContainText("אם הסטטוס היה 'דורש בדיקה' — ייתכן שהשינוי כבר קיים ברווחית; בדקו שם ידנית");
+    const ok = box.getByRole("button", { name: "אישור סגירת הבקשה" });
+    await expect(ok).toBeDisabled();
+    await box.getByLabel(/סיבה/).fill("נבדק ברווחית — השם כבר עודכן ידנית");
+    await ok.click();
+    await expect(panel.getByRole("status").filter({ hasText: "מצב הבקשה" })).toContainText("בוטלה");
+    expect(s.edits[0].status).toBe("cancelled");
+    expect(callsOf(s, "inv_close_item_edit")[0].args).toEqual({ p_request_id: reqId, p_note: "נבדק ברווחית — השם כבר עודכן ידנית" });
     await context.close();
   });
 

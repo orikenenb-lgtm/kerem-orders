@@ -7,9 +7,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { tokens } from "../../../../lib/ui";
-import { buildItemEdit, editStatusLabel, rpcErrorText } from "../../../../lib/inventory";
-import { fetchEditRequest, fetchOpenEditRequest, invokeSync, requestItemEdit, type EditRequest, type Product } from "./api";
-import { card, field, h2, labelStyle, msgStyle, note, pill, secondaryBtn, bigBtn } from "./styles";
+import { buildItemEdit, canCloseEdit, CLOSE_EDIT_WARNING, editStatusLabel, rpcErrorText, validateSkipNote } from "../../../../lib/inventory";
+import { closeItemEdit, fetchEditRequest, fetchOpenEditRequest, invokeSync, requestItemEdit, type EditRequest, type Product } from "./api";
+import { card, ERR, field, h2, labelStyle, msgStyle, note, pill, secondaryBtn, bigBtn, WARN } from "./styles";
 
 const FIELD_HE = { name: "שם", barcode: "ברקוד", sku: "מק״ט" } as const;
 
@@ -24,8 +24,34 @@ export default function ItemEdit({ product, simulation, onClose }: {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [req, setReq] = useState<EditRequest | null>(null);
+  const [closing, setClosing] = useState<string | null>(null);
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+
+  // A request already open for this product (e.g. stuck in "דורש בדיקה") is
+  // shown first, so it can be retried or closed.
+  useEffect(() => {
+    let live = true;
+    void fetchOpenEditRequest(product.product_id).then((r) => { if (live && r) setReq((cur) => cur ?? r); });
+    return () => { live = false; };
+  }, [product.product_id]);
+
+  /** Close a stuck request (pending / unknown / failed → cancelled). Writes nothing to Rivhit. */
+  const closeReq = async () => {
+    if (!req || busy || closing === null) return;
+    const v = validateSkipNote(closing);
+    if (!v.ok) { setMsg({ ok: false, text: v.error }); return; }
+    setBusy(true);
+    setMsg(null);
+    const r = await closeItemEdit(req.id, v.note);
+    const row = await fetchEditRequest(req.id);
+    if (!mountedRef.current) return;
+    setBusy(false);
+    if (row) setReq(row);
+    if (!r.ok) { setMsg({ ok: false, text: rpcErrorText(r.err) }); return; }
+    setClosing(null);
+    setMsg({ ok: true, text: "הבקשה נסגרה. שום דבר לא שונה ברווחית או באתר בעקבות הסגירה." });
+  };
 
   const built = buildItemEdit({ name: product.name, barcode: product.barcode, sku: product.sku }, { name, barcode, sku });
   const current = { name: product.name, barcode: product.barcode ?? "", sku: product.sku ?? "" };
@@ -82,7 +108,7 @@ export default function ItemEdit({ product, simulation, onClose }: {
   };
 
   const label = req ? editStatusLabel(req.status) : null;
-  const open = req && req.status !== "done" && req.status !== "failed" && req.status !== "in_progress";
+  const open = req && (req.status === "pending" || req.status === "unknown");
 
   return (
     <section aria-label="עריכת פריט" style={{ ...card, display: "grid", gap: "0.8rem" }}>
@@ -133,7 +159,25 @@ export default function ItemEdit({ product, simulation, onClose }: {
         <button type="button" onClick={() => void retry()} disabled={busy} style={bigBtn(busy)}>
           {busy ? "בודק…" : req.status === "unknown" ? "בדיקה חוזרת" : "נסו שוב"}
         </button>
+      ) : req.status === "cancelled" ? (
+        <button type="button" onClick={() => { setReq(null); setMsg(null); }} disabled={busy} style={secondaryBtn}>בקשה חדשה</button>
       ) : null}
+      {req && canCloseEdit(req.status) && closing === null && (
+        <button type="button" onClick={() => { setClosing(""); setMsg(null); }} disabled={busy} style={{ ...secondaryBtn, color: ERR }}>סגירת הבקשה</button>
+      )}
+      {req && closing !== null && (
+        <div role="group" aria-label="סגירת בקשת העריכה" style={{ display: "grid", gap: "0.45rem", border: "1px solid rgba(180,83,9,0.4)", background: "rgba(180,83,9,0.06)", borderRadius: 12, padding: "0.7rem" }}>
+          <p role="note" style={{ ...note, color: WARN, fontSize: "0.9rem" }}>{CLOSE_EDIT_WARNING}</p>
+          <label style={labelStyle}>סיבה (חובה, 3–500 תווים)
+            <textarea value={closing} onChange={(e) => setClosing(e.target.value)} maxLength={500} rows={2} style={{ ...field, minHeight: 64, resize: "vertical" }} />
+          </label>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button type="button" onClick={() => void closeReq()} disabled={busy || !validateSkipNote(closing).ok}
+              style={{ ...secondaryBtn, color: ERR, opacity: busy || !validateSkipNote(closing).ok ? 0.55 : 1 }}>אישור סגירת הבקשה</button>
+            <button type="button" onClick={() => setClosing(null)} disabled={busy} style={{ ...secondaryBtn, color: tokens.body }}>ביטול</button>
+          </div>
+        </div>
+      )}
       <button type="button" onClick={onClose} disabled={busy} style={secondaryBtn}>סגירה</button>
     </section>
   );

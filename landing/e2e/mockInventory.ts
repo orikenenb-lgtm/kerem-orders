@@ -74,6 +74,8 @@ export type InvState = {
   captureFails: boolean;
   /** Neither the migration nor the edge function is installed (404s). */
   backendMissing: boolean;
+  /** Rivhit's own quantity per product when it differs from the site copy. */
+  rivhitQty: Map<string, number>;
   /** Every RPC / function call, in order: { name, args }. */
   calls: { name: string; args: Record<string, unknown> }[];
 };
@@ -89,6 +91,7 @@ export function newInvState(over: Partial<InvState> = {}): InvState {
     failOnSync: new Set(),
     captureFails: false,
     backendMissing: false,
+    rivhitQty: new Map(),
     calls: [],
     ...over,
   };
@@ -264,6 +267,18 @@ function rpc(s: InvState, route: Route, name: string, a: Record<string, unknown>
       log(s, c.id, l.product_id, "line_skipped", { before_status: before, note, sync_ref: l.sync_ref, rivhit_doc_number: l.rivhit_doc_number, count_status: c.status });
       return json(route, c.status);
     }
+    case "inv_close_item_edit": {
+      const note = String(a.p_note ?? "").trim();
+      if (note.length < 3 || note.length > 500) return raise(route, "INV_BAD_INPUT:note");
+      const r = s.edits.find((e) => e.id === a.p_request_id);
+      if (!r) return raise(route, "INV_NOT_FOUND");
+      if (!["pending", "unknown", "failed"].includes(r.status)) return raise(route, `INV_NOT_RESOLVABLE:${r.status}`);
+      const before = r.status;
+      r.status = "cancelled";
+      r.finished_at = now();
+      log(s, null, r.product_id, "item_edit_cancelled", { request_id: r.id, before_status: before, note });
+      return json(route, null);
+    }
     case "inv_request_item_edit": {
       const p = INV_PRODUCTS.find((x) => x.id === a.p_product_id);
       if (!p) return raise(route, "INV_NOT_FOUND");
@@ -322,8 +337,15 @@ function syncFn(s: InvState, route: Route, body: Record<string, unknown>) {
         log(s, c.id, l.product_id, "line_changed", { baseline: l.baseline_qty, current: l.baseline_qty + 3 });
         continue;
       }
-      const delta = l.counted_qty - l.baseline_qty;
-      l.rivhit_before_qty = l.baseline_qty;
+      // R3: compare with Rivhit's quantity captured at the count, never the site copy.
+      if (l.rivhit_baseline_qty === null) {
+        l.sync_status = "changed";
+        l.last_error = "לא נקלטה כמות רווחית בזמן הספירה — ספרו מחדש";
+        log(s, c.id, l.product_id, "line_changed", { mode: "simulation", reason: "no_rivhit_baseline" });
+        continue;
+      }
+      const delta = l.counted_qty - l.rivhit_baseline_qty;
+      l.rivhit_before_qty = l.rivhit_baseline_qty;
       l.delta = delta;
       if (delta === 0) { l.sync_status = "no_change"; continue; }
       l.rivhit_doc_type = delta > 0 ? 11 : 10;
@@ -345,7 +367,7 @@ function syncFn(s: InvState, route: Route, body: Record<string, unknown>) {
     if (l.version !== body.expected_version || !okStatus) {
       return json(route, { ok: false, error: "INV_CONFLICT", message: "תהליך אחר מעדכן את הרשומה הזאת כרגע — נסו שוב בעוד רגע" }, 409);
     }
-    l.rivhit_baseline_qty = INV_PRODUCTS.find((p) => p.id === l.product_id)!.stock_quantity;
+    l.rivhit_baseline_qty = s.rivhitQty.get(l.product_id) ?? INV_PRODUCTS.find((p) => p.id === l.product_id)!.stock_quantity;
     l.rivhit_baseline_at = now();
     return json(route, { ok: true, rivhit_baseline_qty: l.rivhit_baseline_qty, rivhit_baseline_at: l.rivhit_baseline_at });
   }
@@ -438,20 +460,29 @@ export async function mockInventory(context: BrowserContext, s: InvState, role: 
 }
 
 /** Put a draft count with already-saved lines straight into the state. */
-export function seedDraftCount(s: InvState, entries: [sku: string, qty: number][]): string {
+export function seedDraftCount(s: InvState, entries: [sku: string, qty: number, rivhit?: number | null][]): string {
   const c: Count = {
     id: uuid(seq++, "2222cccc"), storage_id: null, storage_name: null, status: "draft", note: null,
     created_by: USER.id, created_at: now(), approved_by: null, approved_at: null, finished_at: null, version: 1, mode: null,
   };
   s.counts.push(c);
-  for (const [sku, qty] of entries) {
+  for (const [sku, qty, rivhit] of entries) {
     const p = BY_SKU(sku);
+    const rb = rivhit === undefined ? p.stock_quantity : rivhit;
     s.lines.push({
       id: uuid(seq++, "3333dddd"), count_id: c.id, product_id: p.id, rivhit_id: p.rivhit_id, product_name: p.name, code_scanned: sku,
       counted_qty: qty, baseline_qty: p.stock_quantity, baseline_at: p.updated_at, counted_by: USER.id, counted_at: now(), version: 1,
       sync_status: "pending", sync_ref: null, rivhit_before_qty: null, delta: null, rivhit_doc_type: null, rivhit_doc_number: null,
-      rivhit_after_qty: null, attempts: 0, last_error: null, synced_at: null, rivhit_baseline_qty: p.stock_quantity, rivhit_baseline_at: now(),
+      rivhit_after_qty: null, attempts: 0, last_error: null, synced_at: null, rivhit_baseline_qty: rb, rivhit_baseline_at: rb === null ? null : now(),
     });
   }
   return c.id;
+}
+
+/** An item-edit request already in the given status (e.g. stuck in 'unknown'). */
+export function seedEditRequest(s: InvState, sku: string, status: string): string {
+  const p = BY_SKU(sku);
+  const id = uuid(seq++, "4444eeee");
+  s.edits.push({ id, product_id: p.id, status, last_error: status === "failed" ? "שגיאה ברווחית" : null, finished_at: null, new_name: p.name + " חדש", new_barcode: p.barcode, new_sku: p.sku });
+  return id;
 }

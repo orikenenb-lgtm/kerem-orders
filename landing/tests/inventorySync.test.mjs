@@ -688,9 +688,27 @@ t("live sync with no storage on the count while Rivhit has >1 storages → INV_S
   assert.ok(g.rv.st.calls.every((c) => c[0] !== "storageList"));
 });
 
+t("check_only runs on a DRAFT count before approval and writes nothing but an event", async () => {
+  const f = fixture([{ current: 3, counted: 4 }, { current: 5, counted: 2 }], { countStatus: "draft" });
+  const linesBefore = JSON.stringify([...f.db.st.lines.values()]);
+  const countBefore = JSON.stringify(f.db.st.count);
+  const productsBefore = JSON.stringify([...f.db.st.products.entries()]);
+  const r = await checkCount(f.deps, COUNT, { mode: "live", maxLines: 5 });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.results.map((x) => [x.outcome, x.doc_type, x.delta]), [["check_ok", 11, 1], ["check_ok", 10, -3]]);
+  assert.equal(JSON.stringify([...f.db.st.lines.values()]), linesBefore);
+  assert.equal(JSON.stringify(f.db.st.count), countBefore, "status, mode, version untouched");
+  assert.equal(JSON.stringify([...f.db.st.products.entries()]), productsBefore);
+  assert.equal(f.db.st.productWrites.length, 0); assert.equal(f.rv.st.docs.length, 0);
+  assert.ok(f.rv.st.calls.filter((c) => c[0] === "documentNew").length === 2);
+  assert.deepEqual(f.db.st.events.map((e) => e.kind), ["check_only"]);
+});
+
 t("checkCount validates status and mode", async () => {
-  let f = fixture([{ current: 1, counted: 2 }], { countStatus: "draft" });
-  assert.match((await checkCount(f.deps, COUNT, { mode: "live" })).error, /INV_BAD_STATUS:draft/);
+  let f = fixture([{ current: 1, counted: 2 }], { countStatus: "cancelled" });
+  assert.match((await checkCount(f.deps, COUNT, { mode: "live" })).error, /INV_BAD_STATUS:cancelled/);
+  f = fixture([{ current: 1, counted: 2 }], { countStatus: "done" });
+  assert.match((await checkCount(f.deps, COUNT, { mode: "live" })).error, /INV_BAD_STATUS:done/);
   f = fixture([{ current: 1, counted: 2 }]);
   f.db.st.count.mode = "simulation";
   assert.match((await checkCount(f.deps, COUNT, { mode: "live" })).error, /INV_MODE_MISMATCH/);
@@ -844,6 +862,23 @@ t("R7: sku edit when item_part_num is empty (site sku came from the barcode) set
   const g = editFixture({ old_sku: "111", new_sku: "NEW-1" }, { items: [{ ...ITEM, item_part_num: "", barcode: "222" }] });
   assert.equal((await applyItemEdit(g.deps, "edit-1", { mode: "live" })).status, "failed");
   assert.equal(g.rv.st.updates.length, 0);
+});
+
+t("cancelled edit requests are terminal (nothing sent) and never count as duplicates", async () => {
+  const f = editFixture({ new_name: "שם חדש", status: "cancelled" });
+  const r = await applyItemEdit(f.deps, "edit-1", { mode: "live" });
+  assert.equal(r.ok, false); assert.equal(r.error, "INV_BAD_STATUS:cancelled");
+  assert.equal(f.rv.st.calls.length, 0); assert.equal(f.db.st.edits.get("edit-1").status, "cancelled");
+  assert.equal(f.db.st.edits.get("edit-1").attempts, 0);
+  // closed requests (cancelled / failed / done) holding the same code do not block
+  const g = editFixture({ new_barcode: "4242" });
+  for (const [id, st] of [["e-c", "cancelled"], ["e-f", "failed"], ["e-d", "done"]]) {
+    g.db.st.edits.set(id, { id, product_id: `prod-${id}`, status: st, new_name: id, new_sku: "4242", new_barcode: "4242" });
+  }
+  assert.equal(await g.db.findDuplicateCode("prod-1", "edit-1", "4242"), null);
+  assert.equal((await applyItemEdit(g.deps, "edit-1", { mode: "live" })).status, "done");
+  g.db.st.edits.set("e-p", { id: "e-p", product_id: "prod-p", status: "unknown", new_name: "פתוחה", new_sku: "4242", new_barcode: "" });
+  assert.equal(await g.db.findDuplicateCode("prod-1", "edit-1", "4242"), "פתוחה");
 });
 
 t("apply_item_edit in simulation: no product writes, no network", async () => {
