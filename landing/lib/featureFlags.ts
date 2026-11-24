@@ -174,6 +174,19 @@ export const featureFlags = {
    *  new layouts and components stay. A full rollback of the redesign is a
    *  git revert of its merge commit (docs/redesign/04-deploy-rollback.md). */
   ff_premium_theme: true,
+  /** Stock count (ספירת מלאי), managers only: /admin/inventory/ and its row in
+   *  ניהול ← קטלוג. Scan (camera / keyboard-wedge scanner / search) → type the
+   *  counted units → save; a review of the differences against Rivhit and ONE
+   *  approve, after which only the counted items are corrected in Rivhit by
+   *  stock entry / stock-out documents (uncounted items are never touched).
+   *  Depends on supabase/2026-11-inventory-count.sql (inventory_* tables,
+   *  product_edit_requests and the inv_* RPCs) and the inventory-sync edge
+   *  function. Without them the page shows load errors but writes nothing;
+   *  real Rivhit writes additionally need INVENTORY_RIVHIT_MODE=live AND
+   *  inventory_settings.rivhit_writes_enabled — otherwise it is a simulation.
+   *  Rollback = set to false: the admin row and the page both disappear (the
+   *  route redirects to /admin); data already in the tables stays. */
+  ff_inventory_count: true,
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;

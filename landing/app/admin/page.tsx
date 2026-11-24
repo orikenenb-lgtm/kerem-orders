@@ -743,6 +743,15 @@ function ProductsTab() {
           </div>
           <Link href="/admin/hidden" style={{ ...ghostBtn, textDecoration: "none", whiteSpace: "nowrap" }}>הסתרה מהאתר ←</Link>
         </div>
+        {featureFlags.ff_inventory_count && (
+          <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>ספירת מלאי</div>
+              <div style={{ fontFamily: tokens.assistant, fontSize: "0.85rem", color: tokens.body }}>סורקים ברקוד, מזינים כמה יש על המדף ושומרים. בסוף רואים את ההפרשים מול רווחית ומאשרים פעם אחת — רק הפריטים שנספרו מתעדכנים.</div>
+            </div>
+            <Link href="/admin/inventory" style={{ ...ghostBtn, textDecoration: "none", whiteSpace: "nowrap" }}>פתיחת ספירת מלאי ←</Link>
+          </div>
+        )}
         <div style={{ borderTop: `1px solid ${tokens.border}`, paddingTop: "0.8rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
           <div>
             <div style={{ fontFamily: tokens.rubik, fontWeight: 800, fontSize: "1.1rem", color: tokens.text }}>לקוחות</div>
