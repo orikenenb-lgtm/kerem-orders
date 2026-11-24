@@ -20,6 +20,8 @@ import { resolveQuantity, stepOf, describeQuantity, pluralPack } from "../../lib
 import { orderExactFirst, sanitizeQuery } from "../../lib/searchRank";
 import { readCart, CART_KEY } from "../../lib/cart";
 import css from "./catalog.module.css";
+import { readUrlCategory } from "../../lib/urlCategory";
+import { readCatalogReturn, clearCatalogReturn, saveCatalogReturn, cameFromProductPage, type CatalogReturn } from "../../lib/catalogReturn";
 
 // 2026-11 premium redesign: pastel tints rotated across category chips and
 // product image frames. Presentation only — the index is the same `i` the map
@@ -144,21 +146,33 @@ export default function CatalogPage() {
   const router = useRouter();
   const { session, profile, loading, refreshProfile } = useAuth();
 
-  const [input, setInput] = useState("");
-  const [query, setQuery] = useState("");
+  // Coming back from a product page: the view the customer left (filters +
+  // how far they had scrolled) — see lib/catalogReturn.ts. Read once; only
+  // filter values, never products or prices. The page renders nothing
+  // data-dependent until the session is known, so this cannot affect the
+  // prerendered HTML.
+  const [restored] = useState<CatalogReturn | null>(() => (cameFromProductPage() ? readCatalogReturn() : null));
+  const restoreRef = useRef<CatalogReturn | null>(restored);
+
+  const [input, setInput] = useState(restored?.input ?? "");
+  const [query, setQuery] = useState(restored?.input ?? "");
   const [page, setPage] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [loadErr, setLoadErr] = useState(false);
   const [categories, setCategories] = useState<{ category: string; n: number }[]>([]);
-  const [activeCat, setActiveCat] = useState("all");
-  const [sort, setSort] = useState<"name" | "price_asc" | "price_desc">("name");
+  // The category list request has answered (successfully or not).
+  const [catsDone, setCatsDone] = useState(false);
+  // A restored view wins over the ?cat= link it may still carry in the URL.
+  const [deepLinkCat, setDeepLinkCat] = useState<string | null>(() => (restored ? null : readUrlCategory()));
+  const [activeCat, setActiveCat] = useState(restored?.activeCat ?? deepLinkCat ?? "all");
+  const [sort, setSort] = useState<"name" | "price_asc" | "price_desc">(restored?.sort ?? "name");
   // Products per row — the customer's own choice, remembered per browser.
   // "auto" is the pre-existing layout, so nothing moves until they pick.
   const [density, setDensity] = useGridDensity();
   // 3B wave 3: selected price bucket key (see PRICE_BUCKETS). "all" = no filter.
-  const [priceBucket, setPriceBucket] = useState("all");
+  const [priceBucket, setPriceBucket] = useState(restored?.priceBucket ?? "all");
 
   const [cart, setCart] = useState<Cart>({});
   // The last line deleted from the drawer, held so it can be put back exactly.
@@ -256,30 +270,33 @@ export default function CatalogPage() {
     if (!session) return;
     supabase.rpc("catalog_categories").then(({ data }) => {
       setCategories((data as { category: string; n: number }[]) ?? []);
+      setCatsDone(true);
     });
   }, [session]);
 
-  // Optional deep link from the home page's category tiles: ?cat=<name>.
-  // Applied once, only after the real category list has loaded and only if
-  // the name is in it — an unknown or stale name leaves the page on "הכל",
-  // exactly as without the link. The existing [activeCat] effect then resets
-  // paging just like a chip click. The state update runs in a task (not in
-  // the effect body); a StrictMode re-run clears the pending timer and
-  // re-arms it, so it still applies exactly once.
-  const deepLinkDone = useRef(false);
+  // ?cat= deep link: the category was applied from the very first request
+  // (lib/urlCategory.ts). Once the real list has loaded, an unknown or stale
+  // name falls back to "הכל" — unless the customer already picked another.
+  // In-site navigation (e.g. a home tile → this page) updates the address
+  // bar only AFTER this page first renders, so the read above can miss the
+  // link. Read it once more right after mounting and apply it then (one
+  // extra request in that case, as before this change).
   useEffect(() => {
-    if (deepLinkDone.current || categories.length === 0) return;
-    const cat = new URLSearchParams(window.location.search).get("cat");
-    if (!cat || !categories.some((c) => c.category === cat)) {
-      deepLinkDone.current = true;
-      return;
-    }
-    const t = window.setTimeout(() => {
-      deepLinkDone.current = true;
-      setActiveCat(cat);
-    }, 0);
+    if (deepLinkCat !== null || restored) return;
+    const c = readUrlCategory();
+    if (!c) return;
+    const t = window.setTimeout(() => { setDeepLinkCat(c); setActiveCat(c); }, 0);
     return () => window.clearTimeout(t);
-  }, [categories]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // If the list could not be loaded at all, also go back to "הכל": without
+  // the list there are no chips, so the customer could not leave the category.
+  useEffect(() => {
+    if (!deepLinkCat || !catsDone) return;
+    if (categories.some((c) => c.category === deepLinkCat)) return;
+    const t = window.setTimeout(() => setActiveCat((a) => (a === deepLinkCat ? "all" : a)), 0);
+    return () => window.clearTimeout(t);
+  }, [categories, catsDone, deepLinkCat]);
 
   // Filter generation: bumped whenever the query or category changes. The grid
   // remembers which generation its rows belong to, so a page>0 response can
@@ -304,6 +321,9 @@ export default function CatalogPage() {
   useEffect(() => { filterGen.current++; setPage(0); }, [activeCat, sort, priceBucket]);
 
   const loadSeq = useRef(0);
+  // The page number whose rows are on screen (set when a load lands) — the
+  // view-restore step advances only after the current page really arrived.
+  const landedPage = useRef(-1);
   const [fuzzyNote, setFuzzyNote] = useState(false);
   // A short page (fewer than PAGE_SIZE rows) means the data is exhausted, even
   // when dedup/count drift leaves products.length below total — without this
@@ -349,6 +369,7 @@ export default function CatalogPage() {
       const rows = orderExactFirst(((data as Product[]) ?? []), s);
       applyRows(rows, page > 0);
       gridGen.current = gen;
+      landedPage.current = page;
       setEndReached(rows.length < PAGE_SIZE);
       // An empty overflow page carries no window count — keep the known total.
       if (page === 0 || rows.length > 0) setTotal(Number(rows[0]?.total ?? 0));
@@ -395,12 +416,115 @@ export default function CatalogPage() {
     const rows = (data as Product[]) ?? [];
     applyRows(rows, page > 0);
     gridGen.current = gen;
+    landedPage.current = page;
     setEndReached(rows.length < PAGE_SIZE);
     setTotal(count ?? 0);
     setLoadingProducts(false);
   }, [session, query, page, activeCat, sort, priceBucket]);
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
+
+  // Restoring a saved view. Applied once, then removed from storage.
+  // * Another account signed in on this tab → drop it and go back to the
+  //   defaults (no filter or search text of the previous user is kept).
+  // * Otherwise load the same number of pages again (fresh from the database,
+  //   through the normal paging), then put the opened card back where it was
+  //   on screen. Each step only advances the page if nothing else (the
+  //   infinite-scroll observer) already did, so no page is ever skipped.
+  // Whatever was stored (valid, expired or another user's) has been read into
+  // `restored` by now — remove it so it is never applied twice.
+  useEffect(() => {
+    clearCatalogReturn();
+  }, []);
+  // The "keep the card in place" corrections run on their own timers, held in
+  // a ref: later re-renders (more pages, the sign-in check finishing) must not
+  // cancel them. They stop on unmount, after 2 s, or when the customer scrolls.
+  const holdRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => holdRef.current?.(), []);
+  const restoreGen = useRef<number | null>(null);
+  // Any scroll / tap / key by the customer while the pages are still
+  // reloading cancels the restore: they have taken over.
+  useEffect(() => {
+    if (!restored) return;
+    const evs = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    const cancel = () => { restoreRef.current = null; off(); };
+    const off = () => evs.forEach((ev) => window.removeEventListener(ev, cancel));
+    evs.forEach((ev) => window.addEventListener(ev, cancel, { passive: true }));
+    const t = window.setTimeout(off, 15000);
+    return () => { window.clearTimeout(t); off(); };
+  }, [restored]);
+  useEffect(() => {
+    const t = restoreRef.current;
+    if (!t || !session) return;
+    if (session.user.id !== t.uid) {
+      // Not cancelled by a re-render: the reset must always happen.
+      window.setTimeout(() => {
+        appliedInput.current = "";
+        setInput(""); setQuery(""); setActiveCat("all"); setSort("name"); setPriceBucket("all");
+      }, 0);
+      restoreRef.current = null;
+      return;
+    }
+    // Wait until the grid is really on screen (the sign-in check may still be
+    // showing) and the current page has arrived.
+    if (loading || loadingProducts || loadErr) return;
+    if (landedPage.current !== page) return;
+    // The customer changed category / search / sort while the pages were
+    // reloading: their choice wins, the restore stops.
+    if (restoreGen.current === null) restoreGen.current = filterGen.current;
+    else if (restoreGen.current !== filterGen.current) { restoreRef.current = null; return; }
+    const morePages = !endReached && products.length < total && page + 1 < t.pages;
+    if (morePages) {
+      const expected = page;
+      const id = window.setTimeout(() => setPage((p) => (p === expected ? p + 1 : p)), 0);
+      return () => window.clearTimeout(id);
+    }
+    restoreRef.current = null;
+    // Put the card back where it was, then keep it there for a moment while
+    // things above it finish loading (category chips, the minimum-order line)
+    // — unless the customer starts scrolling themselves.
+    const place = () => {
+      const card = document.querySelector<HTMLElement>(`[data-pid="${CSS.escape(t.anchorId)}"]`);
+      if (!card) {
+        window.scrollTo({ top: t.scrollY, behavior: "instant" as ScrollBehavior });
+        return;
+      }
+      const off = card.getBoundingClientRect().top - t.anchorTop;
+      if (Math.abs(off) > 2) window.scrollBy({ top: off, behavior: "instant" as ScrollBehavior });
+    };
+    holdRef.current?.();
+    const timers: number[] = [];
+    const userEvents = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    const stop = () => {
+      timers.forEach((x) => window.clearTimeout(x));
+      timers.length = 0;
+      userEvents.forEach((ev) => window.removeEventListener(ev, stop));
+      holdRef.current = null;
+    };
+    holdRef.current = stop;
+    userEvents.forEach((ev) => window.addEventListener(ev, stop, { passive: true }));
+    [0, 120, 350, 700, 1200, 2000].forEach((ms) => timers.push(window.setTimeout(place, ms)));
+    timers.push(window.setTimeout(stop, 2100));
+  }, [session, loading, loadingProducts, loadErr, products.length, endReached, total, page, restored]);
+
+  // Opening a product from the grid remembers this view for the way back.
+  // Plain left clicks only — a product opened in a new tab leaves this tab
+  // where it is anyway.
+  const rememberPlace = (e: React.MouseEvent<HTMLElement>, id: string) => {
+    if (!session || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const card = e.currentTarget.closest<HTMLElement>("[data-pid]") ?? e.currentTarget;
+    saveCatalogReturn({
+      uid: session.user.id,
+      activeCat,
+      input: query,
+      sort,
+      priceBucket,
+      pages: Math.max(1, Math.ceil(products.length / PAGE_SIZE)),
+      anchorId: id,
+      anchorTop: card.getBoundingClientRect().top,
+      scrollY: window.scrollY,
+    });
+  };
 
   // A11y for the cart drawer — the same dialog pattern the public catalogs'
   // ProductPreview already follows: Escape closes, Tab cycles inside the
@@ -456,19 +580,32 @@ export default function CatalogPage() {
   // Auto-load the next page when the sentinel under the grid scrolls into
   // view, so customers see everything just by scrolling — no page buttons.
   const hasMore = !endReached && products.length < total;
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // The sentinel is held in STATE (a callback ref), not a plain ref: the first
+  // products can arrive while the page still shows the sign-in check (the
+  // grid, and so the sentinel, is not rendered yet). With a plain ref the
+  // effect ran once, found no element, and never ran again — infinite scroll
+  // stopped at the first 48 products. Now the effect re-runs the moment the
+  // sentinel appears.
+  const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
-    const el = sentinelRef.current;
+    const el = sentinel;
     if (!el || !hasMore || loadingProducts || loadErr) return;
     const obs = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) setPage((p) => p + 1); },
+      // While a saved view is being restored the restore step owns paging
+      // (two advancers could skip a page).
+      // Advance only while the grid shows the CURRENT filter: applying a
+      // search hides the chips/filters above the grid, which can pull the
+      // sentinel into range while the old filter's rows are still on screen —
+      // that used to fire a page-2 request for the new filter, which was then
+      // thrown away and re-fetched (one wasted round trip per search).
+      (entries) => { if (entries[0].isIntersecting && !restoreRef.current && gridGen.current === filterGen.current) setPage((p) => p + 1); },
       // Start the next request ~3 phone screens early, so a customer who
       // scrolls fast meets products, not the loading line.
       { rootMargin: "2000px" }
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [hasMore, loadingProducts, loadErr, products.length]);
+  }, [sentinel, hasMore, loadingProducts, loadErr, products.length]);
 
   // Wave 3: transient "we rounded your quantity" note per product card
   // (product id → Hebrew message). Set/cleared on every setQty when the flag
@@ -962,7 +1099,7 @@ export default function CatalogPage() {
                 const displaySold = ffQty && step > 1 && dq > 1;
                 const packName = (p.display_name || "מארז").trim() || "מארז";
                 return (
-                  <div key={p.id} className={cx(ffMotion ? "kt-card kt-press" : "kt-card", css.card)} style={{ borderTop: ffCardV2 ? undefined : `3px solid ${accent}`, boxShadow: ffCardIncart && qty > 0 ? `0 0 0 2px #1A7A4D inset, ${tokens.shadowCard}` : tokens.shadowCard }}>
+                  <div key={p.id} data-pid={p.id} className={cx(ffMotion ? "kt-card kt-press" : "kt-card", css.card)} style={{ borderTop: ffCardV2 ? undefined : `3px solid ${accent}`, boxShadow: ffCardIncart && qty > 0 ? `0 0 0 2px #1A7A4D inset, ${tokens.shadowCard}` : tokens.shadowCard }}>
                     {/* No stock badge: quantities in Rivhit are not maintained
                         reliably (new items arrive as 0), so an automatic
                         "אזל מהמלאי" label mislabels products that ARE in stock. */}
@@ -971,7 +1108,7 @@ export default function CatalogPage() {
                         small inner padding, a very light pastel backdrop (the
                         photo multiplies onto it, so a white studio background
                         takes the tint instead of reading as a box). */}
-                    <Link href={`/product/?id=${p.id}`} aria-label={`פרטים על ${p.name}`} className={cx(css.frame, FRAME_TINTS[i % FRAME_TINTS.length])}>
+                    <Link href={`/product/?id=${p.id}`} prefetch={false} onClick={(e) => rememberPlace(e, p.id)} aria-label={`פרטים על ${p.name}`} className={cx(css.frame, FRAME_TINTS[i % FRAME_TINTS.length])}>
                       {ffCardIncart && qty > 0 && (
                         <span aria-hidden="true" className={css.badgeIn}>
                           ✓ בעגלה · {qty.toLocaleString("he-IL")}
@@ -981,7 +1118,7 @@ export default function CatalogPage() {
                         <ProductImage pictureLink={p.picture_link} name={p.name} rotation={p.rotation_override ?? 0} priority={i < PRIORITY_IMAGES} imgStyle={{ mixBlendMode: "multiply" }} />
                       </span>
                     </Link>
-                    <Link href={`/product/?id=${p.id}`} className={css.nameLink}>
+                    <Link href={`/product/?id=${p.id}`} prefetch={false} onClick={(e) => rememberPlace(e, p.id)} className={css.nameLink}>
                       {/* Clamped to keep every card the same height. Rivhit names run
                           long, and one long name stretched its card to 453px against 300px
                           for its neighbours — which stretches the whole grid row. title
@@ -1114,7 +1251,7 @@ export default function CatalogPage() {
 
             {/* Infinite-scroll sentinel: when it nears the viewport the next
                 page loads automatically — customers just keep scrolling. */}
-            <div ref={sentinelRef} aria-hidden="true" />
+            <div ref={setSentinel} aria-hidden="true" />
             {/* The error block renders whenever a load failed — even when the
                 grid is full and hasMore is false (e.g. a failed re-search),
                 so a failure is never silent. */}

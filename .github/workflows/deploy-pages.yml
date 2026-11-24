@@ -70,6 +70,28 @@ jobs:
             exit 1
           fi
           echo "Turnstile site key is configured (length only): ${#SITE_KEY} chars"
+      # Product photos as static files (see landing/lib/imageMirror.ts): each
+      # public product's card photo is fetched ONCE from the existing
+      # rivhit-img proxy — byte-for-byte its own output — and shipped under
+      # /pimg/480/, served by Pages instead of being re-resized for every
+      # visitor. The cache keeps them between deploys, so a normal deploy only
+      # asks for NEW photos (plus up to 40 of the oldest, so each copy is
+      # re-made about every 3 weeks).
+      # Never blocks a deploy: on any failure the site keeps using the proxy
+      # for every photo, exactly as before.
+      - name: Restore product-photo cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: landing/.pimg-cache
+          # "p2" = the proxy's output version (its URL carries v=2). If the
+          # proxy's resize ever changes, bump it here and in the URL: every
+          # copy is then made again from scratch.
+          key: pimg-p2-${{ github.run_id }}
+          restore-keys: pimg-p2-
+      - name: Product photos as static files
+        timeout-minutes: 15
+        continue-on-error: true
+        run: node scripts/mirror-images.mjs
       - name: Build (with public Turnstile site key baked in)
         env:
           NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}

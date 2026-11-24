@@ -188,13 +188,18 @@
   filter: drop-shadow(0 18px 28px rgba(26, 8, 64, 0.35));
 }
 
-/* gentle float on three shapes only */
+/* gentle float on three shapes only — twice, on arrival, then they rest.
+ * The whole drawing carries a drop-shadow filter, and SVG children cannot be
+ * moved on the GPU, so every animated frame repainted the filtered artwork:
+ * an endless loop kept a third of a desktop CPU busy (measured at 4x
+ * throttling: 1006 ms of every 3 s). Ending at the same position as it
+ * starts (0 → -9px → 0), it stops without a jump. */
 .floatA,
 .floatB,
 .floatC {
   transform-box: fill-box;
   transform-origin: center;
-  animation: float 6s ease-in-out infinite;
+  animation: float 6s ease-in-out 2;
 }
 .floatB {
   animation-duration: 7s;
@@ -590,6 +595,9 @@
 }
 
 /* skeletons (loading) — opacity pulse only */
+.highlightSkel {
+  pointer-events: none; /* a placeholder: no hover lift, nothing to click */
+}
 .skeleton {
   background: var(--kt-surface, #F4F0FF);
   animation: pulse 1.4s ease-in-out infinite;

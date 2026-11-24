@@ -19,3 +19,8 @@ next-env.d.ts
 # Regenerable extraction intermediates — the app serves the copies in public/
 /frames
 /hero.mp4
+
+# Deploy-time product-photo mirror (scripts/mirror-images.mjs): generated in
+# the deploy job, cached by actions/cache — never committed.
+/public/pimg
+/.pimg-cache
