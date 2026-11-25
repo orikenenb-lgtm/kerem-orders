@@ -160,8 +160,9 @@ A row is inserted with defaults.
 
 - **Caller:** must be a manager, checked server-side by reading `profiles.role`
   with the service client. Otherwise 403.
-- **Mode.** `live` only if env `INVENTORY_RIVHIT_MODE=live` **and**
-  `inventory_settings.rivhit_writes_enabled` **and** `rivhit_customer_id` is set.
+- **Mode.** `live` only if `inventory_settings.rivhit_writes_enabled` **and**
+  `rivhit_customer_id` is set, **and** env `INVENTORY_RIVHIT_MODE` is not
+  `simulation` (an optional server-side kill switch).
   Otherwise `simulation`:
   - a fake Rivhit, NO external calls;
   - **no write to `products`**;

@@ -52,7 +52,7 @@
    - מבצעים ספירת ניסיון של 2–3 פריטים עד "הושלם (סימולציה)".
 5. **ניסיון אמיתי ראשון — פריט אחד:**
    - ב-`inventory_settings` מגדירים `rivhit_customer_id` ו-`rivhit_writes_enabled=true`.
-   - בפונקציה מגדירים `INVENTORY_RIVHIT_MODE=live`. עושים זאת **לפני** פתיחת ספירת הניסיון: ספירה שהתחילה בסימולציה נשארת בסימולציה.
+   - עושים זאת **לפני** פתיחת ספירת הניסיון: ספירה שהתחילה בסימולציה נשארת בסימולציה. (`INVENTORY_RIVHIT_MODE` אינו נדרש; ערך `simulation` בו מכבה את הכתיבה בכל מקרה.)
    - פותחים ספירה חדשה וסופרים פריט אחד שההפרש בו קטן. **לא מאשרים עדיין.**
    - מריצים `check_only`. זו בדיקה ללא כתיבה, והפקודה המדויקת נמצאת ב-`supabase/functions/inventory-sync/README.md`.
    - רק אם התוצאה תקינה, מאשרים. אחר כך בודקים בעיניים את התעודה ברווחית.
@@ -67,7 +67,7 @@
 
 - **כיבוי מיידי של העדכון לרווחית:**
   - `update inventory_settings set rivhit_writes_enabled=false;`
-  - או הסרת `INVENTORY_RIVHIT_MODE`.
+  - או הגדרת `INVENTORY_RIVHIT_MODE=simulation` בפונקציה.
   - הספירות והטיוטות נשמרות.
 - **הסתרת המסך:** `ff_inventory_count: false` ב-`landing/lib/featureFlags.ts`, ואז פריסה.
 - **חזרה לגרסה קודמת:** `git revert` דרך PR. הטבלאות והנתונים במסד נשארים ולא מפריעים לשום דבר.

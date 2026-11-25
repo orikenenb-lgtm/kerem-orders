@@ -17,16 +17,16 @@ Tests: `cd landing && node tests/inventorySync.test.mjs` (50 tests, no network).
 | var | meaning |
 |---|---|
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Standard. Supabase provides them. |
-| `INVENTORY_RIVHIT_MODE` | `live` allows live mode. Anything else, or unset, means simulation. |
+| `INVENTORY_RIVHIT_MODE` | Optional kill switch: `simulation` forces simulation. Unset (or any other value) = follow `inventory_settings`. |
 | `INVENTORY_SYNC_BUDGET_MS` | Optional. Default 110000. After this, no new line is claimed and the call returns `stopped:"time_budget"`. The UI calls again to resume. |
 
 The Rivhit token is read with `rpc('_get_rivhit_token')`, the same vault entry as `rivhit-sync`. It is never logged.
 
 ## Modes
 
-Live mode needs all three of these. Otherwise the function runs in **simulation**.
+Live mode needs all of these. Otherwise the function runs in **simulation**.
 
-- `INVENTORY_RIVHIT_MODE=live`
+- `INVENTORY_RIVHIT_MODE` is not `simulation` (unset is fine)
 - `inventory_settings.rivhit_writes_enabled = true`
 - `inventory_settings.rivhit_customer_id` is set
 
@@ -103,7 +103,7 @@ Live mode is decided per request. The baseline is captured at SAVE time (`captur
 
 1. Complete the read-only checks below.
 2. Set `rivhit_customer_id` to a dedicated "ספירת מלאי" customer card. With `rivhit_writes_enabled=false`, run a full simulation of a real count and check the differences report. Then cancel it, or let it finish in simulation.
-3. **Configure live:** `INVENTORY_RIVHIT_MODE=live` and `rivhit_writes_enabled=true`. `status` must return `mode:"live"`.
+3. **Configure live:** `rivhit_writes_enabled=true` (and `INVENTORY_RIVHIT_MODE` not `simulation`). `status` must return `mode:"live"`.
 4. **Count one item.** Open a NEW count. If Rivhit has more than one storage, it must name a warehouse; otherwise the sync refuses with `INV_STORAGE_REQUIRED`. Count **exactly one line**: an item with a small +1 difference. Check that the UI shows "✓ אומת מול רווחית" (the baseline was captured live). **Do NOT approve yet**: approving in the UI starts the sync immediately.
 5. **Run check_only on the draft, from the function.** It is read-only: Item.Quantity plus Document.New with `check_only:true`. It writes no line, product, count status or mode, only an event. `<PROJECT_REF>`, `<MANAGER_JWT>` and `<COUNT_ID>` are placeholders: take the JWT from a manager's own logged-in browser session, and never paste a real token into a file or chat.
    ```
@@ -129,7 +129,7 @@ Live mode is decided per request. The baseline is captured at SAVE time (`captur
 
 ## Rollback
 
-- **Stop writes immediately:** `update inventory_settings set rivhit_writes_enabled=false`, or unset `INVENTORY_RIVHIT_MODE`. The next request is simulation.
+- **Stop writes immediately:** `update inventory_settings set rivhit_writes_enabled=false`, or set `INVENTORY_RIVHIT_MODE=simulation`. The next request is simulation.
 - **Remove the function:** `supabase functions delete inventory-sync`. Nothing else depends on it.
 - **Undo a wrong document:** do it in Rivhit by hand, with the opposite document type for the same quantity. The line's `rivhit_doc_number` and `inventory_events` show exactly what was sent.
 
