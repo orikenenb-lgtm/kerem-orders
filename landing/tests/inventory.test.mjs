@@ -331,4 +331,27 @@ t("public/zxing wasm matches the installed zxing-wasm (sha256)", () => {
   assert.equal(createHash("sha256").update(shipped).digest("hex"), expected);
 });
 
+t("parsePrice: comma or dot, > 0, at most 2 decimals, <= 100000", () => {
+  assert.equal(inv.parsePrice("12.9"), 12.9);
+  assert.equal(inv.parsePrice(" 12,50 "), 12.5);
+  assert.equal(inv.parsePrice("7"), 7);
+  for (const bad of ["", "0", "0.00", "-3", "1.234", "abc", "100001", "1e3", "12.5.1"]) assert.equal(inv.parsePrice(bad), null, bad);
+});
+
+t("buildItemEdit: price and description are sent only when changed; v1 callers unaffected", () => {
+  const cur = { name: "רובוט", barcode: "", sku: "A1", price: 12.9, description: "" };
+  const same = inv.buildItemEdit(cur, { name: "רובוט", barcode: "", sku: "A1", price: "12.90", description: "" });
+  assert.equal(same.ok, false);
+  const p = inv.buildItemEdit(cur, { name: "רובוט", barcode: "", sku: "A1", price: "14,5", description: "" });
+  assert.equal(p.ok, true); assert.deepEqual(p.changed, ["price"]);
+  assert.equal(p.params.p_new_price, 14.5); assert.equal(p.params.p_new_description, null);
+  const d = inv.buildItemEdit(cur, { name: "רובוט", barcode: "", sku: "A1", price: "12.9", description: "  רובוט מדבר  " });
+  assert.deepEqual(d.changed, ["description"]); assert.equal(d.params.p_new_description, "רובוט מדבר"); assert.equal(d.params.p_new_price, null);
+  assert.equal(inv.buildItemEdit(cur, { name: "רובוט", barcode: "", sku: "A1", price: "0", description: "" }).ok, false);
+  assert.equal(inv.buildItemEdit({ ...cur, description: "קיים" }, { name: "רובוט", barcode: "", sku: "A1", price: "12.9", description: " " }).ok, false);
+  assert.equal(inv.buildItemEdit(cur, { name: "רובוט", barcode: "", sku: "A1", price: "12.9", description: "x".repeat(501) }).ok, false);
+  const v1 = inv.buildItemEdit({ name: "רובוט", barcode: "", sku: "A1" }, { name: "רובוט 2", barcode: "", sku: "A1" });
+  assert.deepEqual(Object.keys(v1.params).sort(), ["p_new_barcode", "p_new_name", "p_new_sku"]);
+});
+
 console.log(`\n${n} inventory tests passed`);

@@ -387,7 +387,7 @@ export function rpcErrorText(e: RpcError): string {
     case "bad_code": return "קוד לא חוקי. מותר: ספרות, אותיות באנגלית ומקף.";
     case "bad_qty": return `כמות לא חוקית (מספר שלם בין 0 ל-${MAX_COUNT.toLocaleString("he-IL")}).`;
     case "bad_input": {
-      const f: Record<string, string> = { note: "ההערה ארוכה מדי (עד 500 תווים).", storage_name: "שם המחסן ארוך מדי.", name: "שם הפריט חייב להיות באורך 1 עד 100 תווים.", sku: "אי אפשר למחוק את המק\"ט." };
+      const f: Record<string, string> = { note: "ההערה ארוכה מדי (עד 500 תווים).", storage_name: "שם המחסן ארוך מדי.", name: "שם הפריט חייב להיות באורך 1 עד 100 תווים.", sku: "אי אפשר למחוק את המק\"ט.", price: "מחיר: מספר גדול מ-0, עד 2 ספרות אחרי הנקודה.", description: "תיאור: 1 עד 500 תווים." };
       return f[e.field] ?? "ערך לא חוקי.";
     }
     case "not_found": return "לא נמצא (אולי נמחק בינתיים). רעננו את המסך.";
@@ -548,10 +548,25 @@ export function eventLabelFor(kind: string, detail: unknown): string {
  * [0-9A-Za-z-]; name is trimmed, 1–100 chars. Returns the RPC params (only
  * the fields that really change are sent) or a Hebrew error.
  */
+export type ItemEditField = "name" | "barcode" | "sku" | "price" | "description";
+export type ItemEditParams = {
+  p_new_name: string | null; p_new_barcode: string | null; p_new_sku: string | null;
+  p_new_price?: number | null; p_new_description?: string | null;
+};
+
+/** "12.5" / "12,50" / " 7 " → 12.5 / 12.5 / 7; null when not a valid price
+ *  (> 0, <= 100000, at most 2 decimals — the same rule as the RPC). */
+export function parsePrice(raw: string): number | null {
+  const t = raw.trim().replace(",", ".");
+  if (!/^\d{1,6}(\.\d{1,2})?$/.test(t)) return null;
+  const n = Number(t);
+  return n > 0 && n <= 100000 ? n : null;
+}
+
 export function buildItemEdit(
-  current: { name: string; barcode: string | null; sku: string | null },
-  next: { name: string; barcode: string; sku: string },
-): { ok: true; params: { p_new_name: string | null; p_new_barcode: string | null; p_new_sku: string | null }; changed: ("name" | "barcode" | "sku")[] } | { ok: false; error: string } {
+  current: { name: string; barcode: string | null; sku: string | null; price?: number | null; description?: string | null },
+  next: { name: string; barcode: string; sku: string; price?: string; description?: string },
+): { ok: true; params: ItemEditParams; changed: ItemEditField[] } | { ok: false; error: string } {
   const name = next.name.trim();
   if (name.length < 1 || name.length > 100) return { ok: false, error: "שם הפריט חייב להיות באורך 1 עד 100 תווים." };
   const bc = next.barcode.trim();
@@ -560,16 +575,39 @@ export function buildItemEdit(
   if (bc !== "" && !re.test(bc)) return { ok: false, error: "ברקוד: עד 15 תווים — ספרות, אותיות באנגלית ומקף." };
   if (sku === "") return { ok: false, error: "אי אפשר למחוק את המק\"ט." };
   if (!re.test(sku)) return { ok: false, error: "מק\"ט: עד 15 תווים — ספרות, אותיות באנגלית ומקף." };
-  const changed: ("name" | "barcode" | "sku")[] = [];
+
+  let price: number | null = null;
+  let priceChanged = false;
+  if (next.price !== undefined) {
+    price = parsePrice(next.price);
+    if (price === null) return { ok: false, error: "מחיר: מספר גדול מ-0, עד 2 ספרות אחרי הנקודה (למשל 12.90)." };
+    priceChanged = current.price == null || Math.abs(price - Number(current.price)) > 1e-9;
+  }
+  let desc = "";
+  let descChanged = false;
+  if (next.description !== undefined) {
+    desc = next.description.trim();
+    const cur = (current.description ?? "").trim();
+    if (desc !== cur) {
+      if (desc === "") return { ok: false, error: "אי אפשר למחוק תיאור קיים (רווחית לא מאפשרת). אפשר לשנות אותו." };
+      if (desc.length > 500) return { ok: false, error: "תיאור: עד 500 תווים." };
+      descChanged = true;
+    }
+  }
+
+  const changed: ItemEditField[] = [];
   if (name !== current.name.trim()) changed.push("name");
   const bcChanged = bc !== (current.barcode ?? "").trim();
   if (bcChanged) changed.push("barcode");
   const skuChanged = sku !== (current.sku ?? "").trim();
   if (skuChanged) changed.push("sku");
+  if (priceChanged) changed.push("price");
+  if (descChanged) changed.push("description");
   if (changed.length === 0) return { ok: false, error: "לא שיניתם כלום." };
-  return {
-    ok: true,
-    changed,
-    params: { p_new_name: changed.includes("name") ? name : null, p_new_barcode: bcChanged ? bc : null, p_new_sku: skuChanged ? sku : null },
-  };
+  const params: ItemEditParams = { p_new_name: changed.includes("name") ? name : null, p_new_barcode: bcChanged ? bc : null, p_new_sku: skuChanged ? sku : null };
+  if (next.price !== undefined || next.description !== undefined) {
+    params.p_new_price = priceChanged ? price : null;
+    params.p_new_description = descChanged ? desc : null;
+  }
+  return { ok: true, changed, params };
 }

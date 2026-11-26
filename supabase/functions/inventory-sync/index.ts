@@ -1,5 +1,5 @@
 // inventory-sync — writes a manager's approved stock count (ספירת מלאי) and
-// item-detail edits to Rivhit. NOT DEPLOYED. Spec: docs/inventory/CONTRACT.md.
+// item-detail edits to Rivhit. Spec: docs/inventory/CONTRACT.md.
 // Runbook (env, modes, first live test, rollback): ./README.md.
 //
 // Who may call it: a logged-in MANAGER only. The JWT proves who; the role is
@@ -7,9 +7,10 @@
 // create-agent does). Anyone else gets 401/403 before any work.
 //
 // Mode (decided here, per request, never by the client):
-//   live        only if env INVENTORY_RIVHIT_MODE=live AND
-//               inventory_settings.rivhit_writes_enabled AND
-//               inventory_settings.rivhit_customer_id is set;
+//   live        only if inventory_settings.rivhit_writes_enabled AND
+//               inventory_settings.rivhit_customer_id is set, AND env
+//               INVENTORY_RIVHIT_MODE is not 'simulation' (the env var is an
+//               optional server-side kill switch; unset = follow settings);
 //   simulation  otherwise — an in-memory fake Rivhit (no external call at
 //               all), no write to products, document numbers SIM-…, the count
 //               is marked mode='simulation'.
@@ -85,7 +86,7 @@ Deno.serve(async (req) => {
   let mode: Mode = 'simulation'
   try {
     const settings = await db.getSettings()
-    const envLive = Deno.env.get('INVENTORY_RIVHIT_MODE') === 'live'
+    const envLive = Deno.env.get('INVENTORY_RIVHIT_MODE') !== 'simulation'
     const configured = !!settings.rivhit_customer_id
     mode = envLive && settings.rivhit_writes_enabled && configured ? 'live' : 'simulation'
 

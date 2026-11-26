@@ -851,6 +851,57 @@ t("R6: a recheck compares against the stored snapshot, never against current val
   assert.equal(g.rv.st.updates.length, 1);
 });
 
+t("price + description: sends ONLY sale_nis / item_extended_description changed, verifies read-back, local price+description updated", async () => {
+  const { db, rv, deps } = editFixture({ old_price: 4.9, new_price: 5.5, old_description: "תיאור", new_description: "כוס 200 מ\"ל, 50 יח'" });
+  const r = await applyItemEdit(deps, "edit-1", { mode: "live" });
+  assert.equal(r.status, "done");
+  const p = rv.st.updates[0];
+  assert.equal(p.sale_nis, 5.5);
+  assert.equal(p.item_extended_description, "כוס 200 מ\"ל, 50 יח'");
+  // every other field is the snapshot's own value
+  assert.equal(p.item_name, ITEM.item_name); assert.equal(p.cost_nis, 2.5); assert.equal(p.item_part_num, ITEM.item_part_num);
+  const w = db.st.productWrites[0];
+  assert.equal(w[0], "fields"); assert.equal(w[2].price, 5.5); assert.equal(w[2].description, "כוס 200 מ\"ל, 50 יח'");
+});
+
+t("price only: description untouched (not sent as a change, not written locally)", async () => {
+  const { db, rv, deps } = editFixture({ old_price: "4.90", new_price: "6.00", old_description: "תיאור", new_description: "תיאור" });
+  const r = await applyItemEdit(deps, "edit-1", { mode: "live" });
+  assert.equal(r.status, "done");
+  assert.equal(rv.st.updates[0].sale_nis, 6);
+  assert.equal(rv.st.updates[0].item_extended_description, "תיאור");
+  assert.equal("description" in db.st.productWrites[0][2], false);
+});
+
+t("price changed in Rivhit since the request → failed, nothing sent", async () => {
+  const f = editFixture({ old_price: 4.9, new_price: 5.5 }, { items: [{ ...ITEM, sale_nis: 7.2 }] });
+  const r = await applyItemEdit(f.deps, "edit-1", { mode: "live" });
+  assert.equal(r.status, "failed"); assert.match(r.message, /price/);
+  assert.equal(f.rv.st.updates.length, 0); assert.equal(f.db.st.productWrites.length, 0);
+});
+
+t("price read-back mismatch → unknown naming sale_nis, no local write", async () => {
+  const f = editFixture({ old_price: 4.9, new_price: 5.5 });
+  f.rv.st.dropOnUpdate = ["sale_nis"];
+  const r = await applyItemEdit(f.deps, "edit-1", { mode: "live" });
+  assert.equal(r.status, "unknown"); assert.deepEqual(r.mismatched, ["sale_nis"]);
+  assert.equal(f.db.st.productWrites.length, 0);
+});
+
+t("v1 request (no price/description columns) behaves exactly as before", async () => {
+  const { rv, deps } = editFixture({ new_name: "שם חדש" });
+  const r = await applyItemEdit(deps, "edit-1", { mode: "live" });
+  assert.equal(r.status, "done");
+  assert.equal(rv.st.updates[0].sale_nis, 4.9);
+  assert.equal(rv.st.updates[0].item_extended_description, "תיאור");
+});
+
+t("price/description edit in simulation: no product writes", async () => {
+  const { db, deps } = editFixture({ old_price: 4.9, new_price: 5.5, old_description: "תיאור", new_description: "חדש" });
+  const r = await applyItemEdit(deps, "edit-1", { mode: "simulation" });
+  assert.equal(r.status, "done"); assert.equal(db.st.productWrites.length, 0);
+});
+
 t("R7: sku edit when item_part_num is empty (site sku came from the barcode) sets item_part_num, keeps the barcode", async () => {
   const item = { ...ITEM, item_part_num: "", barcode: "7290000000017" };
   const { db, rv, deps } = editFixture({ old_sku: "7290000000017", new_sku: "NEW-1", old_barcode: "7290000000017", new_barcode: "7290000000017" }, { items: [item] });

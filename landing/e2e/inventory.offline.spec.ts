@@ -345,6 +345,50 @@ test.describe("manager on an iPhone 13", () => {
     await context.close();
   });
 
+  test("item edit shows the current price + description and sends only the changed ones (v2)", async ({ browser, baseURL }) => {
+    const s = newInvState();
+    const p = BY_SKU("6928810168960");
+    s.itemDetails = { [p.id]: { price: 12.9, description: "" } };
+    const { context, page, errors } = await open(browser, baseURL, s);
+    await startCount(page);
+    await wedge(page, "6928810168960");
+    await page.getByRole("button", { name: "עריכת פריט" }).click();
+    const panel = page.getByRole("region", { name: "עריכת פריט" });
+    const price = panel.getByLabel(/מחיר בסיס/);
+    await expect(price).toHaveValue("12.90");
+    await expect(panel.getByLabel(/תיאור פריט/)).toHaveValue("");
+    await price.fill("14,50");
+    await panel.getByLabel(/תיאור פריט/).fill("  מסוק שלט 3 ערוצים  ");
+    const table = panel.getByRole("table", { name: "לפני ואחרי" });
+    await expect(table).toContainText("₪12.90");
+    await expect(table).toContainText("₪14.50");
+    await expect(table).toContainText("מסוק שלט 3 ערוצים");
+    await panel.getByRole("button", { name: "שליחת השינוי לרווחית" }).click();
+    await expect(panel.getByRole("status").filter({ hasText: "מצב הבקשה" })).toContainText("הושלם");
+    expect(callsOf(s, "inv_request_item_edit_v2")[0].args).toEqual({
+      p_product_id: p.id, p_new_name: null, p_new_barcode: null, p_new_sku: null, p_new_price: 14.5, p_new_description: "מסוק שלט 3 ערוצים",
+    });
+    expect(callsOf(s, "inv_request_item_edit")).toHaveLength(0);
+    expect(errors).toEqual([]);
+    await context.close();
+  });
+
+  test("before the v2 migration the item edit works as before (no price/description fields)", async ({ browser, baseURL }) => {
+    const s = newInvState();
+    const { context, page } = await open(browser, baseURL, s);
+    await startCount(page);
+    await wedge(page, "6928810168960");
+    await page.getByRole("button", { name: "עריכת פריט" }).click();
+    const panel = page.getByRole("region", { name: "עריכת פריט" });
+    await expect(panel.getByLabel(/^שם/)).toBeVisible();
+    await expect(panel.getByLabel(/מחיר בסיס/)).toHaveCount(0);
+    await panel.getByLabel(/^שם/).fill("שם חדש לבדיקה");
+    await panel.getByRole("button", { name: "שליחת השינוי לרווחית" }).click();
+    await expect(panel.getByRole("status").filter({ hasText: "מצב הבקשה" })).toContainText("הושלם");
+    expect(callsOf(s, "inv_request_item_edit")).toHaveLength(1);
+    await context.close();
+  });
+
   test("a failed line can be skipped with a note → the count is done (with skipped items)", async ({ browser, baseURL }) => {
     const s = newInvState();
     const id = seedDraftCount(s, [["6928810168960", 42], ["6924050751115", 50]]);

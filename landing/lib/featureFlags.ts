@@ -182,8 +182,8 @@ export const featureFlags = {
    *  Depends on supabase/2026-11-inventory-count.sql (inventory_* tables,
    *  product_edit_requests and the inv_* RPCs) and the inventory-sync edge
    *  function. Without them the page shows load errors but writes nothing;
-   *  real Rivhit writes additionally need INVENTORY_RIVHIT_MODE=live AND
-   *  inventory_settings.rivhit_writes_enabled — otherwise it is a simulation.
+   *  real Rivhit writes additionally need inventory_settings.rivhit_writes_enabled
+   *  and rivhit_customer_id (and INVENTORY_RIVHIT_MODE not 'simulation').
    *  Rollback = set to false: the admin row and the page both disappear (the
    *  route redirects to /admin); data already in the tables stays. */
   ff_inventory_count: true,

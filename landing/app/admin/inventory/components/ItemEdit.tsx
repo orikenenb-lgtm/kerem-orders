@@ -1,6 +1,6 @@
 "use client";
 
-// "עריכת פריט": name / barcode / sku. Rivhit is the source of truth and the
+// "עריכת פריט": name / barcode / sku / price / description. Rivhit is the source of truth and the
 // 15-minute sync overwrites these fields, so the site NEVER edits them locally:
 // a request is recorded (inv_request_item_edit), then inventory-sync writes it
 // to Rivhit, reads it back, and only then updates the site.
@@ -8,10 +8,11 @@
 import { useEffect, useRef, useState } from "react";
 import { tokens } from "../../../../lib/ui";
 import { buildItemEdit, canCloseEdit, CLOSE_EDIT_WARNING, editStatusLabel, rpcErrorText, validateSkipNote } from "../../../../lib/inventory";
-import { closeItemEdit, fetchEditRequest, fetchOpenEditRequest, invokeSync, requestItemEdit, type EditRequest, type Product } from "./api";
+import { closeItemEdit, fetchEditRequest, fetchItemDetails, fetchOpenEditRequest, invokeSync, requestItemEdit, type EditRequest, type ItemDetails, type Product } from "./api";
 import { card, ERR, field, h2, labelStyle, msgStyle, note, pill, secondaryBtn, bigBtn, WARN } from "./styles";
 
-const FIELD_HE = { name: "שם", barcode: "ברקוד", sku: "מק״ט" } as const;
+const FIELD_HE = { name: "שם", barcode: "ברקוד", sku: "מק״ט", price: "מחיר", description: "תיאור" } as const;
+const fmtPrice = (n: number | null | undefined) => (n == null ? "" : Number(n).toFixed(2).replace(/\.00$/, ""));
 
 export default function ItemEdit({ product, simulation, onClose }: {
   product: Product;
@@ -21,12 +22,27 @@ export default function ItemEdit({ product, simulation, onClose }: {
   const [name, setName] = useState(product.name);
   const [barcode, setBarcode] = useState(product.barcode ?? "");
   const [sku, setSku] = useState(product.sku ?? "");
+  // Price + description: loaded once; null = not available → fields hidden.
+  const [details, setDetails] = useState<ItemDetails | null>(null);
+  const [price, setPrice] = useState("");
+  const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [req, setReq] = useState<EditRequest | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+
+  useEffect(() => {
+    let live = true;
+    void fetchItemDetails(product.product_id).then((d) => {
+      if (!live || !d) return;
+      setDetails(d);
+      setPrice(fmtPrice(d.price));
+      setDescription(d.description);
+    });
+    return () => { live = false; };
+  }, [product.product_id]);
 
   // A request already open for this product (e.g. stuck in "דורש בדיקה") is
   // shown first, so it can be retried or closed.
@@ -53,9 +69,21 @@ export default function ItemEdit({ product, simulation, onClose }: {
     setMsg({ ok: true, text: "הבקשה נסגרה. שום דבר לא שונה ברווחית או באתר בעקבות הסגירה." });
   };
 
-  const built = buildItemEdit({ name: product.name, barcode: product.barcode, sku: product.sku }, { name, barcode, sku });
-  const current = { name: product.name, barcode: product.barcode ?? "", sku: product.sku ?? "" };
-  const next = { name: name.trim(), barcode: barcode.trim(), sku: sku.trim() };
+  const built = details
+    ? buildItemEdit(
+        { name: product.name, barcode: product.barcode, sku: product.sku, price: details.price, description: details.description },
+        { name, barcode, sku, price, description })
+    : buildItemEdit({ name: product.name, barcode: product.barcode, sku: product.sku }, { name, barcode, sku });
+  const current = {
+    name: product.name, barcode: product.barcode ?? "", sku: product.sku ?? "",
+    price: details?.price != null ? `₪${fmtPrice(details.price)}` : "", description: details?.description ?? "",
+  };
+  const parsedPrice = price.trim().replace(",", ".");
+  const next = {
+    name: name.trim(), barcode: barcode.trim(), sku: sku.trim(),
+    price: parsedPrice ? `₪${fmtPrice(Number(parsedPrice))}` : "", description: description.trim(),
+  };
+  const isLtr = (k: string) => k === "barcode" || k === "sku" || k === "price";
 
   const apply = async (requestId: string) => {
     const r = await invokeSync<unknown>({ action: "apply_item_edit", request_id: requestId });
@@ -126,6 +154,16 @@ export default function ItemEdit({ product, simulation, onClose }: {
       <label style={labelStyle}>מק״ט
         <input value={sku} onChange={(e) => setSku(e.target.value)} maxLength={15} dir="ltr" autoComplete="off" spellCheck={false} style={{ ...field, textAlign: "left" }} disabled={busy || !!req} />
       </label>
+      {details && (
+        <>
+          <label style={labelStyle}>מחיר בסיס ברווחית (₪) — משנה את המחיר לכל הלקוחות
+            <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" maxLength={9} dir="ltr" autoComplete="off" style={{ ...field, textAlign: "left" }} disabled={busy || !!req} />
+          </label>
+          <label style={labelStyle}>תיאור פריט (עד 500 תווים)
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} rows={3} style={{ ...field, minHeight: 80, resize: "vertical" }} disabled={busy || !!req} />
+          </label>
+        </>
+      )}
 
       {built.ok ? (
         <div role="table" aria-label="לפני ואחרי" style={{ display: "grid", gap: "0.3rem", fontFamily: tokens.assistant, fontSize: "0.9rem" }}>
@@ -133,9 +171,9 @@ export default function ItemEdit({ product, simulation, onClose }: {
             <div role="row" key={k} style={{ display: "grid", gridTemplateColumns: "4.5rem 1fr", gap: "0.4rem", alignItems: "baseline" }}>
               <span role="rowheader" style={{ color: tokens.dim }}>{FIELD_HE[k]}</span>
               <span role="cell" style={{ overflowWrap: "anywhere" }}>
-                <span dir={k === "name" ? "rtl" : "ltr"} style={{ textDecoration: "line-through", color: tokens.dim }}>{current[k] || "(ריק)"}</span>
+                <span dir={isLtr(k) ? "ltr" : "rtl"} style={{ textDecoration: "line-through", color: tokens.dim }}>{current[k] || "(ריק)"}</span>
                 {" ← "}
-                <strong dir={k === "name" ? "rtl" : "ltr"}>{next[k] || "(ריק)"}</strong>
+                <strong dir={isLtr(k) ? "ltr" : "rtl"}>{next[k] || "(ריק)"}</strong>
               </span>
             </div>
           ))}
