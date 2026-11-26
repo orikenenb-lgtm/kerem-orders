@@ -3,7 +3,7 @@
 // RPCs and the inventory-sync edge function; tables are read-only here.
 
 import { supabase } from "../../../../lib/supabaseClient";
-import { parseRpcError, type RpcError } from "../../../../lib/inventory";
+import { parseRpcError, type ItemEditParams, type RpcError } from "../../../../lib/inventory";
 
 export type Product = {
   product_id: string;
@@ -235,10 +235,24 @@ export async function captureBaseline(lineId: string, expectedVersion: number): 
   return invokeSync<Baseline>({ action: "capture_baseline", line_id: lineId, expected_version: expectedVersion });
 }
 
-export async function requestItemEdit(productId: string, p: { p_new_name: string | null; p_new_barcode: string | null; p_new_sku: string | null }): Promise<Result<string>> {
-  const { data, error, status } = await supabase.rpc("inv_request_item_edit", { p_product_id: productId, ...p });
+export async function requestItemEdit(productId: string, p: ItemEditParams): Promise<Result<string>> {
+  // Price / description go through v2; a name/barcode/sku-only edit keeps
+  // using v1, so the screen works the same before the v2 migration exists.
+  const v2 = p.p_new_price !== undefined || p.p_new_description !== undefined;
+  const { data, error, status } = await supabase.rpc(v2 ? "inv_request_item_edit_v2" : "inv_request_item_edit", { p_product_id: productId, ...p });
   if (error) return fail(error, status);
   return { ok: true, data: String(data) };
+}
+
+export type ItemDetails = { price: number | null; description: string };
+
+/** Current price + description (manager-only RPC). null = not available
+ *  (e.g. the v2 migration is not applied) — the screen then hides the fields. */
+export async function fetchItemDetails(productId: string): Promise<ItemDetails | null> {
+  const { data, error } = await supabase.rpc("inv_item_details", { p_product_id: productId });
+  if (error || !Array.isArray(data) || !data.length) return null;
+  const row = data[0] as { price: number | string | null; description: string | null };
+  return { price: row.price == null ? null : Number(row.price), description: row.description ?? "" };
 }
 
 // ---------------------------------------------------------- edge function --

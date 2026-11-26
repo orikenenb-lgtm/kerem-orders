@@ -19,7 +19,7 @@
 // No Deno APIs; the client is duck-typed so this file has no import.
 
 import type {
-  CountRow, CountStatus, Db, EditPatch, EditRow, EditStatus, EventIn, LinePatch, LineRow, Mode, Settings, SyncStatus,
+  CountRow, CountStatus, Db, EditPatch, EditRow, EditStatus, EventIn, LinePatch, LineRow, LocalItemFields, Mode, Settings, SyncStatus,
 } from './engine.ts'
 
 // deno-lint-ignore no-explicit-any
@@ -30,7 +30,8 @@ const LINE_COLS =
   'delta,rivhit_doc_type,rivhit_doc_number,rivhit_after_qty,attempts,last_error,synced_at,' +
   'rivhit_baseline_qty,rivhit_baseline_at,version'
 const EDIT_COLS =
-  'id,product_id,rivhit_id,old_name,new_name,old_barcode,new_barcode,old_sku,new_sku,status,attempts,last_error,rivhit_before'
+  'id,product_id,rivhit_id,old_name,new_name,old_barcode,new_barcode,old_sku,new_sku,' +
+  'old_price,new_price,old_description,new_description,status,attempts,last_error,rivhit_before'
 
 const DEFAULT_SETTINGS: Settings = {
   rivhit_writes_enabled: false,
@@ -173,11 +174,13 @@ export function supabaseDb(admin: Sb, triggeredBy: string | null): Db {
       return Array.isArray(data) && data.length > 0
     },
 
-    async updateProductFields(productId: string, fields: { name?: string; barcode?: string | null; sku?: string | null }) {
+    async updateProductFields(productId: string, fields: LocalItemFields) {
       const patch: Record<string, unknown> = {}
       if (fields.name != null) patch.name = fields.name
       if (fields.barcode !== undefined) patch.barcode = fields.barcode ?? ''
       if (fields.sku != null) patch.sku = fields.sku
+      if (fields.price != null && Number(fields.price) > 0) patch.price = fields.price
+      if (fields.description != null) patch.description = fields.description
       const { data, error } = await admin.from('products').update(patch).eq('id', productId).select('id')
       if (error) fail('updateProductFields', error)
       if (!Array.isArray(data) || !data.length) throw new Error('updateProductFields: product not found')
@@ -204,7 +207,7 @@ export async function loadSimSeedForCount(admin: Sb, lines: LineRow[]): Promise<
 
 /** Simulation seed for an item edit: the site's own copy of the item. */
 export async function loadSimItem(admin: Sb, productId: string) {
-  const { data, error } = await admin.from('products').select('rivhit_id,name,sku,barcode,stock_quantity').eq('id', productId).maybeSingle()
+  const { data, error } = await admin.from('products').select('rivhit_id,name,sku,barcode,stock_quantity,price,description').eq('id', productId).maybeSingle()
   if (error) fail('loadSimItem', error)
   if (!data || data.rivhit_id == null) return null
   return {
@@ -213,5 +216,7 @@ export async function loadSimItem(admin: Sb, productId: string) {
     item_part_num: data.sku ?? null,
     barcode: data.barcode ?? null,
     quantity: Number(data.stock_quantity ?? 0),
+    sale_nis: data.price == null ? null : Number(data.price),
+    item_extended_description: data.description ?? '',
   }
 }

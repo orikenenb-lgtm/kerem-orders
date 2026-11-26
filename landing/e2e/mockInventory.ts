@@ -53,7 +53,7 @@ type Line = {
   rivhit_baseline_qty: number | null; rivhit_baseline_at: string | null;
 };
 type Ev = { id: number; at: string; actor: string | null; count_id: string | null; product_id: string | null; kind: string; detail: unknown };
-type EditReq = { id: string; product_id: string; status: string; last_error: string | null; finished_at: string | null; new_name: string | null; new_barcode: string | null; new_sku: string | null };
+type EditReq = { id: string; product_id: string; status: string; last_error: string | null; finished_at: string | null; new_name: string | null; new_barcode: string | null; new_sku: string | null; new_price?: number | null; new_description?: string | null };
 
 export type InvState = {
   counts: Count[];
@@ -78,6 +78,9 @@ export type InvState = {
   rivhitQty: Map<string, number>;
   /** Every RPC / function call, in order: { name, args }. */
   calls: { name: string; args: Record<string, unknown> }[];
+  /** Price + description per product id (inv_item_details). Unset = the v2
+   *  migration is "not installed": the RPC answers 404 like PostgREST. */
+  itemDetails?: Record<string, { price: number; description: string }>;
 };
 
 export function newInvState(over: Partial<InvState> = {}): InvState {
@@ -279,6 +282,30 @@ function rpc(s: InvState, route: Route, name: string, a: Record<string, unknown>
       log(s, null, r.product_id, "item_edit_cancelled", { request_id: r.id, before_status: before, note });
       return json(route, null);
     }
+    case "inv_item_details": {
+      const d = s.itemDetails?.[String(a.p_product_id)];
+      if (!s.itemDetails) return json(route, { code: "PGRST202", message: "Could not find the function public.inv_item_details in the schema cache", details: null, hint: null }, 404);
+      return json(route, d ? [{ product_id: a.p_product_id, price: d.price, description: d.description }] : []);
+    }
+    case "inv_request_item_edit_v2": {
+      const p = INV_PRODUCTS.find((x) => x.id === a.p_product_id);
+      if (!p) return raise(route, "INV_NOT_FOUND");
+      const cur = s.itemDetails?.[p.id] ?? { price: 0, description: "" };
+      const price = a.p_new_price == null ? cur.price : Number(a.p_new_price);
+      if (a.p_new_price != null && !(price > 0 && price <= 100000 && Math.round(price * 100) === price * 100)) return raise(route, "INV_BAD_INPUT:price");
+      const desc = a.p_new_description == null ? cur.description : String(a.p_new_description).trim();
+      if (a.p_new_description != null && (desc.length < 1 || desc.length > 500)) return raise(route, "INV_BAD_INPUT:description");
+      const name = a.p_new_name == null ? p.name : String(a.p_new_name).trim();
+      const bc = a.p_new_barcode == null ? p.barcode : String(a.p_new_barcode).trim();
+      const sku = a.p_new_sku == null ? p.sku : String(a.p_new_sku).trim();
+      if (name === p.name && bc === p.barcode && sku === p.sku && price === cur.price && desc === cur.description) return raise(route, "INV_NO_CHANGE");
+      const open = s.edits.find((e) => e.product_id === p.id && ["pending", "in_progress", "unknown"].includes(e.status));
+      if (open) return raise(route, `INV_EDIT_PENDING:${open.id}`);
+      const r: EditReq = { id: uuid(seq++, "4444eeee"), product_id: p.id, status: "pending", last_error: null, finished_at: null, new_name: name, new_barcode: bc, new_sku: sku, new_price: price, new_description: desc };
+      s.edits.push(r);
+      log(s, null, p.id, "item_edit_requested", {});
+      return json(route, r.id);
+    }
     case "inv_request_item_edit": {
       const p = INV_PRODUCTS.find((x) => x.id === a.p_product_id);
       if (!p) return raise(route, "INV_NOT_FOUND");
@@ -406,7 +433,7 @@ export async function mockInventory(context: BrowserContext, s: InvState, role: 
     const path = url.pathname;
     const p = url.searchParams;
 
-    const m = path.match(/\/rpc\/(inv_[a-z_]+)$/);
+    const m = path.match(/\/rpc\/(inv_[a-z0-9_]+)$/);
     if (m) {
       let args: Record<string, unknown> = {};
       try { args = req.postDataJSON() ?? {}; } catch { /* none */ }

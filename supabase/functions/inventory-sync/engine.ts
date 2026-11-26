@@ -90,6 +90,12 @@ export interface EditRow {
   new_barcode: string | null
   old_sku: string | null
   new_sku: string | null
+  /** Price / description (inv_request_item_edit_v2). Absent or null on
+   *  requests made by v1 — then the field is not part of the request. */
+  old_price?: number | string | null
+  new_price?: number | string | null
+  old_description?: string | null
+  new_description?: string | null
   status: EditStatus
   attempts: number
   last_error: string | null
@@ -143,7 +149,15 @@ export interface Db {
   getEdit(requestId: string): Promise<EditRow | null>
   claimEdit(requestId: string, from: EditStatus, patch: EditPatch): Promise<EditRow | null>
   setEdit(requestId: string, expected: EditStatus, patch: EditPatch): Promise<boolean>
-  updateProductFields(productId: string, fields: { name?: string; barcode?: string | null; sku?: string | null }): Promise<void>
+  updateProductFields(productId: string, fields: LocalItemFields): Promise<void>
+}
+
+export interface LocalItemFields {
+  name?: string
+  barcode?: string | null
+  sku?: string | null
+  price?: number | null
+  description?: string | null
 }
 
 // ---- Rivhit adapter results ----
@@ -832,7 +846,19 @@ export function sameValue(a: unknown, b: unknown): boolean {
   return normStr(a) === normStr(b)
 }
 
-export interface Intended { item_name: string; barcode: string | null; item_part_num: string | null }
+export interface Intended {
+  item_name: string
+  barcode: string | null
+  item_part_num: string | null
+  sale_nis: number | null
+  item_extended_description: string | null
+}
+
+export type ChangeSet = {
+  item_name: boolean; barcode: boolean; item_part_num: boolean; sale_nis: boolean; item_extended_description: boolean
+}
+
+const numOrNull = (v: unknown): number | null => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
 
 /** The site's sku is `item_part_num || barcode` (rivhit-sync), so a request's
  *  old_sku is compared with this effective value (R7). */
@@ -844,11 +870,14 @@ export function effectiveSku(it: { item_part_num?: unknown; barcode?: unknown })
  *  manager did not touch is copied from old_*, a cleared barcode is ''). A
  *  field counts as "changed by this request" only when new_* differs from
  *  old_*. */
-export function requestedChanges(req: EditRow): { item_name: boolean; barcode: boolean; item_part_num: boolean } {
+export function requestedChanges(req: EditRow): ChangeSet {
+  const np = numOrNull(req.new_price)
   return {
     item_name: req.new_name != null && !sameValue(req.new_name, req.old_name),
     barcode: req.new_barcode != null && !sameValue(req.new_barcode, req.old_barcode),
     item_part_num: req.new_sku != null && !sameValue(req.new_sku, req.old_sku),
+    sale_nis: np != null && !sameValue(np, numOrNull(req.old_price)),
+    item_extended_description: req.new_description != null && !sameValue(req.new_description, req.old_description),
   }
 }
 
@@ -862,6 +891,10 @@ export function intendedValues(req: EditRow, snap: RivhitItem): Intended {
     item_name: ch.item_name ? (req.new_name as string) : snap.item_name,
     barcode: ch.barcode ? (req.new_barcode as string) : (snap.barcode ?? null),
     item_part_num: ch.item_part_num ? (req.new_sku as string) : (snap.item_part_num ?? null),
+    sale_nis: ch.sale_nis ? numOrNull(req.new_price) : numOrNull(snap.sale_nis),
+    item_extended_description: ch.item_extended_description
+      ? (req.new_description as string)
+      : (snap.item_extended_description ?? null),
   }
 }
 
@@ -877,11 +910,15 @@ export function buildItemUpdatePayload(snap: RivhitItem, intended: Intended, req
   else delete p.barcode
   if (intended.item_part_num != null) p.item_part_num = intended.item_part_num
   else delete p.item_part_num
+  if (intended.sale_nis != null) p.sale_nis = intended.sale_nis
+  if (intended.item_extended_description != null && intended.item_extended_description !== '') {
+    p.item_extended_description = intended.item_extended_description
+  }
   if (requestRef) p.request_reference = requestRef
   return p
 }
 
-const TARGET_KEYS = ['item_name', 'barcode', 'item_part_num'] as const
+const TARGET_KEYS = ['item_name', 'barcode', 'item_part_num', 'sale_nis', 'item_extended_description'] as const
 /** Stock moves through documents, not Item.Update, and can change between
  *  the snapshot and the read-back (a sale) — the only field not compared. */
 export const VOLATILE_ITEM_FIELDS: readonly string[] = ['quantity']
@@ -925,7 +962,7 @@ export async function applyItemEdit(deps: EngineDeps, requestId: string, opts: {
   }
   const transient = (k: string) => k === 'rate_limited' || k === 'timeout' || k === 'network'
   const ch = requestedChanges(req)
-  if (!ch.item_name && !ch.barcode && !ch.item_part_num) return finish('failed', 'הבקשה אינה משנה אף שדה')
+  if (!Object.values(ch).some(Boolean)) return finish('failed', 'הבקשה אינה משנה אף שדה')
 
   // (2) the full current record
   const g = await rivhit.itemGet(req.rivhit_id)
@@ -944,6 +981,10 @@ export async function applyItemEdit(deps: EngineDeps, requestId: string, opts: {
     if (ch.item_name && !sameValue(cur.item_name, req.old_name) && !sameValue(cur.item_name, req.new_name)) conflicts.push('item_name')
     if (ch.barcode && !sameValue(cur.barcode, req.old_barcode) && !sameValue(cur.barcode, req.new_barcode)) conflicts.push('barcode')
     if (ch.item_part_num && !sameValue(effectiveSku(cur), req.old_sku) && !sameValue(effectiveSku(cur), req.new_sku)) conflicts.push('sku')
+    if (ch.sale_nis && !sameValue(numOrNull(cur.sale_nis), numOrNull(req.old_price)) &&
+      !sameValue(numOrNull(cur.sale_nis), numOrNull(req.new_price))) conflicts.push('price')
+    if (ch.item_extended_description && !sameValue(cur.item_extended_description, req.old_description) &&
+      !sameValue(cur.item_extended_description, req.new_description)) conflicts.push('description')
     if (conflicts.length) return finish('failed', `הפריט שונה ברווחית מאז הבקשה (${conflicts.join(', ')}) — לא עודכן`)
     snap = { ...cur }
     const saved = await db.setEdit(requestId, 'in_progress', { rivhit_before: snap })
@@ -961,10 +1002,12 @@ export async function applyItemEdit(deps: EngineDeps, requestId: string, opts: {
     return finish('unknown', `ערך לא צפוי ברווחית (${stray.join(', ')}) — לא נשלח עדכון`, { mismatched: [...stray] })
   }
 
-  const localFields = {
+  const localFields: LocalItemFields = {
     name: targets.item_name,
     barcode: normStr(targets.barcode),
     sku: effectiveSku(targets) || null,
+    ...(ch.sale_nis && targets.sale_nis != null ? { price: targets.sale_nis } : {}),
+    ...(ch.item_extended_description ? { description: normStr(targets.item_extended_description) } : {}),
   }
   const applyLocal = async () => {
     if (mode !== 'live') return null
