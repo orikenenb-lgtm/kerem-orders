@@ -389,6 +389,56 @@ test.describe("manager on an iPhone 13", () => {
     await context.close();
   });
 
+  test("photo: upload a new photo (replaces Rivhit's), then remove it", async ({ browser, baseURL }) => {
+    const s = newInvState();
+    const p = BY_SKU("6928810168960");
+    s.itemDetails = { [p.id]: { price: 12.9, description: "" } };
+    s.photos = { [p.id]: { url: null, replace_rivhit: false, rivhit: "https://api.rivhit.co.il/online/FileService.svc/getItemPic/r/1.jpg" } };
+    const { context, page, errors } = await open(browser, baseURL, s);
+    await startCount(page);
+    await wedge(page, "6928810168960");
+    await page.getByRole("button", { name: "עריכת פריט" }).click();
+    const box = page.getByRole("region", { name: "תמונת המוצר" });
+    await expect(box.getByTestId("photo-source")).toHaveText("מוצג עכשיו: תמונה מרווחית");
+    await expect(box.getByRole("button", { name: "שמירת התמונה" })).toBeDisabled();
+    // a real 8x8 PNG
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP438CAFWEXHbQSAKmzX8FBxi1QAAAAAElFTkSuQmCC", "base64");
+    await box.getByLabel(/בחירת תמונה/).setInputFiles({ name: "x.png", mimeType: "image/png", buffer: png });
+    await expect(box.getByTestId("photo-source")).toHaveText("תצוגה מקדימה — עוד לא נשמרה");
+    await box.getByRole("button", { name: "שמירת התמונה" }).click();
+    await expect(box.getByRole("status")).toContainText("התמונה נשמרה ומופיעה עכשיו באתר");
+    expect(s.uploads).toHaveLength(1);
+    expect(s.uploads![0]).toMatch(new RegExp(`^${p.id}/[0-9]{13}\\.jpg$`));
+    const set = callsOf(s, "inv_set_product_photo")[0].args;
+    expect(set.p_replace).toBe(true);
+    expect(String(set.p_url)).toContain(`/storage/v1/object/public/product-photos/${s.uploads![0]}`);
+    await expect(box.getByTestId("photo-source")).toHaveText("מוצג עכשיו: תמונה שהועלתה באתר");
+
+    await box.getByRole("button", { name: "הסרת התמונה שהועלתה" }).click();
+    await expect(box.getByRole("status")).toContainText("מוצגת שוב התמונה מרווחית");
+    await expect(box.getByTestId("photo-source")).toHaveText("מוצג עכשיו: תמונה מרווחית");
+    expect(errors).toEqual([]);
+    await context.close();
+  });
+
+  test("photo: 'only if Rivhit has none' keeps showing Rivhit's photo and says so", async ({ browser, baseURL }) => {
+    const s = newInvState();
+    const p = BY_SKU("6928810168960");
+    s.photos = { [p.id]: { url: null, replace_rivhit: false, rivhit: "https://api.rivhit.co.il/online/FileService.svc/getItemPic/r/1.jpg" } };
+    const { context, page } = await open(browser, baseURL, s);
+    await startCount(page);
+    await wedge(page, "6928810168960");
+    await page.getByRole("button", { name: "עריכת פריט" }).click();
+    const box = page.getByRole("region", { name: "תמונת המוצר" });
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP438CAFWEXHbQSAKmzX8FBxi1QAAAAAElFTkSuQmCC", "base64");
+    await box.getByLabel(/בחירת תמונה/).setInputFiles({ name: "x.png", mimeType: "image/png", buffer: png });
+    await box.getByLabel("רק אם אין תמונה ברווחית").check();
+    await box.getByRole("button", { name: "שמירת התמונה" }).click();
+    await expect(box.getByRole("status")).toContainText("כרגע מוצגת התמונה מרווחית");
+    expect(callsOf(s, "inv_set_product_photo")[0].args.p_replace).toBe(false);
+    await context.close();
+  });
+
   test("a failed line can be skipped with a note → the count is done (with skipped items)", async ({ browser, baseURL }) => {
     const s = newInvState();
     const id = seedDraftCount(s, [["6928810168960", 42], ["6924050751115", 50]]);
