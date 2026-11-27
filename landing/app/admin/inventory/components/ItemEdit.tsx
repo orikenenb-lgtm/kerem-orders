@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { tokens } from "../../../../lib/ui";
 import { buildItemEdit, canCloseEdit, CLOSE_EDIT_WARNING, editStatusLabel, rpcErrorText, validateSkipNote } from "../../../../lib/inventory";
 import { closeItemEdit, fetchEditRequest, fetchItemDetails, fetchOpenEditRequest, invokeSync, requestItemEdit, type EditRequest, type ItemDetails, type Product } from "./api";
+import ItemPhoto from "./ItemPhoto";
 import { card, ERR, field, h2, labelStyle, msgStyle, note, pill, secondaryBtn, bigBtn, WARN } from "./styles";
 
 const FIELD_HE = { name: "שם", barcode: "ברקוד", sku: "מק״ט", price: "מחיר", description: "תיאור" } as const;
@@ -216,6 +217,7 @@ export default function ItemEdit({ product, simulation, onClose }: {
           </div>
         </div>
       )}
+      <ItemPhoto productId={product.product_id} productName={product.name} />
       <button type="button" onClick={onClose} disabled={busy} style={secondaryBtn}>סגירה</button>
     </section>
   );

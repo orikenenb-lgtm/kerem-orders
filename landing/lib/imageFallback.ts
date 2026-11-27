@@ -14,7 +14,7 @@
 // Kept free of React so it can be unit-tested with plain node (tests/
 // imageFallback.test.mjs) exactly like lib/quantity.ts.
 
-import { rivhitImg } from "./images";
+import { isSitePhoto, rivhitImg } from "./images";
 
 export const ATTEMPT_PROXY = 0;
 export const ATTEMPT_PROXY_RETRY = 1;
@@ -60,6 +60,12 @@ export function isDirectFallbackAllowed(pictureLink: string): boolean {
 
 /** Human-readable stage (manager diagnostics only — customers never see it). */
 export function stageOf(attempt: number, pictureLink: string): FallbackStage {
+  // A manager-uploaded photo: tried twice (same URL), never "direct".
+  if (isSitePhoto(pictureLink)) {
+    if (attempt <= ATTEMPT_PROXY) return "proxy";
+    if (attempt === ATTEMPT_PROXY_RETRY) return "proxy-retry";
+    return "exhausted";
+  }
   // Empty AND syntactically-invalid links are never attempted at all.
   if (!isDirectFallbackAllowed(pictureLink)) return "no-url";
   if (attempt <= ATTEMPT_PROXY) return "proxy";
@@ -73,6 +79,7 @@ export function stageOf(attempt: number, pictureLink: string): FallbackStage {
  *  rejected up front — it never reaches the proxy, so an invalid link costs
  *  zero network attempts. */
 export function srcForAttempt(pictureLink: string, attempt: number, w = 480, rot = 0): string {
+  if (isSitePhoto(pictureLink)) return attempt <= ATTEMPT_PROXY_RETRY ? pictureLink.trim() : "";
   if (!isDirectFallbackAllowed(pictureLink)) return "";
   if (attempt <= ATTEMPT_PROXY_RETRY) return rivhitImg(pictureLink, w, rot);
   if (attempt === ATTEMPT_DIRECT) return pictureLink;

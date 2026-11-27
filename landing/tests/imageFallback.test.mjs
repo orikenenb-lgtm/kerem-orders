@@ -20,7 +20,7 @@ const transpile = (name) => {
 };
 transpile("images");
 transpile("imageFallback");
-const { rivhitImg } = await import(pathToFileURL(join(tmp, "images.mjs")).href);
+const { rivhitImg, isSitePhoto } = await import(pathToFileURL(join(tmp, "images.mjs")).href);
 const {
   ATTEMPT_PROXY, ATTEMPT_PROXY_RETRY, ATTEMPT_DIRECT, ATTEMPT_EXHAUSTED,
   isDirectFallbackAllowed, srcForAttempt, nextAttempt, stageOf, reduceError,
@@ -234,6 +234,43 @@ t("reduceError terminates in exactly 3 decisions — the chain is finite", () =>
     attempt = d.attempt;
   }
   assert.equal(steps, 3); // retry, direct, terminal — and no more
+});
+
+// ---- manager-uploaded photos (Supabase Storage, bucket product-photos) ----
+const SITE = "https://mcdchalyzeqjkkgfeznd.supabase.co/storage/v1/object/public/product-photos/11111111-2222-4333-8444-555555555555/1795700000000.jpg";
+
+t("site photo: recognised only on this project's host and the exact uuid/timestamp.jpg path", () => {
+  assert.equal(isSitePhoto(SITE), true);
+  for (const bad of [
+    SITE.replace("https:", "http:"),
+    SITE.replace("mcdchalyzeqjkkgfeznd", "evil"),
+    SITE.replace("mcdchalyzeqjkkgfeznd.supabase.co", "mcdchalyzeqjkkgfeznd.supabase.co@evil.com"),
+    SITE.replace(".supabase.co", ".supabase.co:8443"),
+    SITE + "?x=1",
+    SITE.replace("product-photos", "other-bucket"),
+    SITE.replace("1795700000000.jpg", "../../x.jpg"),
+    SITE.replace(".jpg", ".svg"),
+    "https://api.rivhit.co.il/online/FileService.svc/getItemPic/riv/1.jpg",
+    "", "javascript:alert(1)",
+  ]) assert.equal(isSitePhoto(bad), false, bad);
+});
+
+t("site photo: served directly (never via the Rivhit proxy), tried twice, never 'direct' and never rotated", () => {
+  assert.equal(rivhitImg(SITE, 480, 90), SITE);
+  assert.equal(srcForAttempt(SITE, ATTEMPT_PROXY), SITE);
+  assert.equal(srcForAttempt(SITE, ATTEMPT_PROXY_RETRY), SITE);
+  assert.equal(srcForAttempt(SITE, ATTEMPT_DIRECT), "");
+  assert.equal(stageOf(ATTEMPT_PROXY, SITE), "proxy");
+  const a = reduceError(ATTEMPT_PROXY, SITE);
+  assert.equal(a.type, "schedule"); assert.equal(a.attempt, ATTEMPT_PROXY_RETRY);
+  const b = reduceError(ATTEMPT_PROXY_RETRY, SITE);
+  assert.equal(b.type, "fail");
+});
+
+t("rivhit photos are unchanged by the site-photo branch", () => {
+  const R = "https://api.rivhit.co.il/online/FileService.svc/getItemPic/riv000/item-pic/1.jpg";
+  assert.match(rivhitImg(R), /functions\/v1\/rivhit-img\?u=/);
+  assert.equal(srcForAttempt(R, ATTEMPT_DIRECT), R);
 });
 
 console.log(`\n${n} imageFallback tests passed`);

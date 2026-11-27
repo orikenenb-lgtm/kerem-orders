@@ -81,6 +81,10 @@ export type InvState = {
   /** Price + description per product id (inv_item_details). Unset = the v2
    *  migration is "not installed": the RPC answers 404 like PostgREST. */
   itemDetails?: Record<string, { price: number; description: string }>;
+  /** Photo state per product id (inv_item_photo). Unset = photo migration
+   *  "not installed" (404). uploads = every storage upload path, in order. */
+  photos?: Record<string, { url: string | null; replace_rivhit: boolean; rivhit: string }>;
+  uploads?: string[];
 };
 
 export function newInvState(over: Partial<InvState> = {}): InvState {
@@ -282,6 +286,29 @@ function rpc(s: InvState, route: Route, name: string, a: Record<string, unknown>
       log(s, null, r.product_id, "item_edit_cancelled", { request_id: r.id, before_status: before, note });
       return json(route, null);
     }
+    case "inv_item_photo": {
+      if (!s.photos) return json(route, { code: "PGRST202", message: "Could not find the function public.inv_item_photo in the schema cache", details: null, hint: null }, 404);
+      const ph = s.photos[String(a.p_product_id)] ?? { url: null, replace_rivhit: false, rivhit: "" };
+      const shown = ph.url && (ph.replace_rivhit || !ph.rivhit) ? ph.url : ph.rivhit;
+      return json(route, [{ url: ph.url, replace_rivhit: ph.replace_rivhit, rivhit_picture_link: ph.rivhit, shown_picture_link: shown }]);
+    }
+    case "inv_set_product_photo": {
+      const pid = String(a.p_product_id);
+      const url = String(a.p_url ?? "");
+      if (!new RegExp(`/product-photos/${pid}/[0-9]{10,16}\\.jpg$`).test(url)) return raise(route, "INV_BAD_INPUT:photo");
+      const cur = s.photos?.[pid] ?? { url: null, replace_rivhit: false, rivhit: "" };
+      s.photos = { ...(s.photos ?? {}), [pid]: { url, replace_rivhit: a.p_replace === true, rivhit: cur.rivhit } };
+      log(s, null, pid, "photo_set", {});
+      return json(route, url);
+    }
+    case "inv_remove_product_photo": {
+      const pid = String(a.p_product_id);
+      const cur = s.photos?.[pid];
+      if (!cur?.url) return raise(route, "INV_NO_CHANGE");
+      s.photos = { ...(s.photos ?? {}), [pid]: { url: null, replace_rivhit: false, rivhit: cur.rivhit } };
+      log(s, null, pid, "photo_removed", {});
+      return json(route, cur.rivhit);
+    }
     case "inv_item_details": {
       const d = s.itemDetails?.[String(a.p_product_id)];
       if (!s.itemDetails) return json(route, { code: "PGRST202", message: "Could not find the function public.inv_item_details in the schema cache", details: null, hint: null }, 404);
@@ -425,6 +452,13 @@ export async function mockInventory(context: BrowserContext, s: InvState, role: 
     if (s.backendMissing) return json(route, { code: "NOT_FOUND", message: "Requested function was not found" }, 404);
     if (!s.syncReachable) return route.abort("failed");
     return syncFn(s, route, body);
+  });
+
+  await context.route(/\/storage\/v1\/object\/product-photos\//, async (route) => {
+    const path = new URL(route.request().url()).pathname.split("/product-photos/")[1] ?? "";
+    s.uploads = [...(s.uploads ?? []), path];
+    s.calls.push({ name: "storage.upload", args: { path, type: route.request().headers()["content-type"] ?? "" } });
+    return json(route, { Key: `product-photos/${path}`, Id: "00000000-0000-4000-8000-000000000000" });
   });
 
   await context.route(/\/rest\/v1\//, async (route) => {

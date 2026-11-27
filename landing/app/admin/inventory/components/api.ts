@@ -255,6 +255,42 @@ export async function fetchItemDetails(productId: string): Promise<ItemDetails |
   return { price: row.price == null ? null : Number(row.price), description: row.description ?? "" };
 }
 
+export type ItemPhotoState = {
+  url: string | null;
+  replace_rivhit: boolean;
+  rivhit_picture_link: string | null;
+  shown_picture_link: string | null;
+};
+
+/** Photo state for the item screen. null = not available (migration missing). */
+export async function fetchItemPhoto(productId: string): Promise<ItemPhotoState | null> {
+  const { data, error } = await supabase.rpc("inv_item_photo", { p_product_id: productId });
+  if (error || !Array.isArray(data) || !data.length) return null;
+  const r = data[0] as ItemPhotoState;
+  return { url: r.url ?? null, replace_rivhit: !!r.replace_rivhit, rivhit_picture_link: r.rivhit_picture_link || null, shown_picture_link: r.shown_picture_link || null };
+}
+
+/** Upload the prepared JPEG to the product-photos bucket; returns its public URL. */
+export async function uploadProductPhoto(productId: string, blob: Blob): Promise<Result<string>> {
+  const path = `${productId}/${Date.now()}.jpg`;
+  const { error } = await supabase.storage.from("product-photos").upload(path, blob, { contentType: "image/jpeg", upsert: false, cacheControl: "31536000" });
+  if (error) return { ok: false, err: { kind: "other", message: error.message } as RpcError };
+  const { data } = supabase.storage.from("product-photos").getPublicUrl(path);
+  return { ok: true, data: data.publicUrl };
+}
+
+export async function setProductPhoto(productId: string, url: string, replace: boolean): Promise<Result<string>> {
+  const { data, error, status } = await supabase.rpc("inv_set_product_photo", { p_product_id: productId, p_url: url, p_replace: replace });
+  if (error) return fail(error, status);
+  return { ok: true, data: String(data ?? "") };
+}
+
+export async function removeProductPhoto(productId: string): Promise<Result<string>> {
+  const { data, error, status } = await supabase.rpc("inv_remove_product_photo", { p_product_id: productId });
+  if (error) return fail(error, status);
+  return { ok: true, data: String(data ?? "") };
+}
+
 // ---------------------------------------------------------- edge function --
 
 /** POST to inventory-sync with the user's JWT (supabase-js adds it). */

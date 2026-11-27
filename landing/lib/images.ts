@@ -26,9 +26,39 @@ const SUPA =
 // already-cached variant stays valid.
 export function rivhitImg(pictureLink: string, w = 480, rot = 0): string {
   if (!pictureLink) return "";
+  // A photo the manager uploaded (Supabase Storage, already resized and
+  // upright at upload time) is served as is — never through the Rivhit proxy,
+  // whose allowlist accepts Rivhit only.
+  if (isSitePhoto(pictureLink)) return pictureLink.trim();
   const size = w > 0 ? `&w=${w}&v=2` : "";
   const deg = Number(rot);
   const norm = Number.isFinite(deg) ? ((Math.round(deg) % 360) + 360) % 360 : 0;
   const r = norm ? `&rot=${norm}` : "";
   return `${SUPA}/functions/v1/rivhit-img?u=${encodeURIComponent(pictureLink)}${size}${r}`;
+}
+
+/** Public path of the manager-uploaded product photos (Supabase Storage,
+ *  bucket product-photos; supabase/2026-11-product-photos.sql). */
+export const SITE_PHOTO_PATH = "/storage/v1/object/public/product-photos/";
+const SITE_PHOTO_RE = /^\/storage\/v1\/object\/public\/product-photos\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9]{10,16}\.jpg$/;
+
+/** True ONLY for a photo uploaded to this project's product-photos bucket:
+ *  https, this project's exact host, no credentials/port, the exact
+ *  "<product uuid>/<timestamp>.jpg" shape. Anything else is not trusted. */
+export function isSitePhoto(link: string | null | undefined): boolean {
+  let u: URL;
+  let own: URL;
+  try {
+    u = new URL((link || "").trim());
+    own = new URL(SUPA);
+  } catch {
+    return false;
+  }
+  return (
+    u.protocol === "https:" &&
+    u.hostname.toLowerCase() === own.hostname.toLowerCase() &&
+    !u.username && !u.password && (u.port === "" || u.port === "443") &&
+    !u.search && !u.hash &&
+    SITE_PHOTO_RE.test(u.pathname)
+  );
 }
